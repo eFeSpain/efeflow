@@ -8,6 +8,12 @@ export const project = {
   path: null,          // filesystem path once saved or opened
   origin: null,        // { kind: 'file' | 'local' | 'ssh', detail }
   dirty: false,
+
+  /* Names you keep to hand before any rule mentions them: the interfaces on
+     the box you are writing for, the ranges your network actually uses. They
+     are not nftables objects — nftables has no concept of a declared
+     interface — so they live with the project, not with the ruleset. */
+  scratch: { ifaces: [], networks: [] },
 };
 
 export const PROJECT = () => project.name;
@@ -19,7 +25,14 @@ export function setProject(patch) {
 /* What gets written to a .efeflow.json */
 export const serialise = () =>
   JSON.stringify(
-    { app: "eFeFlow", v: 1, name: project.name, chains: MODEL.chains, sets: MODEL.sets },
+    {
+      app: "eFeFlow",
+      v: 1,
+      name: project.name,
+      scratch: project.scratch,
+      chains: MODEL.chains,
+      sets: MODEL.sets,
+    },
     null,
     2,
   );
@@ -27,5 +40,10 @@ export const serialise = () =>
 export function deserialise(text) {
   const o = JSON.parse(text);
   if (!o || !Array.isArray(o.chains)) throw new Error("not an eFeFlow project");
-  return { name: o.name || "imported", chains: o.chains, sets: o.sets || [] };
+  return {
+    name: o.name || "imported",
+    chains: o.chains,
+    sets: o.sets || [],
+    scratch: { ifaces: [], networks: [], ...(o.scratch || {}) },
+  };
 }

@@ -209,19 +209,24 @@ const LIB = () => [
      ? MODEL.sets.map(s=>["@"+s.n, s.el.length>999 ? (s.el.length/1000).toFixed(1)+"k" : String(s.el.length)])
      : [[t("no sets yet","aún sin sets"),""]]],
   ["Maps","MP",[["@port_fwd","3"],["verdict map",""],[t("+ new map","+ nuevo map"),""]]],
-  /* derived: the interfaces your rules actually name, plus the conventional
-     few to start from when there are none yet. An interface is a string in a
-     rule, so this list can only ever be a suggestion. */
+  /* Yours, both halves: the interfaces your rules already name, and the ones
+     you have written down for the box you are working on. No invented list —
+     an unchangeable placeholder is worse than an empty shelf. */
   [t("Interfaces","Interfaces"),"IF", (()=>{
      const used = interfaces();
-     if(used.length) return used.map(e=>[e.name, zoneOf(e.name)[1].toLowerCase()]);
-     return [["lo","loopback"],["eth0","wan"],["eth1","lan"],["wg0","vpn"],["docker0","ctr"]];
+     const kept = project.scratch.ifaces.filter(n=>!used.some(e=>e.name===n));
+     return [
+       ...used.map(e=>[e.name, `${e.rules} ${e.rules===1?t("rule","regla"):t("rules","reglas")}`]),
+       ...kept.map(n=>[n, t("unused","sin usar")]),
+     ];
    })()],
   [t("Networks","Redes"),"NW", (()=>{
      const used = addresses();
-     return used.length
-       ? used.map(a=>[a.text, `${a.n} ${a.n===1?t("rule","regla"):t("rules","reglas")}`])
-       : [["10.0.0.0/8",""],["192.168.0.0/16",""],["172.16.0.0/12",""],["fd00::/8",""],["0.0.0.0/0",""]];
+     const kept = project.scratch.networks.filter(n=>!used.some(a=>a.text===n));
+     return [
+       ...used.map(a=>[a.text, `${a.n} ${a.n===1?t("rule","regla"):t("rules","reglas")}`]),
+       ...kept.map(n=>[n, t("unused","sin usar")]),
+     ];
    })()],
   [t("Services","Servicios"),"SV",[["ssh","22"],["https","443"],["http","80"],["dns","53"],["wireguard","51820"],["winbox","8291"],["snmp","161"]]],
   [t("Protocols","Protocolos"),"PR",[["tcp",""],["udp",""],["icmp",""],["icmpv6",""],["sctp",""],["esp",""],["ah",""]]],
@@ -244,11 +249,15 @@ function renderLibrary(){
        your ruleset reflected back, the rest are constants to drag. */
     const derived = ["TB","CH","SE","MP","IF","NW"].includes(gl);
     d.dataset.kind = gl;
+    const ownable = gl === "IF" || gl === "NW";
     d.innerHTML = `<summary>
         <svg class="ico sm tw" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
         <span class="nm">${esc(cat)}</span>
         ${derived?`<span class="derived" title="${esc(t("From your ruleset — right-click to rename everywhere",
                     "De tu ruleset — clic derecho para renombrar en todo"))}">·</span>`:""}
+        ${ownable?`<button class="cat-add" data-add="${gl}" title="${esc(
+            gl==="IF" ? t("Add an interface you plan to use","Añadir una interfaz que vas a usar")
+                      : t("Add a network you work with","Añadir una red con la que trabajas"))}">+</button>`:""}
         <span class="ct">${items.length}</span></summary>
       <div class="cat-items">${items.map(([n,r])=>
         `<div class="obj" draggable="true"><span class="gl">${gl}</span><span class="nm">${esc(n)}</span><span class="rf">${esc(r)}</span></div>`).join("")}</div>`;
@@ -2939,6 +2948,31 @@ const usagesOf = (kind, name) => {
   return out;
 };
 
+const scratchOf = kind => kind === "IF" ? project.scratch.ifaces : project.scratch.networks;
+
+/* Keeping a name to hand before any rule uses it. */
+$("#lib-body").addEventListener("click", async e=>{
+  const add = e.target.closest("[data-add]");
+  if(!add) return;
+  e.preventDefault();
+  e.stopPropagation();          /* do not toggle the <details> */
+  const kind = add.dataset.add;
+  const name = await promptDialog(
+    kind === "IF" ? t("Add an interface","Añadir interfaz") : t("Add a network","Añadir red"),
+    kind === "IF"
+      ? t("A name you expect to use, so it is there to drag onto a rule. It becomes real once a rule mentions it.",
+          "Un nombre que piensas usar, para tenerlo a mano y arrastrarlo a una regla. Se vuelve real cuando una regla lo nombra.")
+      : t("An address or range you work with, kept with the project.",
+          "Una dirección o rango con el que trabajas, guardado con el proyecto."),
+    kind === "IF" ? "eth1" : "10.10.0.0/24",
+    t("Add","Añadir"));
+  if(!name) return;
+  const list = scratchOf(kind);
+  if(!list.includes(name)) list.push(name);
+  renderLibrary();
+  toast(t(`${name} kept with the project`, `${name} guardado con el proyecto`));
+});
+
 document.addEventListener("contextmenu", e=>{
   const obj = e.target.closest("#lib-body .obj");
   if(!obj) return;
@@ -2946,20 +2980,45 @@ document.addEventListener("contextmenu", e=>{
   if(kind !== "IF" && kind !== "NW") return;   /* the rest are constants */
   const name = $(".nm", obj).textContent.trim();
   const uses = usagesOf(kind, name);
-  if(!uses.length) return;
+  const kept = scratchOf(kind).includes(name);
+  if(!uses.length && !kept) return;
   e.preventDefault();
   e.stopPropagation();
 
-  const m = openCtx(e.clientX, e.clientY, [
+  const m = openCtx(e.clientX, e.clientY, uses.length ? [
     ["ren",  t(`Rename everywhere (${uses.length})`, `Renombrar en todo (${uses.length})`),
      "M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"],
     ["show", t("Show the rules using it","Ver las reglas que lo usan"),
      "M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"],
+  ] : [
+    ["edit", t("Edit","Editar"), "M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"],
+    ["drop", t("Remove from the list","Quitar de la lista"),
+     "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13", true],
   ]);
   m.addEventListener("click", async ev=>{
     const a = ev.target.closest("[data-act]"); if(!a) return;
     const act = a.dataset.act;
     killCtx();
+
+    /* a name nobody uses yet is just a note, so it edits and deletes plainly */
+    if(act === "drop"){
+      const list = scratchOf(kind);
+      list.splice(list.indexOf(name), 1);
+      renderLibrary();
+      return;
+    }
+    if(act === "edit"){
+      const next = await promptDialog(
+        kind === "IF" ? t("Edit interface","Editar interfaz") : t("Edit network","Editar red"),
+        t("No rule uses it yet, so nothing else changes.",
+          "Ninguna regla lo usa todavía, así que no cambia nada más."),
+        name, t("Save","Guardar"));
+      if(!next || next === name) return;
+      const list = scratchOf(kind);
+      list[list.indexOf(name)] = next;
+      renderLibrary();
+      return;
+    }
 
     if(act === "show"){
       go("editor");

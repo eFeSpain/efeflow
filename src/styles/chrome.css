@@ -263,6 +263,25 @@
   /* right-click renames these everywhere they appear */
   cursor: grab;
 }
+.cat-add {
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--t4);
+  font: 500 13px/1 var(--mono);
+  opacity: 0;
+  transition: opacity 0.13s var(--ease), background 0.13s var(--ease), color 0.13s var(--ease);
+}
+.cat > summary:hover .cat-add {
+  opacity: 1;
+}
+.cat-add:hover {
+  background: var(--aqua-wash);
+  color: var(--aqua);
+}
 .cat[data-kind="IF"] .obj:hover .rf,
 .cat[data-kind="NW"] .obj:hover .rf {
   color: var(--aqua);
