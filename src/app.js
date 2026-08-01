@@ -17,6 +17,7 @@ import { PRIO_NAME, NAME_PRIO } from "./core/priority.js";
 import { PROJECT, project, setProject, serialise, deserialise } from "./core/project.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
+import { target, loadTarget, saveTarget, asTauriTarget, describe, probe } from "./target.js";
 import * as native from "./native.js";
 
 const MODEL_HOOKS = { push: onModelChange };
@@ -2659,6 +2660,117 @@ document.addEventListener("keydown", e=>{
 /* ══ keep every derived view in step with the model ═════════════════════ */
 [renderSets, renderTopo, renderDash].forEach(f=>{ MODEL_HOOKS.push(f); RERENDER.push(f); });
 renderSets(); renderTopo(); renderDash();
+/* ══ TARGET ═════════════════════════════════════════════════════════════
+   The chip in the titlebar said "no local nft" and its tooltip suggested
+   adding an SSH target, with nothing behind it. This is the something. */
+let tgDraft = {...loadTarget()};
+
+/* The chip shows where nft is configured to run — a setting, which exists
+   whether or not it is reachable right now. Reachability is the colour and
+   the tooltip, not a replacement for the answer. */
+function paintTargetChip(state){
+  const chip = $("#tb-target"), label = $("#tb-target-t");
+  if(!chip) return;
+  chip.classList.remove("live","remote");
+
+  label.textContent = target.kind === "ssh"
+    ? describe()
+    : state?.ok ? state.version : t("no local nft","sin nft local");
+
+  if(state?.ok){
+    chip.classList.add(target.kind === "ssh" ? "remote" : "live");
+    chip.title = t(`nft reachable — ${state.version}`, `nft accesible — ${state.version}`);
+  } else {
+    chip.title = (state?.why ? state.why + " · " : "")
+      + t("click to choose where nft runs", "pulsa para elegir dónde se ejecuta nft");
+  }
+}
+
+async function refreshTarget(){
+  paintTargetChip(await probe());
+}
+
+function syncTargetForm(){
+  $$("#scrim-target .choice").forEach(c=>
+    c.classList.toggle("on", c.dataset.target === tgDraft.kind));
+  $("#tg-fields").style.display = tgDraft.kind === "ssh" ? "flex" : "none";
+  $("#tg-host").value = tgDraft.host || "";
+  $("#tg-user").value = tgDraft.user || "";
+  $("#tg-port").value = tgDraft.port || "";
+  $("#tg-sudo").classList.toggle("on", !!tgDraft.sudo);
+  $("#tg-preview").textContent = describe(tgDraft);
+  $("#tg-local-note").textContent = !native.isDesktop()
+    ? t("Unavailable in a browser.","No disponible en navegador.")
+    : native.platform.local_nft_possible
+      ? t("Linux — nft can run here.","Linux — nft puede ejecutarse aquí.")
+      : t(`No nft on ${native.platform.os}. Use SSH.`, `No hay nft en ${native.platform.os}. Usa SSH.`);
+}
+
+function openTarget(){
+  tgDraft = {...target};
+  $("#tg-result").style.display = "none";
+  syncTargetForm();
+  $("#scrim-target").classList.add("on");
+}
+
+$("#tb-target").addEventListener("click", openTarget);
+$("#scrim-target").addEventListener("click", e=>{
+  const c = e.target.closest("[data-target]");
+  if(c){ tgDraft.kind = c.dataset.target; syncTargetForm(); }
+  if(e.target.closest("#tg-sudo")){ tgDraft.sudo = !tgDraft.sudo; syncTargetForm(); }
+});
+$$("#tg-host, #tg-user, #tg-port").forEach(n=>n.addEventListener("input", ()=>{
+  tgDraft.host = $("#tg-host").value.trim();
+  tgDraft.user = $("#tg-user").value.trim();
+  tgDraft.port = $("#tg-port").value.trim();
+  $("#tg-preview").textContent = describe(tgDraft);
+}));
+
+$("#tg-test").addEventListener("click", async ()=>{
+  const box = $("#tg-result");
+  box.style.display = "";
+  box.className = "tg-result busy";
+  box.textContent = t("Asking nft…","Preguntando a nft…");
+  const r = await probe(tgDraft);
+  box.className = "tg-result " + (r.ok ? "ok" : "bad");
+  box.textContent = r.ok
+    ? t(`Reachable · ${r.version}`, `Accesible · ${r.version}`)
+    : r.why;
+});
+
+$("#tg-save").addEventListener("click", async ()=>{
+  saveTarget(tgDraft);
+  $("#scrim-target").classList.remove("on");
+  await refreshTarget();
+  toast(t(`nft will run on ${describe()}`, `nft se ejecutará en ${describe()}`));
+});
+
+/* ── the two things a target is for ── */
+$("#imp-host")?.addEventListener("click", async ()=>{
+  const r = await native.nftList(asTauriTarget());
+  if(!r.ok){ toast(r.stderr.trim().split("\n")[0] || t("could not read","no se pudo leer")); return; }
+  $("#imp-text").value = r.stdout;
+  $("#imp-text").dispatchEvent(new Event("input", {bubbles:true}));
+  toast(t(`Read from ${describe()}`, `Leído de ${describe()}`));
+});
+
+$("#val-nft")?.addEventListener("click", async ()=>{
+  const btn = $("#val-nft"), was = btn.textContent;
+  btn.textContent = t("Checking…","Comprobando…");
+  const r = await native.nftCheck(generate().join("\n"), asTauriTarget());
+  btn.textContent = was;
+  const box = $("#val-nft-out");
+  box.style.display = "";
+  box.className = "nft-out " + (r.ok ? "ok" : "bad");
+  box.textContent = r.ok
+    ? t(`nft -c accepted the ruleset on ${describe()}.`,
+        `nft -c aceptó el ruleset en ${describe()}.`)
+    : (r.stderr || r.stdout).trim();
+});
+
+loadTarget();
+refreshTarget();
+
 /* the header follows the ruleset: chains, rules and tables all live there */
 MODEL_HOOKS.push(showProject);
 RERENDER.push(showProject);

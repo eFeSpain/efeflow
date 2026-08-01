@@ -248,6 +248,40 @@
 }
 @keyframes fill { to { width: 100%; } }
 
+/* ── target dialog ─────────────────────────────────────────────────── */
+.tg-result,
+.nft-out {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  font: 450 11.5px/1.6 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--line-2);
+  background: var(--sunken);
+  color: var(--t2);
+  max-height: 180px;
+  overflow: auto;
+}
+.tg-result.ok,
+.nft-out.ok {
+  border-color: rgba(71, 224, 130, 0.35);
+  background: rgba(71, 224, 130, 0.07);
+  color: var(--v-accept);
+}
+.tg-result.bad,
+.nft-out.bad {
+  border-color: rgba(250, 90, 90, 0.35);
+  background: rgba(250, 90, 90, 0.07);
+  color: #ffc9c9;
+}
+.tg-result.busy {
+  color: var(--t3);
+}
+#val-nft-out {
+  margin-bottom: 14px;
+}
+
 /* ── the project name is editable, and looks it ────────────────────── */
 #proj-name {
   display: inline-flex;
