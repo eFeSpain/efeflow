@@ -121,7 +121,7 @@
 <!-- ══ TITLEBAR ══ the window is frameless; this is the chrome ════════ -->
 <div id="titlebar">
   <div class="tb-drag" data-drag></div>
-  <div class="tb-left">
+  <button class="tb-left" data-go="about" data-tt="About eFeFlow|Acerca de eFeFlow">
     <svg class="tb-mark" viewBox="20 4 236 192" aria-hidden="true">
       <defs>
         <linearGradient id="tb-trunk" x1="0" y1="0" x2="1" y2="1">
@@ -140,7 +140,8 @@
       <circle cx="90" cy="100" r="17" fill="none" stroke="#39D5FF" stroke-width="10"/>
     </svg>
     <span class="tb-name">eFe<b>Flow</b></span>
-  </div>
+    <span class="beta" data-tt="Beta — under active development. Review the generated ruleset before applying it anywhere that matters.|Beta — en desarrollo activo. Revisa el ruleset generado antes de aplicarlo donde importe.">beta</span>
+  </button>
   <div class="tb-mid" data-drag>
     <span class="tb-proj" id="tb-proj">untitled</span>
     <span class="tb-origin" id="tb-origin"></span>
@@ -160,29 +161,7 @@
 
   <!-- ══ TOP TOOLBAR ══ -->
   <div id="bar">
-    <button class="brand" data-go="about" data-tt="About eFeFlow|Acerca de eFeFlow">
-      <svg class="mk" viewBox="20 4 236 192" aria-hidden="true">
-        <defs>
-          <linearGradient id="mk-trunk" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#39D5FF"/><stop offset="1" stop-color="#0078FF"/></linearGradient>
-          <linearGradient id="mk-ok" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stop-color="#3AD5FF"/><stop offset="1" stop-color="#46FF75"/></linearGradient>
-          <linearGradient id="mk-no" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stop-color="#4BBEFF"/><stop offset="1" stop-color="#FF5050"/></linearGradient>
-        </defs>
-        <g fill="none" stroke-width="19" stroke-linecap="round">
-          <path d="M90 20V180" stroke="url(#mk-trunk)"/>
-          <path d="M90 20H228"  stroke="url(#mk-ok)"/>
-          <path d="M38 100H228" stroke="url(#mk-trunk)"/>
-          <path d="M90 180H228" stroke="url(#mk-no)"/>
-        </g>
-        <circle cx="90" cy="100" r="17" fill="none" stroke="#39D5FF" stroke-width="10"/>
-      </svg>
-      <span class="wm">eFe<b>Flow</b></span>
-    </button>
-    <div class="sep"></div>
-
-    <div class="proj">
+        <div class="proj">
       <svg class="ico sm dim" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
       <button class="nm" id="proj-name" data-tt="Rename the project — F2|Renombrar el proyecto — F2">
         <span id="proj-name-t">untitled</span>
@@ -593,6 +572,28 @@
       <h1 data-t="How eFeFlow works|Cómo funciona eFeFlow">How eFeFlow works</h1>
       <p data-t="A designer, not a firewall manager. It edits a ruleset and emits nft source. Nothing reaches a live host unless you ask it to.|Un diseñador, no un gestor de firewall. Edita un ruleset y emite código nft. Nada llega a una máquina en producción salvo que lo pidas.">A designer, not a firewall manager.</p>
     </header>
+
+    <article class="gcard" id="g-beta">
+      <div class="gh"><span class="pill" style="color:var(--warn);background:rgba(240,193,60,.12);border-color:rgba(240,193,60,.3)"><span class="sw"></span>beta</span>
+        <h2 data-t="This is a beta|Esto es una beta">This is a beta</h2></div>
+      <p data-t="eFeFlow is under active development. The parser, the analyser and the packet evaluator are covered by an automated suite, but the tool is young and you will find rough edges — so treat the ruleset it generates as a draft you review, not as output to trust blindly.|eFeFlow está en desarrollo activo. El parser, el analizador y el evaluador de paquetes tienen suite automatizada, pero la herramienta es joven y encontrarás aristas: trata el ruleset que genera como un borrador que revisas, no como una salida en la que confiar a ciegas.">Under active development.</p>
+      <ul class="glist">
+        <li data-t="Validate with nft -c before applying anything. That is the authority; this tool is an opinion.|Valida con nft -c antes de aplicar nada. Esa es la autoridad; esta herramienta es una opinión.">Validate with nft -c first.</li>
+        <li data-t="Keep console access to any machine you apply a ruleset to. A firewall you lock yourself out of is a long afternoon.|Mantén acceso por consola a cualquier máquina donde apliques un ruleset. Un firewall que te deja fuera es una tarde larga.">Keep console access.</li>
+        <li data-t="Report anything that looks wrong. A rule that survives the round-trip check badly is a bug worth knowing about.|Reporta lo que veas raro. Una regla que no sobrevive bien la verificación de ida y vuelta es un bug que conviene conocer.">Report what looks wrong.</li>
+      </ul>
+    </article>
+
+    <article class="gcard">
+      <div class="gh"><span class="gi" style="color:var(--v-accept)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+        <h2 data-t="What you start with|Con qu&eacute; empiezas">What you start with</h2></div>
+      <p data-t="A blank stateful skeleton: three filter hooks, a default-deny policy on the two that face the network, and the conntrack fast path. Every line of it is yours. eFeFlow never opens on someone else&#39;s firewall.|Un esqueleto vac&iacute;o con estado: tres hooks de filtrado, pol&iacute;tica de denegaci&oacute;n por defecto en los dos que dan a la red, y la v&iacute;a r&aacute;pida de conntrack. Cada l&iacute;nea es tuya. eFeFlow nunca abre con el firewall de otro.">A blank skeleton.</p>
+      <ul class="glist">
+        <li data-t="New (Ctrl+N) returns to it at any time; the replacement lands in history, so Ctrl+Z brings the old ruleset back.|Nuevo (Ctrl+N) vuelve a &eacute;l cuando quieras; el reemplazo entra en el historial, as&iacute; que Ctrl+Z recupera el anterior.">New returns to it.</li>
+        <li data-t="Click the project name, or press F2, to rename it. The name goes in the header comment of the generated ruleset and becomes the export filename.|Pulsa el nombre del proyecto, o F2, para renombrarlo. El nombre va en el comentario de cabecera del ruleset generado y es el nombre de fichero al exportar.">Rename with F2.</li>
+        <li data-t="Add a chain by clicking its hook in the rail above the canvas, or by dragging one out of the library.|A&ntilde;ade una cadena pulsando su hook en la franja sobre el lienzo, o arrastrando una desde la biblioteca.">Add chains from the rail.</li>
+      </ul>
+    </article>
 
     <div class="grid g2 guide-grid">
       <article class="gcard">

@@ -1,235 +1,164 @@
 <div align="center">
 
-<img src="assets/app.png" width="128" alt="eFeFlow">
+<img src="assets/app.png" width="112" alt="eFeFlow">
 
 # eFeFlow
 
-**Visual nftables firewall rule designer**
-
-Design Linux nftables rulesets on a canvas laid out by netfilter hook and chain
-priority. Import what is already running, see which rules can never match, and
-watch a packet take its real path through the chains.
-
-[English](README.md) · [Español](README.es.md)
+**Design Linux firewall rules visually. Get clean `nft` source out.**
 
 [![ci](https://github.com/eFeSpain/efeflow/actions/workflows/ci.yml/badge.svg)](https://github.com/eFeSpain/efeflow/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/eFeSpain/efeflow?include_prereleases&sort=semver)](https://github.com/eFeSpain/efeflow/releases)
 [![licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+[![status](https://img.shields.io/badge/status-beta-F0C13C)](#-beta)
 
-[**Download**](https://github.com/eFeSpain/efeflow/releases/latest) — Linux `.deb` `.rpm` `.AppImage` · Windows `.msi` · macOS `.dmg`
+[English](README.md) · [Español](README.es.md)
+
+<img src="docs/editor.png" width="880" alt="The rule editor">
 
 </div>
 
 ---
 
-## What it is
+## ⚠ Beta
 
-eFeFlow is a **designer**, not a firewall manager. It edits a ruleset and emits
-`nft` source. Nothing touches a live host unless you explicitly ask it to.
+eFeFlow is **under active development**. The parser, analyser and packet
+evaluator are covered by an automated suite, but the tool is young and you will
+find rough edges.
 
-### It opens on a blank ruleset
-
-Three filter hooks, a default-deny policy on the two that face the network,
-and the conntrack fast path — the shape almost every nftables ruleset starts
-from, and every line of it yours from the first second. eFeFlow never opens on
-a firewall you did not write.
-
-`Ctrl+N` returns to it at any time. Click the project name, or press `F2`, to
-rename it: the name goes in the header comment of the generated ruleset and
-becomes the export filename.
-
-### The canvas is a field, not a whiteboard
-
-Horizontally, a chain sits at the netfilter hook it is attached to —
-`prerouting`, `input`, `forward`, `output`, `postrouting` — in the order a
-packet actually meets them. Vertically, it sits at its chain priority: `raw` at
-−300, `dstnat` at −100, `filter` at 0, `srcnat` at +100.
-
-Position is meaning. You read evaluation order off the screen instead of
-reconstructing it in your head. Cards can be dragged when a different
-arrangement suits how you think about the network, and the automatic layout is
-one button away.
-
-Every rule carries a coloured stripe for its verdict, so squinting at a chain
-gives you a barcode of the policy.
-
-### The analyser
-
-Findings are derived from the ruleset each time it changes, never authored. The
-core relation is **subsumption**: rule A subsumes rule B when every packet
-matching B also matches A. If A comes first and terminates, B is dead code.
-
-| Check | What it means |
-|---|---|
-| **Shadowed** | A rule an earlier one already decides. It costs an evaluation and changes nothing. |
-| **Conflict** | Overlapping DNAT rules with different targets. nftables terminates on the first NAT verdict, so one silently wins. |
-| **Merge** | Rules differing only by port, which a single set lookup replaces — one hash probe instead of *n* comparisons. |
-| **Unused** | A set loaded into the kernel on every reload that no rule consumes. |
-| **Hardening** | A chain that fast-paths `established` but never drops `invalid`. |
-| **Resilience** | A log rule with no rate limit, which floods the kernel ring buffer under a scan. |
-
-Rate-limited rules are never treated as shadowing anything. They are
-non-deterministic, and flagging there would tell you to delete a rule that
-works.
-
-Most findings carry a one-click fix that mutates the model, re-emits the code
-and re-runs the analysis. Everything is undoable.
-
-### The packet simulator
-
-Evaluates against the same model the code is emitted from, so a verdict here is
-the verdict your exported ruleset produces. It arrives already run, and any
-change to the packet re-runs it.
-
-It models nftables semantics rather than an approximation of them:
-
-- **`accept` ends the chain, not the packet.** The packet carries on to the
-  next hook. Only `drop` and `reject` end it outright.
-- **Direction chooses the path**, as the kernel's routing decision does —
-  ingress walks prerouting then input; forward adds postrouting; egress starts
-  at output.
-- **Turning connection tracking off** marks the packet `untracked`, so
-  `ct state` rules can no longer match it and `ct status` never does.
-- **TCP flags** distinguish presence from exclusivity: `tcp flags syn` matches
-  `syn|ack`, `tcp flags & (syn|ack) == syn` does not.
-
-Step mode advances one rule at a time with <kbd>Space</kbd>.
-
-### Import, and the round-trip check
-
-Paste the output of `nft list ruleset`, or read it from a host. Before importing
-anything, eFeFlow parses it, **re-emits every rule from the model**, and
-compares the two line by line. The percentage it reports is the only honest
-evidence that nothing was lost in translation — and if a rule cannot be
-reproduced, it shows you which.
-
-Chain priorities survive by name (`priority filter` comes back as
-`priority filter`, not `0`), and counters, comments and the `# handle` suffixes
-of `nft -a` are all understood.
-
-### Where nft runs
-
-The analyser is eFeFlow's own reading of your ruleset. **`nft -c` is the
-authority**, and `nft` only exists on Linux — so point eFeFlow at the firewall.
-The chip in the top right opens the target dialog: this machine, or a host over
-SSH with user, port and sudo.
-
-It shells out to the system `ssh`, so your keys, your agent and `~/.ssh/config`
-already apply and eFeFlow stores no credentials. The dialog shows the exact
-command before you commit to it, and **Test connection** reports the nft version
-or the reason it failed.
-
-Two actions give a target its purpose:
-
-- **Read from host** pulls `nft -a list ruleset` straight into the import
-  dialog, where the round-trip check verifies it as usual.
-- **Check with `nft -c`** on the validation screen runs the real parser. If it
-  disagrees with the analyser, nft is right.
-
-Applying a ruleset validates first and refuses without explicit confirmation.
-It is the one operation that can lock you out of a machine.
-
-### Export
-
-Four formats, each producing genuinely different output: an atomic ruleset
-file, an incremental delta of `add rule` commands for a running box, a systemd
-bundle with a pre-apply validation hook, and an Ansible playbook with your sets
-extracted as variables.
+Treat what it generates as a **draft you review**, not output to trust blindly.
+Validate with `nft -c` before applying anything, and keep console access to any
+machine you apply a ruleset to.
 
 ---
 
-## Platform reality
+## What it does
+
+An nftables ruleset is an ordered list of text where position is meaning, and a
+single misplaced rule silently shadows the ten below it. eFeFlow makes that
+visible.
+
+**It is a designer, not a firewall manager.** It edits a ruleset and emits `nft`
+source. Nothing reaches a live host unless you ask.
+
+### The canvas is a field, not a whiteboard
+
+A chain sits at the netfilter hook it is attached to — left to right in the
+order a packet meets them — and at its priority, top to bottom. **Position is
+meaning**: you read evaluation order off the screen instead of reconstructing it
+in your head.
+
+Add a chain by clicking its hook in the rail, or by dragging one out of the
+library. Drag rules to reorder them, across chains if you like. Every rule
+carries a coloured stripe for its verdict, so squinting at a chain gives you a
+barcode of the policy.
+
+### It tells you what is wrong with your ruleset
+
+<img src="docs/validate.png" width="880" alt="The validation screen">
+
+Findings are derived from the ruleset every time it changes, never authored.
+
+| | |
+|---|---|
+| **Shadowed** | a rule an earlier one already decides |
+| **Conflict** | overlapping DNAT rules with different targets |
+| **Merge** | rules differing only by port, which one set lookup replaces |
+| **Unused** | a set loaded into the kernel that no rule consumes |
+| **Hardening** | a chain that trusts conntrack but never drops `invalid` |
+| **Resilience** | a log rule with no rate limit |
+
+Most carry a one-click fix. Everything is undoable.
+
+### It runs your packet through your rules
+
+<img src="docs/simulator.png" width="880" alt="The packet simulator">
+
+Describe a packet and watch it walk the chains, rule by rule, to a verdict — and
+it is the verdict your exported ruleset produces, because the simulator
+evaluates the same model the code is emitted from.
+
+It models nftables properly. `accept` ends the chain, not the packet. Turning
+conntrack off marks the packet `untracked`, so `ct state` rules stop matching
+it. `tcp flags syn` matches `syn|ack`; `tcp flags & (syn|ack) == syn` does not.
+
+### It imports what you already run, and proves it
+
+Paste `nft list ruleset`, or read it straight from a host. Before importing
+anything, eFeFlow **re-emits every rule from the model and compares them line by
+line**. The percentage it reports is honest evidence that nothing was lost in
+translation — and if a rule cannot be reproduced, it shows you which one.
+
+### And the rest
+
+<table>
+<tr>
+<td width="50%"><img src="docs/sets.png" alt="Set manager"><br><b>Sets as real assets</b><br>Back-references computed from your rules. Rename one and every rule that uses it follows.</td>
+<td width="50%"><img src="docs/topology.png" alt="Topology"><br><b>Topology from the rules</b><br>Interfaces and zones derived from what your rules actually name. Nothing declared.</td>
+</tr>
+<tr>
+<td><img src="docs/code.png" alt="Generated code"><br><b>Live source</b><br>Edit a field and the nft re-emits. Click a line and it selects the rule. Four export formats.</td>
+<td><img src="docs/dashboard.png" alt="Dashboard"><br><b>The ruleset at a glance</b><br>Packet path, health, worst-case evaluations per packet.</td>
+</tr>
+</table>
+
+Bilingual throughout, English and Spanish. nftables vocabulary is never
+translated — you write `accept`, not `aceptar`.
+
+---
+
+## Install
+
+Grab an installer from [**Releases**](https://github.com/eFeSpain/efeflow/releases/latest):
+Linux `.deb` `.rpm` `.AppImage` · Windows `.msi` · macOS `.dmg`
+
+### Where `nft` runs
 
 `nft` only exists on Linux, so the native integrations differ:
 
 | | Linux | Windows | macOS |
 |---|:---:|:---:|:---:|
 | Design, analyse, simulate, import, export | ✅ | ✅ | ✅ |
-| Validate with local `nft -c` | ✅ | — | — |
-| Read local `nft list ruleset` | ✅ | — | — |
-| Everything above **over SSH** | ✅ | ✅ | ✅ |
+| Validate with a local `nft -c` | ✅ | — | — |
+| Read a local `nft list ruleset` | ✅ | — | — |
+| Both of those **over SSH** | ✅ | ✅ | ✅ |
 
-SSH is not the fallback, it is the design — the firewall is rarely the machine
-with your editor open. eFeFlow shells out to the system `ssh`, so your keys,
-agent and `~/.ssh/config` all apply. A local Linux target is just the case
-where the remote host is `localhost`.
+**SSH is not a fallback, it is the design** — the firewall is rarely the machine
+with your editor open. Click the chip in the top right to point eFeFlow at a
+host. It shells out to the system `ssh`, so your keys, your agent and
+`~/.ssh/config` already apply, and eFeFlow stores no credentials.
 
 Applying a ruleset validates first and refuses without explicit confirmation.
 It is the one operation that can lock you out of a machine.
 
 ---
 
-## Running it
+## Build from source
 
 ```bash
 npm install
-npm run app          # desktop app, with the native layer
-npm run dev          # or just the frontend in a browser
-npm test             # 73 assertions
+npm run app          # the desktop app
+npm run dev          # or the frontend alone, in a browser
+npm test             # 104 assertions
+npm run app:build    # installers in src-tauri/target/release/bundle/
 ```
 
-Building needs the [Tauri prerequisites](https://tauri.app/start/prerequisites/)
-for your platform. On Debian/Ubuntu:
+Needs the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your
+platform. On Debian/Ubuntu:
 
 ```bash
 sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf
 ```
 
-```bash
-npm run app:build    # installers in src-tauri/target/release/bundle/
-```
-
-Tagging `v*` runs the release workflow, which builds on four runners — Linux,
-Windows, macOS arm64 and x86_64 — and collects the installers into a draft
-release.
-
 ---
 
-## Layout
+## Contributing
 
-```
-src/core/        pure, DOM-free, covered by npm test
-  model.js         the ruleset and the shared vocabulary
-  parse.js         nft source → model
-  generate.js      model → nft source, with line provenance
-  analyse.js       findings, by criterion subsumption
-  simulate.js      packet evaluation
-  diff.js          LCS diff against the last import or export
-src/app.js       the interface
-src/native.js    bridge to Rust; degrades to browser equivalents
-src-tauri/       nft and ssh transports, window commands
-```
+Bug reports are welcome — especially a ruleset that does not survive the
+round-trip check. That is the kind of bug worth knowing about: paste the ruleset
+and what the check reported.
 
-The split is the point. Anything that decides a verdict lives in `core/` and is
-tested headlessly.
-
----
-
-## Tests
-
-Three layers, because a green core suite is not evidence that the product
-works — the packet simulator once shipped broken while every core test passed,
-killed by a parameter that shadowed a helper.
-
-**Core** — the parser against a real `nft list ruleset` dump, import → generate
-→ import as a fixed point across three tables, criterion subsumption, and
-packet evaluation including conntrack, flag masks and chain terminality.
-
-**Interface** — boots the real app in jsdom, walks every screen and dispatches
-real events. Selecting rules, editing fields, undo, applying fixes, switching
-language, running the simulator to a verdict.
-
-**Contracts** — static guards for the bugs that got through: every id the code
-looks up must exist in the markup; no parameter may be named after a shared
-helper; every window command the frontend calls must have a Tauri capability;
-layout may not derive card height from a rule count.
-
-```bash
-npm test                            # everything
-node --test "test/ui-*.test.js"     # just the interface
-```
-
----
+[**How it is built**](docs/architecture.md) covers the module layout, why the
+core is kept free of the DOM, and how the three test layers came to exist.
 
 ## Licence
 

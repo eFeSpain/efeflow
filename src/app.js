@@ -1267,6 +1267,8 @@ function counts(){
   $("#kpi-rules").textContent = rules;
 }
 RERENDER.push(counts);
+/* the status bar counts the ruleset, so it has to follow it */
+MODEL_HOOKS.push(counts);
 
 go("dash");
 /* the screen may be gone by the time this lands */

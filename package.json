@@ -5,7 +5,10 @@
   "description": "Visual nftables firewall rule designer",
   "author": "eFeSpain",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/eFeSpain/efeflow.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eFeSpain/efeflow.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,6 +23,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
     "jsdom": "^30.0.1",
+    "playwright": "^1.62.1",
     "vite": "^6.0.0"
   },
   "dependencies": {

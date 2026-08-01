@@ -517,10 +517,10 @@ select{appearance:none;cursor:pointer;padding-right:26px;
    one column of the canvas that carries information you cannot get anywhere
    else. A key is worth less than the thing it is a key to. */
 .legend{
-  position:absolute;right:200px;bottom:14px;z-index:20;
-  height:34px;padding:0 12px;border-radius:var(--r-md);
-  display:flex;flex-direction:row;align-items:center;gap:13px;
-  box-shadow:var(--lift);max-width:calc(100% - 420px);overflow:hidden;
+  position:absolute;right:14px;bottom:130px;z-index:20;
+  height:30px;padding:0 11px;border-radius:var(--r-md);
+  display:flex;flex-direction:row;align-items:center;gap:12px;
+  box-shadow:var(--lift);max-width:calc(100% - 40px);overflow:hidden;
 }
 .legend .row{display:flex;align-items:center;gap:6px;font:500 10px var(--mono);
   color:var(--t3);letter-spacing:.03em;white-space:nowrap}

@@ -55,6 +55,29 @@
   color: var(--brand-cyan);
 }
 
+/* Says what it is, everywhere it is seen. */
+.beta {
+  height: 17px;
+  padding: 0 7px;
+  margin-left: 10px;
+  border-radius: 99px;
+  flex: none;
+  cursor: pointer;
+  background: rgba(240, 193, 60, 0.13);
+  border: 1px solid rgba(240, 193, 60, 0.35);
+  color: var(--warn);
+  font: 600 9px/15px var(--mono);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+.beta:hover {
+  background: rgba(240, 193, 60, 0.24);
+}
+#g-beta {
+  border-color: rgba(240, 193, 60, 0.3);
+  background: linear-gradient(180deg, rgba(240, 193, 60, 0.06), transparent 60%), var(--panel);
+}
+
 .tb-mid {
   display: flex;
   align-items: center;
