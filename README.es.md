@@ -29,6 +29,17 @@ eFeFlow es un **diseñador**, no un gestor de firewall. Edita un ruleset y emite
 código `nft`. Nada toca una máquina en producción salvo que se lo pidas
 explícitamente.
 
+### Abre con un ruleset en blanco
+
+Tres hooks de filtrado, política de denegación por defecto en los dos que dan a
+la red, y la vía rápida de conntrack — la forma de la que arranca casi cualquier
+ruleset de nftables, y cada línea es tuya desde el primer segundo. eFeFlow nunca
+abre con un firewall que no hayas escrito.
+
+`Ctrl+N` vuelve a él cuando quieras. Pulsa el nombre del proyecto, o `F2`, para
+renombrarlo: ese nombre va en el comentario de cabecera del ruleset generado y
+es el nombre de fichero al exportar.
+
 ### El lienzo es un campo, no una pizarra
 
 En horizontal, cada cadena se sitúa en el hook de netfilter al que está
@@ -99,6 +110,28 @@ Las prioridades de cadena sobreviven por nombre (`priority filter` vuelve como
 `priority filter`, no como `0`), y los contadores, los comentarios y los
 sufijos `# handle` de `nft -a` se entienden todos.
 
+### Dónde se ejecuta nft
+
+El analizador es la lectura que hace eFeFlow de tu ruleset. **La autoridad es
+`nft -c`**, y `nft` solo existe en Linux: apunta eFeFlow al firewall. El chip de
+arriba a la derecha abre el diálogo de destino: esta máquina, o un host por SSH
+con usuario, puerto y sudo.
+
+Delega en el `ssh` del sistema, así que tus claves, tu agente y tu
+`~/.ssh/config` ya se aplican y eFeFlow no guarda credenciales. El diálogo
+enseña el comando exacto antes de confirmarlo, y **Probar conexión** informa de
+la versión de nft o del motivo del fallo.
+
+Dos acciones le dan sentido a un destino:
+
+- **Leer del host** trae `nft -a list ruleset` directamente al diálogo de
+  importación, donde la verificación de ida y vuelta lo comprueba como siempre.
+- **Comprobar con `nft -c`** en la pantalla de validación ejecuta el parser
+  real. Si discrepa del analizador, nft tiene razón.
+
+Aplicar un ruleset valida primero y se niega sin confirmación explícita. Es la
+única operación que puede dejarte fuera de una máquina.
+
 ### Exportar
 
 Cuatro formatos, cada uno con salida realmente distinta: fichero de ruleset
@@ -135,7 +168,7 @@ Aplicar un ruleset valida primero y se niega sin confirmación explícita. Es la
 npm install
 npm run app          # aplicación de escritorio, con la capa nativa
 npm run dev          # o solo el frontend en un navegador
-npm test             # 54 aserciones
+npm test             # 73 aserciones
 ```
 
 Compilar requiere los [prerrequisitos de Tauri](https://tauri.app/start/prerequisites/)

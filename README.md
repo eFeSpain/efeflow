@@ -27,6 +27,17 @@ watch a packet take its real path through the chains.
 eFeFlow is a **designer**, not a firewall manager. It edits a ruleset and emits
 `nft` source. Nothing touches a live host unless you explicitly ask it to.
 
+### It opens on a blank ruleset
+
+Three filter hooks, a default-deny policy on the two that face the network,
+and the conntrack fast path — the shape almost every nftables ruleset starts
+from, and every line of it yours from the first second. eFeFlow never opens on
+a firewall you did not write.
+
+`Ctrl+N` returns to it at any time. Click the project name, or press `F2`, to
+rename it: the name goes in the header comment of the generated ruleset and
+becomes the export filename.
+
 ### The canvas is a field, not a whiteboard
 
 Horizontally, a chain sits at the netfilter hook it is attached to —
@@ -96,6 +107,28 @@ Chain priorities survive by name (`priority filter` comes back as
 `priority filter`, not `0`), and counters, comments and the `# handle` suffixes
 of `nft -a` are all understood.
 
+### Where nft runs
+
+The analyser is eFeFlow's own reading of your ruleset. **`nft -c` is the
+authority**, and `nft` only exists on Linux — so point eFeFlow at the firewall.
+The chip in the top right opens the target dialog: this machine, or a host over
+SSH with user, port and sudo.
+
+It shells out to the system `ssh`, so your keys, your agent and `~/.ssh/config`
+already apply and eFeFlow stores no credentials. The dialog shows the exact
+command before you commit to it, and **Test connection** reports the nft version
+or the reason it failed.
+
+Two actions give a target its purpose:
+
+- **Read from host** pulls `nft -a list ruleset` straight into the import
+  dialog, where the round-trip check verifies it as usual.
+- **Check with `nft -c`** on the validation screen runs the real parser. If it
+  disagrees with the analyser, nft is right.
+
+Applying a ruleset validates first and refuses without explicit confirmation.
+It is the one operation that can lock you out of a machine.
+
 ### Export
 
 Four formats, each producing genuinely different output: an atomic ruleset
@@ -132,7 +165,7 @@ It is the one operation that can lock you out of a machine.
 npm install
 npm run app          # desktop app, with the native layer
 npm run dev          # or just the frontend in a browser
-npm test             # 54 assertions
+npm test             # 73 assertions
 ```
 
 Building needs the [Tauri prerequisites](https://tauri.app/start/prerequisites/)
