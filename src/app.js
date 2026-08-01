@@ -596,7 +596,11 @@ const opt = (v,list) => list.map(o=>`<option${o===v?" selected":""}>${o}</option
 SEL = null;
 function select(chainId, i, fromCode){
   SEL = {chainId,i};
-  const ch = chainOf(chainId), r = ch.rules[i];
+  const ch = chainOf(chainId);
+  /* the chain may be gone — a fix deleted it, or the whole ruleset was
+     replaced while a deferred select was still queued */
+  if(!ch || !ch.rules[i]){ SEL = null; $("#props-body").innerHTML = EMPTY(); return; }
+  const r = ch.rules[i];
   $$(".rule").forEach(x=>x.classList.toggle("sel", x.dataset.chain===chainId && +x.dataset.i===i));
   $$(".chain").forEach(x=>x.classList.toggle("focus", x.dataset.chain===chainId));
 
@@ -704,9 +708,15 @@ function select(chainId, i, fromCode){
     if(n.oif)   parts.push(`oifname "${n.oif}"`);
     if(n.saddr) parts.push(`ip saddr ${n.saddr}`);
     if(n.daddr) parts.push(`ip daddr ${n.daddr}`);
-    if(n.proto && (n.sport||n.dport)){
-      if(n.sport) parts.push(`${n.proto} sport ${n.sport}`);
-      if(n.dport) parts.push(`${n.proto} dport ${n.dport}`);
+    /* A port with no protocol used to produce nothing at all: the branch
+       needed both, so typing a port into a rule that had never named tcp or
+       udp silently did nothing. Ports belong to a transport, so assume the
+       common one and show the user that we did. */
+    if(n.sport || n.dport){
+      const proto = n.proto || "tcp";
+      if(!n.proto){ n.proto = proto; const sel = $("#f-proto"); if(sel) sel.value = proto; }
+      if(n.sport) parts.push(`${proto} sport ${n.sport}`);
+      if(n.dport) parts.push(`${proto} dport ${n.dport}`);
     } else if(n.proto) parts.push(`meta l4proto ${n.proto}`);
     if(q.limit) parts.push(`limit rate ${q.limit}`);
     r.expr = parts.join(" ");
@@ -755,7 +765,14 @@ RERENDER.push(()=>{
   if(SEL) select(SEL.chainId, SEL.i);
   else $("#props-body").innerHTML = EMPTY();
 });
-setTimeout(()=>select("inet fw/input",4),400);
+/* Open on something real rather than a hard-coded chain that an imported or
+   empty ruleset will not have. */
+setTimeout(()=>{
+  if(SEL) return;
+  const ch = MODEL.chains.find(c=>c.hook==="input" && c.rules.length) ||
+             MODEL.chains.find(c=>c.rules.length);
+  if(ch) select(UID(ch), Math.min(4, ch.rules.length-1));
+},400);
 
 /* ══ PACKET SIMULATOR ═══════════════════════════════════════════════════
    The trace is evaluated against the same MODEL the code is emitted from,
@@ -2541,10 +2558,38 @@ $("#g-empty")?.addEventListener("click", startEmpty);
    not a way to get rid of something permanently. */
 $("#sample-tag").addEventListener("click", openWelcome);
 
-$("#btn-new").addEventListener("click", ()=>{
-  if(HIST.past.length && !project.sample &&
-     !confirm(t("Discard the current ruleset and start empty?",
-                "¿Descartar el ruleset actual y empezar en blanco?"))) return;
+/* The app's own confirmation, not window.confirm: a native modal is blocked
+   in some webviews and looks wrong against a frameless window. */
+function confirmDialog(title, body, ok){
+  return new Promise(resolve=>{
+    $("#cf-title").textContent = title;
+    $("#cf-body").textContent = body;
+    $("#cf-yes").textContent = ok;
+    const scrim = $("#scrim-confirm");
+    scrim.classList.add("on");
+    const done = v => { scrim.classList.remove("on"); cleanup(); resolve(v); };
+    const onYes = ()=>done(true), onNo = ()=>done(false);
+    const onKey = e => { if(e.key==="Escape") done(false); };
+    function cleanup(){
+      $("#cf-yes").removeEventListener("click", onYes);
+      $("#cf-no").removeEventListener("click", onNo);
+      document.removeEventListener("keydown", onKey);
+    }
+    $("#cf-yes").addEventListener("click", onYes);
+    $("#cf-no").addEventListener("click", onNo);
+    document.addEventListener("keydown", onKey);
+  });
+}
+
+$("#btn-new").addEventListener("click", async ()=>{
+  if(HIST.past.length && !project.sample){
+    const go_ahead = await confirmDialog(
+      t("Discard the current ruleset?","¿Descartar el ruleset actual?"),
+      t("You have unsaved edits. Starting empty replaces them — Ctrl+Z will bring them back.",
+        "Tienes ediciones sin guardar. Empezar en blanco las reemplaza — Ctrl+Z las recupera."),
+      t("Start empty","Empezar en blanco"));
+    if(!go_ahead) return;
+  }
   startEmpty();
   toast(t("New ruleset — Ctrl+Z to bring the old one back",
           "Ruleset nuevo — Ctrl+Z recupera el anterior"));
