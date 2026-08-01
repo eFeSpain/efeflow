@@ -197,11 +197,26 @@ $("#dw-toggle").addEventListener("click",e=>{
 /* ══ OBJECT LIBRARY ═════════════════════════════════════════════════════ */
 const CH_ = () => t("chains","cadenas"), CH1 = () => t("chain","cadena"), RL_ = () => t("rules","reglas");
 const LIB = () => [
-  [t("Tables","Tablas"),"TB",[["inet fw",`4 ${CH_()}`],["ip nat",`2 ${CH_()}`],["netdev ingress",`1 ${CH1()}`],["bridge filter","—"],[t("+ new table","+ nueva tabla"),""]]],
+  /* the tables and sets your ruleset has, not four invented ones */
+  [t("Tables","Tablas"),"TB", (()=>{
+     const seen = new Map();
+     MODEL.chains.forEach(c=> seen.set(c.table, (seen.get(c.table)||0)+1));
+     const rows = [...seen].map(([n,k])=>[n, `${k} ${k===1?CH1():CH_()}`]);
+     return rows.length ? rows : [["inet filter", `0 ${CH_()}`]];
+   })()],
   [t("Chains","Cadenas"),"CH",[[t("base chain","cadena base"),""],[t("regular chain","cadena regular"),""],["prerouting",""],["input",""],["forward",""],["output",""],["postrouting",""]]],
-  ["Sets","SE",[["@admin_nets","6"],["@mgmt_ports","4"],["@blocklist","1.2k"],["@vpn_peers","12"],["@cdn_edges","38"]]],
+  ["Sets","SE", MODEL.sets.length
+     ? MODEL.sets.map(s=>["@"+s.n, s.el.length>999 ? (s.el.length/1000).toFixed(1)+"k" : String(s.el.length)])
+     : [[t("no sets yet","aún sin sets"),""]]],
   ["Maps","MP",[["@port_fwd","3"],["verdict map",""],[t("+ new map","+ nuevo map"),""]]],
-  ["Interfaces","IF",[["wan0","WAN"],["br-lan","LAN"],["wg0","VPN"],["docker0","CTR"],["vlan20","k8s"],["vlan30","iot"]]],
+  /* derived: the interfaces your rules actually name, plus the conventional
+     few to start from when there are none yet. An interface is a string in a
+     rule, so this list can only ever be a suggestion. */
+  [t("Interfaces","Interfaces"),"IF", (()=>{
+     const used = interfaces();
+     if(used.length) return used.map(e=>[e.name, zoneOf(e.name)[1].toLowerCase()]);
+     return [["lo","loopback"],["eth0","wan"],["eth1","lan"],["wg0","vpn"],["docker0","ctr"]];
+   })()],
   [t("Networks","Redes"),"NW",[["10.10.0.0/24",""],["10.20.0.0/16",""],["172.17.0.0/16",""],["fd00::/8",""],["0.0.0.0/0",""]]],
   [t("Services","Servicios"),"SV",[["ssh","22"],["https","443"],["http","80"],["dns","53"],["wireguard","51820"],["winbox","8291"],["snmp","161"]]],
   [t("Protocols","Protocolos"),"PR",[["tcp",""],["udp",""],["icmp",""],["icmpv6",""],["sctp",""],["esp",""],["ah",""]]],
@@ -230,6 +245,8 @@ function renderLibrary(){
 }
 renderLibrary();
 RERENDER.push(renderLibrary);
+/* the library mirrors the ruleset, so it has to follow it */
+MODEL_HOOKS.push(renderLibrary);
 $("#lib-filter").addEventListener("input",e=>{
   const q = e.target.value.toLowerCase().trim();
   $$(".cat").forEach(c=>{
@@ -656,8 +673,10 @@ function select(chainId, i, fromCode){
           <div class="fld"><span class="lbl">${t("Dest. port","Puerto destino")}</span><input type="text" id="f-dport" value="${esc(p.dport)}" placeholder="${t("any","cualquiera")}"></div>
         </div>
         <div class="row2">
-          <div class="fld"><span class="lbl">${t("Input interface","Interfaz entrada")}</span><select id="f-iif">${opt(p.iif,["","lo","wan0","br-lan","wg0","docker0","vlan20","vlan30"])}</select></div>
-          <div class="fld"><span class="lbl">${t("Output interface","Interfaz salida")}</span><select id="f-oif">${opt(p.oif,["","lo","wan0","br-lan","wg0","docker0","vlan20","vlan30"])}</select></div>
+          <div class="fld"><span class="lbl">${t("Input interface","Interfaz entrada")}</span>
+            <input type="text" id="f-iif" list="dl-ifaces" value="${esc(p.iif)}" placeholder="${t("any","cualquiera")}" spellcheck="false"></div>
+          <div class="fld"><span class="lbl">${t("Output interface","Interfaz salida")}</span>
+            <input type="text" id="f-oif" list="dl-ifaces" value="${esc(p.oif)}" placeholder="${t("any","cualquiera")}" spellcheck="false"></div>
         </div>
         <div class="fld"><span class="lbl">${t("Conntrack state","Estado de conntrack")}</span>
           <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -943,14 +962,28 @@ function runSim(){
 /* ── form ⇄ packet ── */
 const HOOK_LABEL = {in:["prerouting","input"], fwd:["prerouting","forward","postrouting"], out:["output","postrouting"]};
 
+/* An interface in nftables is a name inside a rule, not a declared object.
+   Offering a closed list meant a rule mentioning vlan40 could not be edited
+   without losing it — the select had no option to hold it. Suggest, never
+   restrict. */
+export function ifaceNames(){
+  return [...new Set([...interfaces().map(e=>e.name), "lo"])].sort();
+}
+
 function fillInterfaces(){
-  const names = interfaces().map(e=>e.name);
-  ["lo", ...names].forEach(n=>{ if(!names.includes(n) && n!=="lo") names.push(n); });
-  const opts = extra => [`<option value=""></option>`,
-    ...[...new Set([...names,"lo"])].map(n=>`<option>${esc(n)}</option>`)].join("");
+  const names = ifaceNames();
+  const dl = $("#dl-ifaces");
+  if(dl) dl.innerHTML = names.map(n=>`<option value="${esc(n)}">`).join("");
+
+  const opts = [`<option value=""></option>`,
+    ...names.map(n=>`<option>${esc(n)}</option>`)].join("");
   const iif = $("#sim-iif"), oif = $("#sim-oif");
-  iif.innerHTML = opts(); oif.innerHTML = opts();
-  iif.value = packet.iif || ""; oif.value = packet.oif || "";
+  /* keep whatever the packet names even if no rule mentions it yet */
+  [["#sim-iif", packet.iif], ["#sim-oif", packet.oif]].forEach(([sel, val])=>{
+    const n = $(sel); if(!n) return;
+    n.innerHTML = opts + (val && !names.includes(val) ? `<option>${esc(val)}</option>` : "");
+    n.value = val || "";
+  });
 }
 
 function syncForm(){
