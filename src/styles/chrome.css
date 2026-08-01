@@ -351,6 +351,35 @@
   margin: 0 2px;
 }
 
+/* ── chain cards are arrangeable too ───────────────────────────────────
+   The header is the handle; the body holds rules that drag on their own. */
+.chain .chain-hd,
+.chain .chain-meta {
+  cursor: grab;
+  touch-action: none;
+}
+.chain.dragging {
+  z-index: 20;
+  cursor: grabbing;
+  border-color: var(--aqua-line);
+  box-shadow: 0 0 0 1px var(--aqua-line), 0 24px 54px -14px rgba(0, 0, 0, 0.9),
+    0 0 50px -10px rgba(57, 213, 255, 0.42);
+}
+.chain.dragging .chain-hd {
+  cursor: grabbing;
+}
+.chain .chain-hd .cn,
+.chain .chain-meta {
+  user-select: none;
+}
+#chain-reset {
+  color: var(--t3);
+}
+#chain-reset.on {
+  color: var(--aqua);
+  background: var(--aqua-wash);
+}
+
 /* ── topology cards are arrangeable ────────────────────────────────── */
 .topo-canvas .node {
   cursor: grab;

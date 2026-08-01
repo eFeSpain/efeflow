@@ -38,6 +38,11 @@ const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
 const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const el = (tag,c,h)=>{const n=document.createElement(tag); if(c)n.className=c; if(h!=null)n.innerHTML=h; return n;};
+/* chain and interface keys contain "/" and spaces, so they need escaping
+   before they go into an attribute selector. Declared here with the other
+   helpers because layout runs at module evaluation and a const declared
+   further down would still be in its dead zone. */
+const cssEsc = s => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, "\\$&");
 
 /* the screens live at document root while authoring; dock them into the shell */
 $$(".screen").forEach(s=>$("#screens").appendChild(s));
@@ -237,40 +242,81 @@ const HOOK_X = {prerouting:88, input:392, forward:696, output:1000, postrouting:
 /* nft prints priorities by name; both directions are needed for round-trip */
 
 const ruler = $("#ruler");
-const chainH = ch => 96 + ch.rules.length*33;
 POS = {}, LANES = [];
-/* the canvas is a field, not a freeform board: x is the hook, y is the
-   priority. Layout is derived, so an imported ruleset lands correctly. */
+/* chains the user has placed by hand, keyed by table/chain */
+const CHAIN_POS = {};
+
+/* x is the hook, y is the priority — the canvas is a field, not a freeform
+   board. Only the column is decided here; the rows need real heights. */
 function layout(){
   LANES = [...new Set(MODEL.chains.filter(c=>c.hook).map(c=>c.prio))].sort((a,b)=>a-b);
-  const laneY = p => 96 + Math.max(0, LANES.indexOf(p)) * 150;
   POS = {};
-  const next = {};                       /* stack chains sharing a cell */
   MODEL.chains.filter(c=>c.hook).forEach(ch=>{
-    const x = HOOK_X[ch.hook] ?? HOOK_X.prerouting;
-    const k = ch.hook+"|"+ch.prio;
-    const y = next[k] ?? laneY(ch.prio);
-    POS[UID(ch)] = {x,y};
-    next[k] = y + chainH(ch) + 26;
+    POS[UID(ch)] = {x: HOOK_X[ch.hook] ?? HOOK_X.prerouting, lane: ch.prio, hook: ch.hook};
   });
   /* a regular chain has no hook of its own — hang it under whoever jumps to it */
   MODEL.chains.filter(c=>!c.hook).forEach(ch=>{
     const src = MODEL.chains.find(c=>c.table===ch.table && c.rules.some(r=>
       (r.verdict==="jump"||r.verdict==="goto") && r.to===ch.id));
-    const base = (src && POS[UID(src)]) || {x:HOOK_X.forward, y:96};
-    let y = base.y + (src?chainH(src):0) + 44;
-    while(Object.entries(POS).some(([id,p])=>p.x===base.x && Math.abs(p.y-y) < 70)) y += 70;
-    POS[UID(ch)] = {x:base.x, y};
+    POS[UID(ch)] = {x: (src && POS[UID(src)]?.x) ?? HOOK_X.forward, lane: null, after: src && UID(src)};
   });
+}
 
-  const bottom = Math.max(620, ...MODEL.chains.map(ch=>
-    (POS[UID(ch)]?.y ?? 0) + chainH(ch))) + 70;
-  $("#canvas").style.height = bottom+"px";
+/* Second pass, once the cards are in the document. A chain card grows with its
+   rule count, so a fixed lane pitch was always going to collide — which is
+   exactly what happened in prerouting, where raw_pre ran into nat_pre. */
+function placeChains(){
+  const TOP = 96, GUT = 34, LANE_GAP = 46;
+  const elOf = uid => $(`.chain[data-chain="${cssEsc(uid)}"]`);
+  const H = uid => elOf(uid)?.offsetHeight || 160;
+
+  const laneTop = {};
+  let y = TOP;
+
+  for(const prio of LANES){
+    laneTop[prio] = y;
+    let tallest = 0;
+    /* several chains can share one hook at one priority; stack them */
+    for(const hook of Object.keys(HOOK_X)){
+      const here = MODEL.chains.filter(c => c.hook === hook && c.prio === prio);
+      let cy = y;
+      for(const ch of here){
+        POS[UID(ch)].y = cy;
+        cy += H(UID(ch)) + GUT;
+      }
+      tallest = Math.max(tallest, cy - y);
+    }
+    y += Math.max(tallest, 120) + LANE_GAP;
+  }
+
+  /* regular chains sit below the chain that jumps to them */
+  for(const ch of MODEL.chains.filter(c => !c.hook)){
+    const p = POS[UID(ch)];
+    const src = p.after;
+    p.y = src && POS[src]?.y !== undefined ? POS[src].y + H(src) + 46 : y;
+    while(Object.entries(POS).some(([uid, q]) =>
+      uid !== UID(ch) && q.x === p.x && q.y !== undefined &&
+      Math.abs(q.y - p.y) < 80)) p.y += 80;
+  }
+
+  /* apply, honouring anything dragged */
+  for(const ch of MODEL.chains){
+    const uid = UID(ch), node = elOf(uid), saved = CHAIN_POS[uid];
+    if(!node) continue;
+    const p = POS[uid];
+    if(saved){ p.x = saved.x; p.y = saved.y; }
+    node.style.left = p.x + "px";
+    node.style.top  = p.y + "px";
+  }
+
+  const bottom = Math.max(620, ...MODEL.chains.map(ch =>
+    (POS[UID(ch)]?.y ?? 0) + H(UID(ch)))) + 80;
+  $("#canvas").style.height = bottom + "px";
 
   ruler.innerHTML = LANES.map(p=>{
-    const nm = NAME_PRIO[String(p)];
-    return `<div class="tick" style="top:${laneY(p)}px"><b>${p>0?"+"+p:p}</b></div>
-            ${nm?`<div class="tick sub" style="top:${laneY(p)+18}px">
+    const nm = NAME_PRIO[String(p)], top = laneTop[p] ?? TOP;
+    return `<div class="tick" style="top:${top}px"><b>${p>0?"+"+p:p}</b></div>
+            ${nm?`<div class="tick sub" style="top:${top+18}px">
               <span style="font-size:9px;opacity:.7">${nm}</span></div>`:""}`;
   }).join("");
 }
@@ -284,7 +330,7 @@ function renderChains(){
     const p = POS[UID(ch)]; if(!p) return;
     const node = el("div","chain");
     node.dataset.chain = UID(ch);
-    node.style.left = p.x+"px"; node.style.top = p.y+"px";
+    node.style.left = p.x+"px";   /* the row comes from placeChains, after measuring */
     const polPill = ch.policy
       ? `<span class="pill ${ch.policy==="drop"?"v-drop":"v-accept"}"><span class="sw"></span>policy ${ch.policy}</span>`
       : `<span class="pill v-neutral">${t("regular","regular")}</span>`;
@@ -323,6 +369,7 @@ function renderChains(){
     });
     chainsEl.appendChild(node);
   });
+  placeChains();
   renderMinimap();
 }
 renderChains();
@@ -357,12 +404,16 @@ function drawWires(){
   svg.setAttribute("viewBox",`0 0 1680 ${h}`);
   svg.setAttribute("width","1680"); svg.setAttribute("height",String(h));
   let out = "";
+  /* straight from the DOM, so a card being dragged pulls its wires with it */
   links().forEach(([a,b,jump])=>{
-    const A = $(`.chain[data-chain="${a}"]`), B = $(`.chain[data-chain="${b}"]`);
+    const A = $(`.chain[data-chain="${cssEsc(a)}"]`), B = $(`.chain[data-chain="${cssEsc(b)}"]`);
     if(!A||!B) return;
-    const x1 = POS[a].x + A.offsetWidth, y1 = POS[a].y + A.offsetHeight/2;
-    const x2 = POS[b].x,                 y2 = POS[b].y + B.offsetHeight/2;
-    const dx = Math.max(46,(x2-x1)*.55);
+    const left = A.offsetLeft + A.offsetWidth/2 <= B.offsetLeft + B.offsetWidth/2;
+    const x1 = left ? A.offsetLeft + A.offsetWidth : A.offsetLeft;
+    const y1 = A.offsetTop + A.offsetHeight/2;
+    const x2 = left ? B.offsetLeft : B.offsetLeft + B.offsetWidth;
+    const y2 = B.offsetTop + B.offsetHeight/2;
+    const dx = Math.max(46, Math.abs(x2-x1)*.55) * (left ? 1 : -1);
     out += `<path d="M${x1} ${y1} C${x1+dx} ${y1} ${x2-dx} ${y2} ${x2} ${y2}"${jump?' stroke-dasharray="4 5"':''}/>`;
     out += `<circle class="cap" cx="${x2}" cy="${y2}" r="3"/>`;
   });
@@ -378,9 +429,11 @@ function renderMinimap(){
   const H = parseInt($("#canvas").style.height) || 920;
   const SX = 176/1680, SY = 104/H;
   mm.innerHTML = MODEL.chains.map(ch=>{
-    const p = POS[UID(ch)]; if(!p) return "";
-    return `<div class="blk${SEL && SEL.chainId===UID(ch)?" a":""}" style="left:${p.x*SX}px;top:${p.y*SY}px;
-             width:${284*SX}px;height:${Math.max(2,chainH(ch)*SY)}px"></div>`;
+    const node = $(`.chain[data-chain="${cssEsc(UID(ch))}"]`);
+    if(!node) return "";
+    return `<div class="blk${SEL && SEL.chainId===UID(ch)?" a":""}"
+             style="left:${node.offsetLeft*SX}px;top:${node.offsetTop*SY}px;
+             width:${node.offsetWidth*SX}px;height:${Math.max(2,node.offsetHeight*SY)}px"></div>`;
   }).join("") + `<div class="vp" id="mm-vp"></div>`;
   syncViewport();
 }
@@ -401,6 +454,56 @@ $("#mm").addEventListener("pointerdown", e=>{
   sc.scrollTo({left:(e.clientX-b.left)/176*1680*zoom - sc.clientWidth/2,
                top:(e.clientY-b.top)/104*H*zoom - sc.clientHeight/2, behavior:"smooth"});
 });
+
+/* ── chains are draggable by their header ───────────────────────────────
+   Not by the body: rules there are draggable in their own right, for
+   reordering. The header is the handle, which is also where you would grab a
+   window. Auto-layout still owns everything you have not touched. */
+(function chainDrag(){
+  const scroll = $("#cscroll");
+  let d = null;
+
+  scroll.addEventListener("pointerdown", e=>{
+    if(e.button !== 0 || TOOL === "pan") return;
+    const grip = e.target.closest(".chain-hd, .chain-meta");
+    if(!grip || e.target.closest("button")) return;
+    const node = grip.closest(".chain");
+    d = {node, dx: e.clientX/zoom - node.offsetLeft, dy: e.clientY/zoom - node.offsetTop, moved:false};
+    node.setPointerCapture(e.pointerId);
+    node.classList.add("dragging");
+    e.preventDefault();
+  });
+
+  scroll.addEventListener("pointermove", e=>{
+    if(!d) return;
+    d.moved = true;
+    const x = Math.max(70, e.clientX/zoom - d.dx);
+    const y = Math.max(46, e.clientY/zoom - d.dy);
+    d.node.style.left = x + "px";
+    d.node.style.top  = y + "px";
+    drawWires();
+  });
+
+  const end = ()=>{
+    if(!d) return;
+    if(d.moved){
+      CHAIN_POS[d.node.dataset.chain] = {x: d.node.offsetLeft, y: d.node.offsetTop};
+      renderMinimap();
+      $("#chain-reset")?.classList.add("on");
+    }
+    d.node.classList.remove("dragging");
+    d = null;
+  };
+  scroll.addEventListener("pointerup", end);
+  scroll.addEventListener("pointercancel", end);
+})();
+
+$("#chain-reset").addEventListener("click", resetChainLayout);
+function resetChainLayout(){
+  Object.keys(CHAIN_POS).forEach(k=>delete CHAIN_POS[k]);
+  $("#chain-reset")?.classList.remove("on");
+  renderChains(); drawWires();
+}
 
 /* zoom */
 function setZoom(z){
@@ -1992,7 +2095,6 @@ function placeTopo(laid, W, H){
     core.style.top  = (saved ? saved.y : H / 2 - core.offsetHeight / 2) + "px";
   }
 }
-const cssEsc = s => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, "\\$&");
 
 const TCOL = {accept:"var(--v-accept)", drop:"var(--v-drop)", reject:"var(--v-reject)",
               dnat:"var(--v-dnat)", snat:"var(--v-snat)", jump:"var(--v-jump)", log:"var(--v-log)"};
