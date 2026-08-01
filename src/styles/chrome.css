@@ -1,0 +1,265 @@
+/* Window chrome and the boot sequence. The app draws its own titlebar because
+   the frame is where a desktop app announces what it is — project name, where
+   nft will run, and whether the ruleset currently validates. */
+
+:root {
+  --titlebar-h: 38px;
+}
+
+/* the shell sits below our own titlebar */
+#app {
+  height: calc(100vh - var(--titlebar-h));
+}
+
+/* ── titlebar ──────────────────────────────────────────────────────── */
+#titlebar {
+  position: relative;
+  z-index: 60;
+  height: var(--titlebar-h);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 0 12px;
+  background: linear-gradient(180deg, #141a20, #10151a);
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+}
+#titlebar .tb-drag {
+  position: absolute;
+  inset: 0;
+  -webkit-app-region: drag;
+}
+#titlebar > * {
+  position: relative;
+}
+
+.tb-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.tb-mark {
+  width: 20px;
+  height: 20px;
+  filter: drop-shadow(0 0 6px rgba(57, 213, 255, 0.4));
+}
+.tb-name {
+  font: 300 13px var(--sans);
+  letter-spacing: -0.2px;
+  color: var(--t2);
+}
+.tb-name b {
+  font-weight: 600;
+  color: var(--brand-cyan);
+}
+
+.tb-mid {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  -webkit-app-region: drag;
+  min-width: 0;
+}
+.tb-proj {
+  font: 500 12.5px var(--sans);
+  color: var(--t1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tb-origin {
+  font: 450 10.5px var(--mono);
+  color: var(--t4);
+  white-space: nowrap;
+}
+
+.tb-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tb-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  margin-right: 6px;
+  border-radius: 99px;
+  border: 1px solid var(--line-2);
+  background: rgba(255, 255, 255, 0.04);
+  font: 500 10.5px var(--mono);
+  color: var(--t3);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), color 0.15s var(--ease);
+}
+.tb-target:hover {
+  border-color: var(--aqua-line);
+  color: var(--t1);
+}
+.tb-target .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--t4);
+  flex: none;
+}
+.tb-target.live .dot {
+  background: var(--v-accept);
+  box-shadow: 0 0 0 3px rgba(71, 224, 130, 0.15);
+}
+.tb-target.remote .dot {
+  background: var(--aqua);
+  box-shadow: 0 0 0 3px rgba(57, 213, 255, 0.15);
+}
+
+.tb-win {
+  display: flex;
+  height: var(--titlebar-h);
+}
+.tb-win button {
+  width: 44px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--t3);
+  transition: background 0.13s var(--ease), color 0.13s var(--ease);
+}
+.tb-win svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.2;
+}
+.tb-win button:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--t1);
+}
+.tb-win button.x:hover {
+  background: #e5484d;
+  color: #fff;
+}
+/* macOS keeps its own traffic lights on the left */
+:root[data-os="macos"] .tb-win {
+  display: none;
+}
+:root[data-os="macos"] #titlebar {
+  padding-left: 78px;
+}
+/* in a browser there is no window to control */
+:root:not(.desktop) .tb-win {
+  display: none;
+}
+
+/* ── boot ──────────────────────────────────────────────────────────── */
+#boot {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(700px 460px at 50% 44%, rgba(57, 213, 255, 0.09), transparent 70%),
+    #0b0f14;
+  transition: opacity 0.5s var(--ease), visibility 0.5s;
+}
+#boot.done {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.boot-mark {
+  text-align: center;
+  width: 340px;
+}
+.boot-mark svg {
+  width: 240px;
+  height: 160px;
+  display: block;
+  margin: 0 auto 6px;
+}
+
+/* each stroke draws itself in the order a packet would travel it */
+.draw {
+  stroke-dasharray: 300;
+  stroke-dashoffset: 300;
+  animation: draw 0.62s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+.d0 { animation-delay: 0.05s; }
+.d1 { animation-delay: 0.22s; }
+.d2 { animation-delay: 0.42s; }
+.d3 { animation-delay: 0.58s; }
+.d4 { animation-delay: 0.58s; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+
+.bt-nodes circle,
+.bt-tips polygon {
+  opacity: 0;
+  animation: pop 0.4s var(--ease) 1.05s forwards;
+}
+@keyframes pop {
+  from { opacity: 0; transform: scale(0.8); }
+  to   { opacity: 1; transform: none; }
+}
+.bt-nodes, .bt-tips { transform-origin: center; }
+
+.boot-wm {
+  font: 300 34px var(--sans);
+  letter-spacing: -1px;
+  color: #f2f2f2;
+  opacity: 0;
+  animation: rise 0.5s var(--ease) 0.95s forwards;
+}
+.boot-wm b { font-weight: 600; color: var(--brand-cyan); }
+.boot-sub {
+  font: 500 10px var(--sans);
+  letter-spacing: 0.42em;
+  color: #8fa6b5;
+  margin-top: 7px;
+  opacity: 0;
+  animation: rise 0.5s var(--ease) 1.15s forwards;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.boot-bar {
+  width: 172px;
+  height: 2px;
+  margin: 26px auto 0;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  opacity: 0;
+  animation: rise 0.4s var(--ease) 1.3s forwards;
+}
+.boot-bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--brand-cyan), var(--brand-blue));
+  animation: fill 0.85s cubic-bezier(0.5, 0, 0.2, 1) 1.35s forwards;
+}
+@keyframes fill { to { width: 100%; } }
+
+/* ── WebKitGTK has poor backdrop-filter; keep the layering, drop the blur ── */
+:root.no-glass .glass,
+:root.no-glass .modal,
+:root.no-glass .palette,
+:root.no-glass .props.floating {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: #171d24;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .draw { stroke-dasharray: none; stroke-dashoffset: 0; animation: none; }
+  .bt-nodes circle, .bt-tips polygon, .boot-wm, .boot-sub, .boot-bar { opacity: 1; animation: none; }
+  .boot-bar i { width: 100%; animation: none; }
+}

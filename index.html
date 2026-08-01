@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="es" data-os="web">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eFeFlow — Visual Firewall Designer</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/src/styles/app.css">
+<link rel="stylesheet" href="/src/styles/chrome.css">
+</head>
+<body>
+
+<!-- ══ BOOT ══ the mark draws itself, then the shell arrives ══════════ -->
+<div id="boot">
+  <div class="boot-mark">
+    <svg viewBox="0 0 300 200" aria-hidden="true">
+      <defs>
+        <linearGradient id="bt-trunk" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#39D5FF"/><stop offset="1" stop-color="#0078FF"/></linearGradient>
+        <linearGradient id="bt-ok" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#3AD5FF"/><stop offset="1" stop-color="#46FF75"/></linearGradient>
+        <linearGradient id="bt-no" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#4BBEFF"/><stop offset="1" stop-color="#FF5050"/></linearGradient>
+        <filter id="bt-glow"><feGaussianBlur stdDeviation="5" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <g fill="none" stroke-linecap="round" stroke-width="14" filter="url(#bt-glow)">
+        <path class="draw d0" d="M54 100H90"  stroke="url(#bt-trunk)"/>
+        <path class="draw d1" d="M90 20V180"  stroke="url(#bt-trunk)"/>
+        <path class="draw d2" d="M90 100H220" stroke="url(#bt-trunk)"/>
+        <path class="draw d3" d="M90 20H220"  stroke="url(#bt-ok)"/>
+        <path class="draw d4" d="M90 180H220" stroke="url(#bt-no)"/>
+      </g>
+      <g class="bt-nodes" fill="none" stroke-width="5">
+        <circle cx="90"  cy="100" r="12" stroke="#3AD5FF" stroke-width="6"/>
+        <circle cx="170" cy="20"  r="10" stroke="#46FF75"/>
+        <circle cx="170" cy="100" r="10" stroke="#39D5FF"/>
+        <circle cx="170" cy="180" r="10" stroke="#FF5050"/>
+      </g>
+      <g class="bt-tips">
+        <polygon points="220,20 245,20 232,8 245,20 232,32" fill="#46FF75"/>
+        <polygon points="220,100 245,100 232,88 245,100 232,112" fill="#39D5FF"/>
+        <polygon points="220,180 245,180 232,168 245,180 232,192" fill="#FF5050"/>
+      </g>
+    </svg>
+    <div class="boot-wm">eFe<b>Flow</b></div>
+    <div class="boot-sub">VISUAL FIREWALL DESIGNER</div>
+    <div class="boot-bar"><i></i></div>
+  </div>
+</div>
+
+<!-- ══ TITLEBAR ══ the window is frameless; this is the chrome ════════ -->
+<div id="titlebar">
+  <div class="tb-drag" data-drag></div>
+  <div class="tb-left">
+    <svg class="tb-mark" viewBox="20 4 236 192" aria-hidden="true">
+      <defs>
+        <linearGradient id="tb-trunk" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#39D5FF"/><stop offset="1" stop-color="#0078FF"/></linearGradient>
+        <linearGradient id="tb-ok" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#3AD5FF"/><stop offset="1" stop-color="#46FF75"/></linearGradient>
+        <linearGradient id="tb-no" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#4BBEFF"/><stop offset="1" stop-color="#FF5050"/></linearGradient>
+      </defs>
+      <g fill="none" stroke-width="19" stroke-linecap="round">
+        <path d="M90 20V180" stroke="url(#tb-trunk)"/>
+        <path d="M90 20H228"  stroke="url(#tb-ok)"/>
+        <path d="M38 100H228" stroke="url(#tb-trunk)"/>
+        <path d="M90 180H228" stroke="url(#tb-no)"/>
+      </g>
+      <circle cx="90" cy="100" r="17" fill="none" stroke="#39D5FF" stroke-width="10"/>
+    </svg>
+    <span class="tb-name">eFe<b>Flow</b></span>
+  </div>
+  <div class="tb-mid" data-drag>
+    <span class="tb-proj" id="tb-proj">edge-fw-01</span>
+    <span class="tb-origin" id="tb-origin"></span>
+  </div>
+  <div class="tb-right">
+    <span class="tb-target" id="tb-target" data-tt="Where nft runs|Dónde se ejecuta nft">
+      <span class="dot"></span><span id="tb-target-t">—</span></span>
+    <div class="tb-win">
+      <button data-win="minimize" aria-label="Minimize"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button>
+      <button data-win="maximize" aria-label="Maximize"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg></button>
+      <button data-win="close" class="x" aria-label="Close"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></button>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+
+  <!-- ══ TOP TOOLBAR ══ -->
+  <div id="bar">
+    <button class="brand" data-go="about" data-tt="About eFeFlow|Acerca de eFeFlow">
+      <svg class="mk" viewBox="20 4 236 192" aria-hidden="true">
+        <defs>
+          <linearGradient id="mk-trunk" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#39D5FF"/><stop offset="1" stop-color="#0078FF"/></linearGradient>
+          <linearGradient id="mk-ok" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#3AD5FF"/><stop offset="1" stop-color="#46FF75"/></linearGradient>
+          <linearGradient id="mk-no" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#4BBEFF"/><stop offset="1" stop-color="#FF5050"/></linearGradient>
+        </defs>
+        <g fill="none" stroke-width="19" stroke-linecap="round">
+          <path d="M90 20V180" stroke="url(#mk-trunk)"/>
+          <path d="M90 20H228"  stroke="url(#mk-ok)"/>
+          <path d="M38 100H228" stroke="url(#mk-trunk)"/>
+          <path d="M90 180H228" stroke="url(#mk-no)"/>
+        </g>
+        <circle cx="90" cy="100" r="17" fill="none" stroke="#39D5FF" stroke-width="10"/>
+      </svg>
+      <span class="wm">eFe<b>Flow</b></span>
+    </button>
+    <div class="sep"></div>
+
+    <div class="proj">
+      <svg class="ico sm dim" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <span class="nm">edge-fw-01</span>
+      <span class="dimmer mono" style="font-size:11px">/ inet fw</span>
+      <span class="dot-live" title="Unsaved changes"></span>
+    </div>
+
+    <div class="sep"></div>
+    <button class="tb icon" id="undo" data-tt="Undo — Ctrl+Z|Deshacer — Ctrl+Z"><svg class="ico" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-4"/></svg></button>
+    <button class="tb icon" id="redo" disabled data-tt="Redo — Ctrl+Y|Rehacer — Ctrl+Y"><svg class="ico" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h4"/></svg></button>
+
+    <div class="sep"></div>
+    <button class="tb" data-go="open"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span data-t="Open|Abrir">Open</span></button>
+    <button class="tb"><svg class="ico" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg><span data-t="Save|Guardar">Save</span></button>
+
+    <div class="omni" role="button" id="omni-open">
+      <svg class="ico sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <span class="gr" data-t="Search rules, sets, interfaces…|Buscar reglas, sets, interfaces…">Search rules, sets, interfaces…</span>
+      <kbd>Ctrl K</kbd>
+    </div>
+
+    <div class="lang" id="lang">
+      <button data-lang="es">ES</button><button data-lang="en">EN</button>
+    </div>
+
+    <button class="tb" data-go="validate"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 4.5 3.2 8.4 8 9.5 4.8-1.1 8-5 8-9.5V6z"/><path d="m9 12 2 2 4-4"/></svg><span data-t="Validate|Validar">Validate</span><span class="pill v-reject" style="height:16px;padding:0 5px"></span></button>
+    <button class="tb accent" data-go="sim"><svg class="ico" viewBox="0 0 24 24"><path d="M5 3v18l15-9z"/></svg><span data-t="Simulate|Simular">Simulate</span></button>
+    <button class="tb pri" data-go="export"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg><span data-t="Export nftables|Exportar nftables">Export nftables</span></button>
+  </div>
+
+  <!-- ══ BODY ══ -->
+  <div id="body">
+    <nav id="rail"></nav>
+    <div id="screens"></div>
+  </div>
+
+  <!-- ══ STATUS BAR ══ -->
+  <div id="status">
+    <button class="st"><span class="sw" style="background:var(--v-accept)"></span><span data-t="Syntax valid|Sintaxis válida">Syntax valid</span></button>
+    <button class="st" data-go="validate"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span id="st-problems">—</span></button>
+    <button class="st"><svg class="ico sm" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>main <span class="dimmer">↑2</span></button>
+    <div class="spacer"></div>
+    <span class="st" id="st-counts">—</span>
+    <span class="st"><span data-t="Worst case|Peor caso">Worst case</span>&nbsp;<span class="num" id="st-worst" style="color:var(--t2)">—</span>&nbsp;<span data-t="evals/pkt|evals/paq">evals/pkt</span></span>
+    <span class="st">nft <span class="num">1.0.9</span> · kernel <span class="num">6.8</span></span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SCREEN · VISUAL RULE EDITOR
+     ══════════════════════════════════════════════════════════════════ -->
+
+<section class="screen" id="s-editor">
+
+  <!-- OBJECT LIBRARY -->
+  <aside class="lib">
+    <div class="lib-search">
+      <input type="text" data-tp="Filter objects…|Filtrar objetos…" id="lib-filter">
+    </div>
+    <div class="lib-body" id="lib-body"></div>
+  </aside>
+
+  <!-- CANVAS + CODE -->
+  <div class="mid">
+    <div class="canvas-wrap">
+      <div class="canvas-scroll" id="cscroll">
+        <div class="canvas" id="canvas">
+          <div class="hookrail">
+            <div class="rl"><span class="lbl" style="font-size:9px">PRIO</span></div>
+            <div class="hk" data-hook="prerouting"><span class="hn"></span>prerouting</div>
+            <div class="hk" data-hook="input"><span class="hn"></span>input</div>
+            <div class="hk" data-hook="forward"><span class="hn"></span>forward</div>
+            <div class="hk" data-hook="output"><span class="hn"></span>output</div>
+            <div class="hk" data-hook="postrouting"><span class="hn"></span>postrouting</div>
+          </div>
+          <div class="ruler" id="ruler"></div>
+          <svg id="wires"></svg>
+          <div id="chains"></div>
+        </div>
+      </div>
+
+      <div class="legend glass">
+        <div class="row" style="color:var(--v-accept)"><i></i>ACCEPT</div>
+        <div class="row" style="color:var(--v-drop)"><i></i>DROP</div>
+        <div class="row" style="color:var(--v-reject)"><i></i>REJECT</div>
+        <div class="row" style="color:var(--v-jump)"><i></i>JUMP</div>
+        <div class="row" style="color:var(--v-dnat)"><i></i>DNAT</div>
+        <div class="row" style="color:var(--v-snat)"><i></i>SNAT</div>
+        <div class="row" style="color:var(--v-log)"><i></i>LOG</div>
+      </div>
+
+      <div class="cv-tools glass">
+        <button data-tool="select" data-tt="Select — V|Seleccionar — V" class="on"><svg class="ico" viewBox="0 0 24 24"><path d="m4 3 7 17 2.5-6.5L20 11z"/></svg></button>
+        <button data-tool="pan" data-tt="Pan — Space|Desplazar — Espacio"><svg class="ico" viewBox="0 0 24 24"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5a1.5 1.5 0 0 1 3 0V12m0-1a1.5 1.5 0 0 1 3 0v5a5 5 0 0 1-5 5h-2a5 5 0 0 1-4.2-2.3L6 15a1.5 1.5 0 0 1 2.5-1.6L9 14"/></svg></button>
+        <div class="div"></div>
+        <button id="zo" data-tt="Zoom out|Alejar"><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-3.5-3.5"/></svg></button>
+        <span class="zl" id="zl">100%</span>
+        <button id="zi" data-tt="Zoom in|Acercar"><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M11 8v6M20 20l-3.5-3.5"/></svg></button>
+        <div class="div"></div>
+        <button data-tt="Fit to view — Shift+1|Ajustar a la vista — Shift+1" id="zf"><svg class="ico" viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg></button>
+      </div>
+
+      <div class="minimap glass">
+        <div class="mm-in" id="mm"></div>
+      </div>
+    </div>
+
+    <!-- CODE DRAWER -->
+    <div class="drawer" id="drawer">
+      <div class="dw-hd">
+        <button class="dw-tab on" data-dw="code"><svg class="ico sm" viewBox="0 0 24 24"><path d="m9 8-5 4 5 4M15 8l5 4-5 4"/></svg><span data-t="Generated nftables|nftables generado">Generated nftables</span><span class="n">0</span></button>
+        <button class="dw-tab" data-dw="diff"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg><span data-t="Diff|Diferencias">Diff</span><span class="n">—</span></button>
+        <button class="dw-tab" data-dw="problems"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span data-t="Problems|Problemas">Problems</span><span class="n">0</span></button>
+        <div style="flex:1"></div>
+        <div class="pill v-accept" style="margin-right:6px"><span class="sw"></span><span data-t="in sync|sincronizado">in sync</span></div>
+        <button class="tb icon" data-tt="Copy|Copiar"><svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></button>
+        <button class="tb icon" data-tt="Collapse|Contraer" id="dw-toggle"><svg class="ico" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+      </div>
+      <div class="dw-body" id="dw-body"><pre class="code" id="codeout"></pre><pre class="code" id="dw-diff" style="display:none"></pre><div id="dw-problems" style="display:none"></div></div>
+    </div>
+  </div>
+
+  <!-- PROPERTIES -->
+  <aside class="props">
+    <div class="panel-hd">
+      <span class="lbl" data-t="Properties|Propiedades">Properties</span>
+      <button class="tb icon" id="props-float" data-tt="Float panel|Panel flotante"><svg class="ico sm" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
+      <button class="tb icon" data-tt="More|Más"><svg class="ico sm" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
+    </div>
+    <div class="props-body" id="props-body"></div>
+  </aside>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SCREEN · DASHBOARD  (project health — this is a designer, not a monitor)
+     ══════════════════════════════════════════════════════════════════ -->
+
+<section class="screen" id="s-dash">
+  <div class="dash">
+    <div class="dash-hd">
+      <div style="flex:1">
+        <h1>edge-fw-01</h1>
+        <div class="sub" data-t="Family &lt;b&gt;inet&lt;/b&gt; · imported from &lt;b&gt;nft list ruleset&lt;/b&gt; 2 h ago · round-trip editing &lt;b&gt;enabled&lt;/b&gt;|Familia &lt;b&gt;inet&lt;/b&gt; · importado con &lt;b&gt;nft list ruleset&lt;/b&gt; hace 2 h · edición de ida y vuelta &lt;b&gt;activada&lt;/b&gt;" data-html>Family <b>inet</b> · imported from <b>nft list ruleset</b> 2 h ago · round-trip editing <b>enabled</b></div>
+      </div>
+      <button class="tb" data-go="open"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg><span data-t="Import ruleset|Importar ruleset">Import ruleset</span></button>
+      <button class="tb accent" data-go="editor"><svg class="ico" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg><span data-t="Open editor|Abrir editor">Open editor</span></button>
+    </div>
+
+    <div class="grid g3" style="margin-bottom:14px">
+      <div class="card kpi">
+        <div class="lbl" data-t="Rules|Reglas">Rules</div>
+        <div class="v" id="kpi-rules">—</div>
+        <div class="d"><span style="color:var(--v-accept)">+6</span>&nbsp;<span data-t="since last export|desde la última exportación">since last export</span></div>
+        <svg class="spark" viewBox="0 0 200 38" preserveAspectRatio="none">
+          <path d="M0 30 20 28 40 29 60 24 80 25 100 19 120 20 140 14 160 15 180 8 200 6" fill="none" stroke="var(--aqua)" stroke-width="1.5"/>
+          <path d="M0 30 20 28 40 29 60 24 80 25 100 19 120 20 140 14 160 15 180 8 200 6 200 38 0 38Z" fill="url(#sg)" opacity=".3"/>
+          <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--aqua)"/><stop offset="1" stop-color="transparent"/></linearGradient></defs>
+        </svg>
+      </div>
+      <div class="card kpi">
+        <div class="lbl" data-t="Worst-case evaluations|Evaluaciones en el peor caso">Worst-case evaluations</div>
+        <div class="v"><span id="kpi-worst">—</span><span style="font-size:13px;color:var(--t4);letter-spacing:0" data-t=" /pkt| /paq"> /pkt</span></div>
+        <div class="d" data-t="along the longest packet path|por la ruta de paquete más larga">along the longest packet path</div>
+        <div class="mini-bar" style="margin:10px 0 0"><i style="width:32%"></i></div>
+      </div>
+      <div class="card kpi">
+        <div class="lbl" data-t="Ruleset health|Salud del ruleset">Ruleset health</div>
+        <div class="v" id="kpi-grade">—</div>
+        <div class="d" id="kpi-breakdown" style="display:flex;gap:12px"></div>
+      </div>
+    </div>
+
+    <div class="card hookmap" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:9px">
+        <h3 style="font:600 13px var(--sans);flex:1" data-t="Packet path|Ruta del paquete">Packet path</h3>
+        <span class="chip">inet fw</span><span class="chip">ip nat</span><span class="chip">netdev ingress</span>
+        <span class="chip" style="color:var(--t4)">+1</span>
+      </div>
+      <div class="hm-track" id="hook-map"></div>
+    </div>
+
+    <div class="grid g2">
+      <div class="card">
+        <div class="hd"><h3 data-t="Version history|Historial de versiones">Version history</h3>
+          <span class="chip"><svg class="ico sm" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>main</span>
+          <button class="tb icon"><svg class="ico sm" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
+        </div>
+        <div class="tl" id="tl-history"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd"><h3>Sets</h3><span class="lbl" style="font-weight:600" data-t="Referenced by|Referenciado por">Referenced by</span>
+          <button class="tb icon" data-go="sets"><svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button></div>
+        <div class="lst" id="dash-sets"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SCREEN · PACKET SIMULATOR
+     ══════════════════════════════════════════════════════════════════ -->
+
+<section class="screen" id="s-sim">
+  <aside class="sim-form">
+    <div class="panel-hd"><span class="lbl" data-t="Synthetic packet|Paquete sintético">Synthetic packet</span>
+      <button class="tb icon" data-tt="Reset|Reiniciar"><svg class="ico sm" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button></div>
+    <div class="body">
+      <div class="fld"><span class="lbl" data-t="Direction|Dirección">Direction</span>
+        <div class="seg" id="sim-dir">
+          <button class="on" data-dir="in"  data-t="Ingress|Entrada">Ingress</button>
+          <button data-dir="fwd" data-t="Forward|Reenvío">Forward</button>
+          <button data-dir="out" data-t="Egress|Salida">Egress</button>
+        </div>
+        <span class="lbl" id="sim-path" style="text-transform:none;letter-spacing:0;font-size:10.5px;color:var(--t4)"></span>
+      </div>
+      <div class="fld" id="fld-iif"><span class="lbl" data-t="Input interface|Interfaz de entrada">Input interface</span>
+        <select id="sim-iif"></select>
+      </div>
+      <div class="fld" id="fld-oif" style="display:none"><span class="lbl" data-t="Output interface|Interfaz de salida">Output interface</span>
+        <select id="sim-oif"></select>
+      </div>
+      <div class="row2">
+        <div class="fld"><span class="lbl" data-t="Source|Origen">Source</span><input type="text" id="sim-saddr" value="203.0.113.47"></div>
+        <div class="fld"><span class="lbl" data-t="Sport|Puerto orig.">Sport</span><input type="text" id="sim-sport" value="49812"></div>
+      </div>
+      <div class="row2">
+        <div class="fld"><span class="lbl" data-t="Destination|Destino">Destination</span><input type="text" id="sim-daddr" value="198.51.100.10"></div>
+        <div class="fld" id="fld-dport"><span class="lbl" data-t="Dport|Puerto dest.">Dport</span><input type="text" id="sim-dport" value="22"></div>
+      </div>
+      <div class="row2">
+        <div class="fld"><span class="lbl" data-t="Protocol|Protocolo">Protocol</span>
+          <select id="sim-proto"><option>tcp</option><option>udp</option><option>icmp</option><option>ipv6-icmp</option></select></div>
+        <div class="fld"><span class="lbl">ct state</span>
+          <select id="sim-state"><option>new</option><option>established</option><option>related</option><option>invalid</option></select></div>
+      </div>
+      <div class="fld" id="fld-flags"><span class="lbl" data-t="TCP flags|Flags TCP">TCP flags</span>
+        <div class="preset" id="sim-flags">
+          <button data-flag="syn" class="on">syn</button><button data-flag="ack">ack</button>
+          <button data-flag="fin">fin</button><button data-flag="rst">rst</button><button data-flag="psh">psh</button>
+        </div>
+      </div>
+      <div class="inline"><span class="lbl" data-t="Connection tracking|Seguimiento de conexiones">Connection tracking</span>
+        <span class="sw-toggle on" id="opt-ct" data-tt="Off means the packet is untracked — ct state rules cannot match it|Desactivado, el paquete va untracked — las reglas ct state no pueden casar"></span></div>
+      <div class="inline"><span class="lbl" data-t="Include NAT hooks|Incluir hooks NAT">Include NAT hooks</span>
+        <span class="sw-toggle on" id="opt-nat" data-tt="Skip nat-type chains to see the filter path alone|Omite las cadenas de tipo nat para ver solo la ruta de filtrado"></span></div>
+      <div class="inline"><span class="lbl" data-t="Step-by-step|Paso a paso">Step-by-step</span>
+        <span class="sw-toggle" id="opt-step" data-tt="Advance one rule at a time with Space|Avanza regla a regla con Espacio"></span></div>
+    </div>
+    <div class="foot">
+      <span class="lbl" data-t="Presets|Escenarios">Presets</span>
+      <div class="preset">
+        <button data-preset="ssh" data-t="SSH from WAN|SSH desde WAN">SSH from WAN</button>
+        <button data-preset="https" data-t="HTTPS to web|HTTPS al web">HTTPS to web</button>
+        <button data-preset="dnat">DNAT :8443</button>
+        <button data-preset="invalid" data-t="Invalid state|Estado inválido">Invalid state</button>
+      </div>
+      <button class="btn-run" id="run-sim">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M5 3v18l15-9z"/></svg><span data-t="Run simulation|Ejecutar simulación">Run simulation</span><kbd style="background:rgba(0,0,0,.2);border-color:rgba(0,0,0,.2);color:rgba(4,23,27,.65)">↵</kbd>
+      </button>
+    </div>
+  </aside>
+
+  <div class="sim-stage">
+    <div class="verdict-banner" id="vb">
+      <div id="vb-icon" style="width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex:none"></div>
+      <div>
+        <div class="big" id="vb-txt">DROP</div>
+        <div class="why" id="vb-why"></div>
+      </div>
+      <div style="flex:1"></div>
+      <button class="tb" data-go="editor"><svg class="ico" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg><span data-t="Reveal rule|Ver la regla">Reveal rule</span></button>
+    </div>
+    <div class="flowlane">
+      <div class="lane" id="lane"></div>
+      <div class="pkt" id="pkt"></div>
+    </div>
+  </div>
+
+  <aside class="sim-trace">
+    <div class="panel-hd"><span class="lbl" data-t="Evaluation trace|Traza de evaluación">Evaluation trace</span>
+      <span class="chip" id="tr-count">0</span>
+      <button class="tb icon" data-tt="Export trace|Exportar traza"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg></button></div>
+    <div class="trace-body" id="trace"></div>
+  </aside>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SCREEN · SET MANAGER   (sets are reusable assets, with back-references)
+     ══════════════════════════════════════════════════════════════════ -->
+
+<section class="screen" id="s-sets">
+  <aside class="set-list">
+    <div class="panel-hd"><span class="lbl" data-t="Sets &amp; maps|Sets y maps">Sets &amp; maps</span>
+      <span class="chip" id="set-count">0</span>
+      <button class="tb icon" id="set-new" data-tt="New set|Nuevo set"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
+    <div class="body" id="set-list"></div>
+  </aside>
+  <div class="set-main" id="set-main"></div>
+  <aside class="set-refs">
+    <div class="panel-hd"><span class="lbl" data-t="Back-references|Retro-referencias">Back-references</span>
+      <span class="chip" id="ref-count">0</span></div>
+    <div style="flex:1;overflow-y:auto" id="set-refs"></div>
+  </aside>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SCREEN · INTERFACE TOPOLOGY
+     ══════════════════════════════════════════════════════════════════ -->
+
+<section class="screen" id="s-topo">
+  <div class="topo-bar glass">
+    <div class="seg" style="border:none;background:transparent;padding:0" id="topo-mode">
+      <button class="on" data-tm="zones" data-t="Zones|Zonas">Zones</button>
+      <button data-tm="ifaces" data-t="Interfaces|Interfaces">Interfaces</button>
+      <button data-tm="flow" data-t="Rule flow|Flujo de reglas">Rule flow</button>
+    </div>
+    <div style="width:1px;height:16px;background:var(--line-2);margin:0 4px"></div>
+    <span class="lbl" id="topo-sub" style="padding:0 6px">&mdash;</span>
+  </div>
+  <div class="topo-canvas" id="topo-canvas">
+    <svg id="topo-wires"></svg>
+    <div id="topo-nodes"></div>
+  </div>
+  <div class="topo-legend glass">
+    <span class="lbl" data-t="Edge = permitted direction|Arista = direcci&oacute;n permitida">Edge</span>
+    <div class="row"><i style="background:var(--v-accept)"></i><span data-t="mostly accept|mayormente accept">mostly accept</span></div>
+    <div class="row"><i style="background:var(--v-drop)"></i><span data-t="mostly drop|mayormente drop">mostly drop</span></div>
+    <div class="row"><i style="background:var(--v-dnat)"></i>DNAT</div>
+    <div class="row"><i style="background:var(--v-snat)"></i>SNAT</div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SCREEN · GENERATED CODE  (split view, bidirectional)
+     ══════════════════════════════════════════════════════════════════ -->
+
+<section class="screen" id="s-code">
+  <div class="code-pane">
+    <div class="panel-hd">
+      <span class="lbl" data-t="Generated · edge-fw-01.nft|Generado · edge-fw-01.nft">Generated · edge-fw-01.nft</span>
+      <span class="chip" data-t="142 lines|142 líneas">142 lines</span>
+      <div class="seg" style="height:24px" id="code-variant"><button class="on" data-cv="full" data-t="Full|Completo">Full</button><button data-cv="delta">Delta</button><button data-cv="atomic" data-t="Atomic|Atómico">Atomic</button></div>
+      <button class="tb icon" data-tt="Wrap|Ajustar líneas"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h13a3 3 0 0 1 0 6h-3m0 0 2-2m-2 2 2 2M4 18h5"/></svg></button>
+    </div>
+    <div class="body"><pre class="code" id="codeout2"></pre></div>
+  </div>
+  <div class="code-pane">
+    <div class="panel-hd"><span class="lbl" data-t="Optimiser|Optimizador">Optimiser</span><span class="chip" id="opt-count" style="color:var(--v-accept);border-color:rgba(71,224,130,.3)">—</span>
+      <div style="flex:1"></div>
+      <button class="tb accent" id="opt-applyall" data-t="Apply all|Aplicar todo">Apply all</button></div>
+    <div class="opt-panel" id="opt-panel">
+        </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SCREEN · VALIDATION
+     ══════════════════════════════════════════════════════════════════ -->
+
+<section class="screen" id="s-validate">
+  <div class="val">
+    <div class="val-hd">
+      <div class="val-score" id="val-grade">—</div>
+      <div style="flex:1">
+        <h1 data-t="Ruleset validation|Validación del ruleset">Ruleset validation</h1>
+        <p id="val-sub">—</p>
+      </div>
+      <button class="tb" id="val-rerun"><svg class="ico" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span data-t="Re-run|Re-ejecutar">Re-run</span></button>
+      <button class="tb accent" id="val-fixall"><svg class="ico" viewBox="0 0 24 24"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg><span id="val-fixall-t">—</span></button>
+    </div>
+
+    <div class="val-tabs" id="val-tabs"></div>
+    <div id="findings"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     OVERLAYS · export dialog + command palette
+     ══════════════════════════════════════════════════════════════════ -->
+
+<div class="scrim" id="scrim-export">
+  <div class="modal glass">
+    <div class="modal-hd">
+      <div style="width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:var(--aqua-wash);border:1px solid var(--aqua-line);color:var(--aqua)">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg></div>
+      <h2 data-t="Export nftables ruleset|Exportar el ruleset nftables">Export nftables ruleset</h2>
+      <span class="pill v-accept"><span class="sw"></span><span data-t="syntax valid|sintaxis válida">syntax valid</span></span>
+      <button class="tb icon" data-close><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="fld"><span class="lbl" data-t="Format|Formato">Format</span>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div class="choice on"><div class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M14 3v5h5M15 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></div>
+            <div><div class="h" data-html data-t="Atomic ruleset file — &lt;span class=&quot;mono&quot; style=&quot;color:var(--aqua)&quot;&gt;edge-fw-01.nft&lt;/span&gt;|Fichero de ruleset atómico — &lt;span class=&quot;mono&quot; style=&quot;color:var(--aqua)&quot;&gt;edge-fw-01.nft&lt;/span&gt;">Atomic ruleset file — <span class="mono" style="color:var(--aqua)">edge-fw-01.nft</span></div>
+              <div class="d" data-html data-t="Single &lt;span class=&quot;mono&quot;&gt;nft -f&lt;/span&gt; file with &lt;span class=&quot;mono&quot;&gt;flush ruleset&lt;/span&gt;. Applies as one transaction; a syntax error leaves the running config untouched.|Un solo fichero &lt;span class=&quot;mono&quot;&gt;nft -f&lt;/span&gt; con &lt;span class=&quot;mono&quot;&gt;flush ruleset&lt;/span&gt;. Se aplica como una transacción; un error de sintaxis deja intacta la configuración en marcha.">Single <span class="mono">nft -f</span> file with <span class="mono">flush ruleset</span>. Applies as one transaction; a syntax error leaves the running config untouched.</div></div>
+            <div class="radio"></div></div>
+          <div class="choice"><div class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg></div>
+            <div><div class="h" data-t="Incremental delta|Delta incremental">Incremental delta</div><div class="d" data-html data-t="Only the &lt;span class=&quot;mono&quot;&gt;add&lt;/span&gt; / &lt;span class=&quot;mono&quot;&gt;delete&lt;/span&gt; commands since the last export. Preserves counters on untouched rules.|Solo los comandos &lt;span class=&quot;mono&quot;&gt;add&lt;/span&gt; / &lt;span class=&quot;mono&quot;&gt;delete&lt;/span&gt; desde la última exportación. Conserva los contadores de las reglas sin tocar.">Only the <span class="mono">add</span> / <span class="mono">delete</span> commands since the last export. Preserves counters on untouched rules.</div></div>
+            <div class="radio"></div></div>
+          <div class="choice"><div class="ci"><svg class="ico sm" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg></div>
+            <div><div class="h" data-html data-t="systemd unit + &lt;span class=&quot;mono&quot;&gt;/etc/nftables.conf&lt;/span&gt;|Unidad systemd + &lt;span class=&quot;mono&quot;&gt;/etc/nftables.conf&lt;/span&gt;">systemd unit + <span class="mono">/etc/nftables.conf</span></div><div class="d" data-html data-t="Drop-in bundle with &lt;span class=&quot;mono&quot;&gt;nftables.service&lt;/span&gt; and a pre-apply validation hook.|Paquete listo para desplegar con &lt;span class=&quot;mono&quot;&gt;nftables.service&lt;/span&gt; y un hook de validación previo.">Drop-in bundle with <span class="mono">nftables.service</span> and a pre-apply validation hook.</div></div>
+            <div class="radio"></div></div>
+          <div class="choice"><div class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 21V11"/></svg></div>
+            <div><div class="h" data-t="Ansible / Terraform module|Módulo Ansible / Terraform">Ansible / Terraform module</div><div class="d" data-t="Templated resource with variables extracted from your sets and interfaces.|Recurso con plantilla y variables extraídas de tus sets e interfaces.">Templated resource with variables extracted from your sets and interfaces.</div></div>
+            <div class="radio"></div></div>
+        </div>
+      </div>
+      <div class="fld"><span class="lbl" data-t="Options|Opciones">Options</span>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <div class="inline"><span class="lbl" data-html data-t="Include &lt;span class=&quot;mono&quot; style=&quot;color:var(--t1)&quot;&gt;flush ruleset&lt;/span&gt; header|Incluir la cabecera &lt;span class=&quot;mono&quot; style=&quot;color:var(--t1)&quot;&gt;flush ruleset&lt;/span&gt;">Include <span class="mono" style="color:var(--t1)">flush ruleset</span> header</span><span class="sw-toggle on"></span></div>
+          <div class="inline"><span class="lbl" data-t="Preserve comments and rule handles|Conservar comentarios y handles de regla">Preserve comments and rule handles</span><span class="sw-toggle on"></span></div>
+          <div class="inline"><span class="lbl" data-t="Apply 4 optimiser suggestions|Aplicar 4 sugerencias del optimizador">Apply 4 optimiser suggestions</span><span class="sw-toggle on"></span></div>
+          <div class="inline"><span class="lbl" data-t="Emit named counters|Emitir contadores con nombre">Emit named counters</span><span class="sw-toggle"></span></div>
+          <div class="inline"><span class="lbl" data-html data-t="Dry-run with &lt;span class=&quot;mono&quot; style=&quot;color:var(--t1)&quot;&gt;nft -c&lt;/span&gt; before writing|Simular con &lt;span class=&quot;mono&quot; style=&quot;color:var(--t1)&quot;&gt;nft -c&lt;/span&gt; antes de escribir">Dry-run with <span class="mono" style="color:var(--t1)">nft -c</span> before writing</span><span class="sw-toggle on"></span></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:9px">
+        <div class="card" style="padding:10px 12px"><div class="lbl" data-t="Lines|Líneas">Lines</div><div class="num" style="font-size:17px;margin-top:5px">142</div></div>
+        <div class="card" style="padding:10px 12px"><div class="lbl" data-t="Rules|Reglas">Rules</div><div class="num" style="font-size:17px;margin-top:5px">26<span style="color:var(--v-accept);font-size:11px"> −4</span></div></div>
+        <div class="card" style="padding:10px 12px"><div class="lbl">Sets</div><div class="num" style="font-size:17px;margin-top:5px">4</div></div>
+        <div class="card" style="padding:10px 12px"><div class="lbl" data-t="Evals/pkt|Evals/paq">Evals/pkt</div><div class="num" style="font-size:17px;margin-top:5px">11<span style="color:var(--v-accept);font-size:11px"> −3</span></div></div>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <span class="lbl" style="flex:1;text-transform:none;letter-spacing:0;font-size:11.5px" data-html data-t="Target &lt;span class=&quot;mono&quot; style=&quot;color:var(--t2)&quot;&gt;nft 1.0.9&lt;/span&gt; · verified against kernel &lt;span class=&quot;mono&quot; style=&quot;color:var(--t2)&quot;&gt;6.8&lt;/span&gt;|Destino &lt;span class=&quot;mono&quot; style=&quot;color:var(--t2)&quot;&gt;nft 1.0.9&lt;/span&gt; · verificado contra el kernel &lt;span class=&quot;mono&quot; style=&quot;color:var(--t2)&quot;&gt;6.8&lt;/span&gt;">Target <span class="mono" style="color:var(--t2)">nft 1.0.9</span> · verified against kernel <span class="mono" style="color:var(--t2)">6.8</span></span>
+      <button class="tb" data-close data-t="Cancel|Cancelar">Cancel</button>
+      <button class="tb" style="border:1px solid var(--line-2)"><svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg><span data-t="Copy|Copiar">Copy</span></button>
+      <button class="tb pri" data-close><svg class="ico" viewBox="0 0 24 24"><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg><span data-t="Export file|Exportar fichero">Export file</span></button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim-about">
+  <div class="modal glass">
+    <div class="about-hero">
+      <svg viewBox="0 0 720 210" role="img" aria-label="eFeFlow — Visual Firewall Designer">
+        <defs>
+          <linearGradient id="ab-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#39D5FF"/><stop offset="100%" stop-color="#0078FF"/></linearGradient>
+          <linearGradient id="ab-green" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#3AD5FF"/><stop offset="100%" stop-color="#46FF75"/></linearGradient>
+          <linearGradient id="ab-red" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#4BBEFF"/><stop offset="100%" stop-color="#FF5050"/></linearGradient>
+          <filter id="ab-glow"><feGaussianBlur stdDeviation="4" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <g transform="translate(40,5)" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#ab-glow)">
+          <circle cx="18" cy="100" r="4" fill="#3AD5FF"/><circle cx="34" cy="100" r="4" fill="#3AD5FF"/>
+          <circle cx="50" cy="100" r="4" fill="#3AD5FF"/>
+          <path d="M90 20L90 180" stroke="url(#ab-blue)" stroke-width="14"/>
+          <path d="M90 20H220"    stroke="url(#ab-green)" stroke-width="14"/>
+          <path d="M54 100H220"   stroke="url(#ab-blue)" stroke-width="14"/>
+          <path d="M90 180H220"   stroke="url(#ab-red)" stroke-width="14"/>
+          <circle cx="90"  cy="100" r="12" stroke="#3AD5FF" stroke-width="6"/>
+          <circle cx="170" cy="20"  r="10" stroke="#46FF75" stroke-width="5"/>
+          <circle cx="170" cy="100" r="10" stroke="#39D5FF" stroke-width="5"/>
+          <circle cx="170" cy="180" r="10" stroke="#FF5050" stroke-width="5"/>
+          <polygon points="220,20 245,20 232,8 245,20 232,32"     fill="#46FF75"/>
+          <polygon points="220,100 245,100 232,88 245,100 232,112" fill="#39D5FF"/>
+          <polygon points="220,180 245,180 232,168 245,180 232,192" fill="#FF5050"/>
+        </g>
+        <text x="330" y="100" font-family="Segoe UI Variable Display,Segoe UI,sans-serif" font-size="74" font-weight="300" fill="#F2F2F2">eFe</text>
+        <text x="455" y="100" font-family="Segoe UI Variable Display,Segoe UI,sans-serif" font-size="74" font-weight="600" fill="#39D5FF">Flow</text>
+        <text x="332" y="137" font-family="Segoe UI Variable Display,Segoe UI,sans-serif" font-size="18" letter-spacing="4" fill="#8FA6B5">VISUAL FIREWALL DESIGNER</text>
+      </svg>
+    </div>
+
+    <div class="about-id">
+      <img class="app-tile" alt="eFeFlow" src="data:image/webp;base64,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">
+      <dl>
+        <dt data-t="Version|Versión">Version</dt><dd>1.0.0 · build 2026.08.01</dd>
+        <dt data-t="Target|Destino">Target</dt><dd>nft 1.0.9 · nf_tables API 0.9.x</dd>
+        <dt data-t="Verified on|Verificado en">Verified on</dt><dd>Linux 6.8 · inet, ip, ip6, bridge, netdev</dd>
+        <dt data-t="Project|Proyecto">Project</dt><dd>edge-fw-01 · main ↑2</dd>
+      </dl>
+    </div>
+
+    <div class="about-forks">
+      <span class="lbl" data-t="The mark|La marca">The mark</span>
+      <div class="fork"><span class="ln" style="background:linear-gradient(90deg,#3AD5FF,#46FF75)"></span>
+        <span class="nm" style="color:var(--brand-green)">ACCEPT</span>
+        <span class="ds" data-t="the packet leaves the chain|el paquete sale de la cadena">the packet leaves the chain</span></div>
+      <div class="fork"><span class="ln" style="background:linear-gradient(90deg,#39D5FF,#0078FF)"></span>
+        <span class="nm" style="color:var(--brand-cyan)">CONTINUE</span>
+        <span class="ds" data-t="evaluation carries on down the trunk|la evaluación sigue por el tronco">evaluation carries on down the trunk</span></div>
+      <div class="fork"><span class="ln" style="background:linear-gradient(90deg,#4BBEFF,#FF5050)"></span>
+        <span class="nm" style="color:var(--brand-red)">DROP</span>
+        <span class="ds" data-t="the packet ends here|el paquete termina aquí">the packet ends here</span></div>
+    </div>
+
+    <div class="modal-ft">
+      <span class="lbl" style="flex:1;text-transform:none;letter-spacing:0;font-size:11.5px" data-t="A design tool, not a firewall manager — nothing is applied to a live host.|Una herramienta de diseño, no un gestor de firewall — nada se aplica a un host en producción.">A design tool, not a firewall manager — nothing is applied to a live host.</span>
+      <button class="tb pri" data-close data-t="Close|Cerrar">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim-import">
+  <div class="modal glass">
+    <div class="modal-hd">
+      <div style="width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:var(--aqua-wash);border:1px solid var(--aqua-line);color:var(--aqua)">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 16V3"/><path d="m7 8 5-5 5 5"/><path d="M4 21h16"/></svg></div>
+      <h2 data-t="Import an existing ruleset|Importar un ruleset existente">Import an existing ruleset</h2>
+      <button class="tb icon" data-close><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+
+    <div class="imp-body">
+      <div class="imp-left">
+        <div class="imp-bar">
+          <span class="lbl" style="flex:1" data-t="Paste the output of nft list ruleset|Pega la salida de nft list ruleset">Paste the output of nft list ruleset</span>
+          <button class="tb" id="imp-sample" data-t="Load sample|Cargar ejemplo">Load sample</button>
+          <button class="tb" id="imp-clear" data-t="Clear|Limpiar">Clear</button>
+        </div>
+        <textarea id="imp-text" spellcheck="false" data-tp="table inet filter {&#10;    chain input {&#10;        type filter hook input priority filter; policy drop;&#10;        ct state established,related accept&#10;    }&#10;}|table inet filter {&#10;    chain input {&#10;        type filter hook input priority filter; policy drop;&#10;        ct state established,related accept&#10;    }&#10;}"></textarea>
+      </div>
+
+      <div class="imp-side" id="imp-side"></div>
+    </div>
+
+    <div class="modal-ft">
+      <span class="lbl" style="flex:1;text-transform:none;letter-spacing:0;font-size:11.5px"
+            data-t="Importing replaces the current project. It lands in history, so Ctrl+Z brings it back.|Importar reemplaza el proyecto actual. Entra en el historial, así que Ctrl+Z lo recupera.">Importing replaces the current project.</span>
+      <button class="tb" data-close data-t="Cancel|Cancelar">Cancel</button>
+      <button class="tb pri" id="imp-go" disabled><svg class="ico" viewBox="0 0 24 24"><path d="M12 16V3"/><path d="m7 8 5-5 5 5"/><path d="M4 21h16"/></svg><span id="imp-go-t" data-t="Import|Importar">Import</span></button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim-palette">
+  <div class="palette glass">
+    <div class="inp">
+      <svg class="ico lg dim" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="text" data-tp="Search rules, sets, chains, interfaces or run a command…|Buscar reglas, sets, cadenas, interfaces o ejecutar un comando…" id="pal-input">
+      <kbd>Esc</kbd>
+    </div>
+    <div class="res">
+      <div class="pgh"><span class="lbl" data-t="Rules|Reglas">Rules</span></div>
+      <div class="pr on"><div class="pi"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h9"/></svg></div>
+        <div class="pt">tcp dport @mgmt_ports ip saddr @admin_nets accept<small>inet fw / input · rule 5</small></div><kbd>↵</kbd></div>
+      <div class="pr"><div class="pi"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h9"/></svg></div>
+        <div class="pt">ct state established,related accept<small>inet fw / input · rule 1</small></div></div>
+      <div class="pgh"><span class="lbl">Sets</span></div>
+      <div class="pr"><div class="pi" style="color:var(--v-dnat)"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h9"/></svg></div>
+        <div class="pt">@admin_nets<small data-t="ipv4_addr · interval · 6 elements · 7 references|ipv4_addr · interval · 6 elementos · 7 referencias">ipv4_addr · interval · 6 elements · 7 references</small></div></div>
+      <div class="pgh"><span class="lbl" data-t="Commands|Comandos">Commands</span></div>
+      <div class="pr"><div class="pi"><svg class="ico sm" viewBox="0 0 24 24"><path d="M5 3v18l15-9z"/></svg></div><div class="pt" data-t="Run packet simulation|Ejecutar simulación de paquete">Run packet simulation</div><kbd>Ctrl ⇧ R</kbd></div>
+      <div class="pr"><div class="pi"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg></div><div class="pt" data-t="Export nftables ruleset|Exportar el ruleset nftables">Export nftables ruleset</div><kbd>Ctrl E</kbd></div>
+      <div class="pr"><div class="pi"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></div><div class="pt" data-html data-t="New chain in &lt;span class=&quot;mono&quot; style=&quot;color:var(--aqua)&quot;&gt;inet fw&lt;/span&gt;|Nueva cadena en &lt;span class=&quot;mono&quot; style=&quot;color:var(--aqua)&quot;&gt;inet fw&lt;/span&gt;">New chain in <span class="mono" style="color:var(--aqua)">inet fw</span></div></div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
