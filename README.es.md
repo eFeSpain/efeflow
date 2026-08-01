@@ -13,6 +13,12 @@ por las cadenas.
 
 [English](README.md) · [Español](README.es.md)
 
+[![ci](https://github.com/eFeSpain/efeflow/actions/workflows/ci.yml/badge.svg)](https://github.com/eFeSpain/efeflow/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/eFeSpain/efeflow?include_prereleases&sort=semver)](https://github.com/eFeSpain/efeflow/releases)
+[![licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE)
+
+[**Descargar**](https://github.com/eFeSpain/efeflow/releases/latest) — Linux `.deb` `.rpm` `.AppImage` · Windows `.msi` · macOS `.dmg`
+
 </div>
 
 ---

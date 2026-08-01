@@ -2,9 +2,9 @@
 name = "efeflow"
 version = "1.0.0"
 description = "Visual nftables firewall rule designer"
-authors = ["eFe"]
+authors = ["eFeSpain"]
 license = "MIT"
-repository = "https://github.com/alegoriasoft/efeflow"
+repository = "https://github.com/eFeSpain/efeflow"
 edition = "2021"
 rust-version = "1.77"
 
