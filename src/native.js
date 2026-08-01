@@ -129,13 +129,23 @@ export async function openTextFile(filters) {
   });
 }
 
-/* ── window controls, since the window is frameless ─────────────────── */
+/* ── window controls, since the window is frameless ───────────────────
+   These are IPC calls and Tauri gates them per capability. A missing grant
+   rejects silently from the caller's point of view, which reads as a dead
+   button — so failures are re-thrown for the runtime error bar to show. */
 export async function windowAction(action) {
   if (!inTauri) return;
-  const { getCurrentWindow } = await import("@tauri-apps/api/window");
-  const w = getCurrentWindow();
-  if (action === "minimize") return w.minimize();
-  if (action === "maximize") return w.toggleMaximize();
-  if (action === "close") return w.close();
-  if (action === "startDrag") return w.startDragging();
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const w = getCurrentWindow();
+    if (action === "minimize") return await w.minimize();
+    if (action === "maximize") return await w.toggleMaximize();
+    if (action === "close") return await w.close();
+    if (action === "startDrag") return await w.startDragging();
+  } catch (err) {
+    // surfaced by the guard in index.html rather than swallowed
+    queueMicrotask(() => {
+      throw new Error(`window ${action} failed: ${err?.message || err}`);
+    });
+  }
 }

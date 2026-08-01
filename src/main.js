@@ -25,6 +25,10 @@ $$(".tb-win button").forEach((b) =>
 $$("[data-drag]").forEach((n) =>
   n.addEventListener("pointerdown", (e) => {
     if (e.button !== 0 || e.target.closest("button")) return;
+    // Windows treats a double-click inside a drag region as maximise. Letting
+    // that through as well as the handler below toggles twice and looks like
+    // the first press did nothing.
+    if (e.detail >= 2) return;
     native.windowAction("startDrag");
   }),
 );
