@@ -185,6 +185,9 @@
     <div class="proj">
       <svg class="ico sm dim" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
       <span class="nm">edge-fw-01</span>
+      <span class="sample-tag" id="sample-tag" data-go="help"
+            data-tt="This ruleset is a built-in example, not your firewall. Click to read why.|Este ruleset es un ejemplo incorporado, no tu firewall. Pulsa para saber por qué."
+            data-t="sample|ejemplo">sample</span>
       <span class="dimmer mono" style="font-size:11px">/ inet fw</span>
       <span class="dot-live" title="Unsaved changes"></span>
     </div>
@@ -574,6 +577,105 @@
   </div>
 </section>
 
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SCREEN · GUIDE
+     ══════════════════════════════════════════════════════════════════ -->
+<section class="screen" id="s-help">
+  <div class="guide">
+    <header class="guide-hd">
+      <h1 data-t="How eFeFlow works|Cómo funciona eFeFlow">How eFeFlow works</h1>
+      <p data-t="A designer, not a firewall manager. It edits a ruleset and emits nft source. Nothing reaches a live host unless you ask it to.|Un diseñador, no un gestor de firewall. Edita un ruleset y emite código nft. Nada llega a una máquina en producción salvo que lo pidas.">A designer, not a firewall manager.</p>
+    </header>
+
+    <article class="gcard" id="g-sample">
+      <div class="gh"><span class="pill v-warnp"><span class="sw"></span><span data-t="sample|ejemplo">sample</span></span>
+        <h2 data-t="Why edge-fw-01 is already open|Por qué edge-fw-01 ya está abierto">Why edge-fw-01 is already open</h2></div>
+      <p data-t="It is a fixture, not your firewall and not read from any machine. It exists so every screen has something to show, and it is deliberately flawed: the shadowed rule, the conflicting DNAT targets, the unused set and the four rules that should be one set lookup are all planted. Those are the six findings the analyser reports.|Es un ejemplo, no tu firewall ni algo leído de ninguna máquina. Existe para que cada pantalla tenga algo que enseñar, y está defectuoso a propósito: la regla eclipsada, los destinos DNAT en conflicto, el set sin usar y las cuatro reglas que deberían ser una consulta a set están plantadas. Son los seis hallazgos que reporta el analizador.">It is a fixture.</p>
+      <div class="gacts">
+        <button class="tb accent" data-go="import" data-t="Import a real ruleset|Importar un ruleset real">Import a real ruleset</button>
+        <button class="tb" id="g-empty" data-t="Start from an empty ruleset|Empezar con un ruleset vacío">Start from an empty ruleset</button>
+      </div>
+    </article>
+
+    <div class="grid g2 guide-grid">
+      <article class="gcard">
+        <div class="gh"><span class="gi" style="color:var(--aqua)"><svg class="ico" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg></span>
+          <h2 data-t="The canvas is a field, not a whiteboard|El lienzo es un campo, no una pizarra">The canvas is a field</h2></div>
+        <p data-t="Horizontally, a chain sits at the netfilter hook it is attached to — prerouting, input, forward, output, postrouting — in the order a packet actually meets them. Vertically, it sits at its chain priority: raw at −300, dstnat at −100, filter at 0, srcnat at +100. Position is meaning, so you can read evaluation order off the screen.|En horizontal, cada cadena se sitúa en el hook de netfilter al que está enganchada — prerouting, input, forward, output, postrouting — en el orden en que un paquete los encuentra. En vertical, en su prioridad de cadena: raw en −300, dstnat en −100, filter en 0, srcnat en +100. La posición es significado: el orden de evaluación se lee en la pantalla.">Position is meaning.</p>
+        <ul class="glist">
+          <li data-t="Drag a chain by its header to rearrange; the button in the canvas toolbar restores the automatic layout.|Arrastra una cadena por su cabecera para reorganizar; el botón de la barra del lienzo restaura la disposición automática.">Drag by the header.</li>
+          <li data-t="Drag a rule to reorder it, even into another chain. Order is semantics: the first match wins.|Arrastra una regla para reordenarla, incluso a otra cadena. El orden es semántica: gana la primera coincidencia.">Order is semantics.</li>
+          <li data-t="The coloured stripe down the left of each rule is its verdict, so squinting at a chain reads as a barcode of the policy.|La franja de color a la izquierda de cada regla es su verdict: entornar los ojos ante una cadena da el código de barras de la política.">The stripe is the verdict.</li>
+        </ul>
+      </article>
+
+      <article class="gcard">
+        <div class="gh"><span class="gi" style="color:var(--v-accept)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 4.5 3.2 8.4 8 9.5 4.8-1.1 8-5 8-9.5V6z"/><path d="m9 12 2 2 4-4"/></svg></span>
+          <h2 data-t="What the analyser checks|Qué comprueba el analizador">What the analyser checks</h2></div>
+        <p data-t="Findings are derived from the ruleset every time it changes, never authored. The core relation is subsumption: rule A subsumes rule B when every packet matching B also matches A. If A comes first and terminates, B is dead code.|Los hallazgos se derivan del ruleset en cada cambio, nunca están escritos. La relación central es la subsunción: A subsume a B cuando todo paquete que casa con B casa también con A. Si A va antes y termina, B es código muerto.">Derived, never authored.</p>
+        <ul class="glist">
+          <li><b data-t="Shadowed|Eclipsada">Shadowed</b> <span data-t="a rule an earlier one already decides|una regla que ya decide otra anterior">a rule an earlier one already decides</span></li>
+          <li><b data-t="Conflict|Conflicto">Conflict</b> <span data-t="overlapping DNAT rules with different targets|reglas DNAT solapadas con destinos distintos">overlapping DNAT with different targets</span></li>
+          <li><b data-t="Merge|Fusión">Merge</b> <span data-t="rules differing only by port, which one set lookup replaces|reglas que solo difieren en el puerto, que una consulta a set sustituye">rules differing only by port</span></li>
+          <li><b data-t="Unused|Sin usar">Unused</b> <span data-t="a set loaded into the kernel that no rule consumes|un set cargado en el kernel que ninguna regla consume">a set no rule consumes</span></li>
+          <li><b data-t="Hardening|Fortificación">Hardening</b> <span data-t="a stateful chain that never drops invalid|una cadena con estado que nunca descarta invalid">a chain that never drops invalid</span></li>
+        </ul>
+        <p class="gnote" data-t="Rate-limited rules are never treated as shadowing anything: they are non-deterministic, and flagging there would tell you to delete a rule that works.|Las reglas con límite de tasa nunca se consideran eclipsantes: no son deterministas, y señalarlas te haría borrar una regla que funciona.">Rate-limited rules are excluded.</p>
+      </article>
+
+      <article class="gcard">
+        <div class="gh"><span class="gi" style="color:var(--v-jump)"><svg class="ico" viewBox="0 0 24 24"><path d="M5 3v18l15-9z"/></svg></span>
+          <h2 data-t="The simulator|El simulador">The simulator</h2></div>
+        <p data-t="It evaluates against the same model the code is emitted from, so a verdict here is the verdict your exported ruleset produces. It arrives already run, and any change to the packet re-runs it — you never need to press anything.|Evalúa contra el mismo modelo del que se emite el código, así que un veredicto aquí es el veredicto que produce tu ruleset exportado. Llega ya ejecutado, y cualquier cambio en el paquete lo relanza: no hace falta pulsar nada.">Same model as the code.</p>
+        <ul class="glist">
+          <li data-t="Direction chooses the path: ingress walks prerouting then input, forward adds postrouting, egress starts at output.|La dirección elige la ruta: entrada recorre prerouting e input, reenvío añade postrouting, salida empieza en output.">Direction chooses the path.</li>
+          <li data-t="Turning connection tracking off marks the packet untracked, so ct state rules can no longer match it.|Desactivar el seguimiento de conexiones marca el paquete untracked, así que las reglas ct state ya no pueden casar.">Untracked packets lose the fast path.</li>
+          <li data-t="accept ends the chain, not the packet — it carries on to the next hook. Only drop and reject end it outright.|accept termina la cadena, no el paquete: sigue al hook siguiente. Solo drop y reject lo terminan.">accept ends the chain, not the packet.</li>
+        </ul>
+        <p class="gnote" data-t="Try the DNAT :8443 preset and then turn off Include NAT hooks: the verdict flips from ACCEPT to DROP, because without the translation nothing accepts port 8443.|Prueba el preset DNAT :8443 y luego apaga Incluir hooks NAT: el veredicto pasa de ACCEPT a DROP, porque sin la traducción nadie acepta el puerto 8443.">Try the DNAT preset with NAT off.</p>
+      </article>
+
+      <article class="gcard">
+        <div class="gh"><span class="gi" style="color:var(--v-dnat)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 16V3"/><path d="m7 8 5-5 5 5"/><path d="M4 21h16"/></svg></span>
+          <h2 data-t="Import, and the round-trip check|Importar, y la verificación de ida y vuelta">Import and round-trip</h2></div>
+        <p data-t="Paste the output of nft list ruleset. Before importing anything, eFeFlow parses it, re-emits every rule from the model, and compares the two line by line. The percentage it shows is the only honest evidence that nothing was lost in translation — if a rule cannot be reproduced, it says which.|Pega la salida de nft list ruleset. Antes de importar nada, eFeFlow lo analiza, reemite cada regla desde el modelo y compara ambas línea a línea. El porcentaje que ves es la única prueba honesta de que no se ha perdido nada por el camino: si una regla no se puede reproducir, te dice cuál.">Verified before importing.</p>
+        <ul class="glist">
+          <li data-t="Chain priorities survive by name: priority filter comes back as priority filter, not 0.|Las prioridades sobreviven por nombre: priority filter vuelve como priority filter, no como 0.">Priorities survive by name.</li>
+          <li data-t="Counters, comments and the # handle suffixes of nft -a are all understood.|Los contadores, los comentarios y los sufijos # handle de nft -a se entienden.">Counters and comments are kept.</li>
+        </ul>
+      </article>
+    </div>
+
+    <article class="gcard">
+      <div class="gh"><span class="gi" style="color:var(--t3)"><svg class="ico" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg></span>
+        <h2 data-t="Keyboard|Teclado">Keyboard</h2></div>
+      <div class="keys">
+        <div class="krow"><kbd>Ctrl</kbd><kbd>K</kbd><span data-t="search everything|buscar en todo">search everything</span></div>
+        <div class="krow"><kbd>Alt</kbd><kbd>1…8</kbd><span data-t="jump to a screen|ir a una pantalla">jump to a screen</span></div>
+        <div class="krow"><kbd>Ctrl</kbd><kbd>Z</kbd><span data-t="undo, with the change named in the tooltip|deshacer, con el cambio nombrado en el tooltip">undo</span></div>
+        <div class="krow"><kbd>Ctrl</kbd><kbd>↵</kbd><span data-t="add a rule to the selected chain|añadir regla a la cadena seleccionada">add a rule</span></div>
+        <div class="krow"><kbd>Ctrl</kbd><kbd>D</kbd><span data-t="duplicate the selected rule|duplicar la regla seleccionada">duplicate</span></div>
+        <div class="krow"><kbd>Del</kbd><span data-t="delete the selected rule|eliminar la regla seleccionada">delete</span></div>
+        <div class="krow"><kbd>Alt</kbd><kbd>↑↓</kbd><span data-t="move a rule, changing what matches first|mover una regla, cambiando qué casa primero">reorder</span></div>
+        <div class="krow"><kbd>V</kbd><kbd>H</kbd><span data-t="select tool, pan tool|herramienta seleccionar, desplazar">select, pan</span></div>
+        <div class="krow"><kbd>Space</kbd><span data-t="advance the simulator in step mode|avanzar el simulador en modo paso a paso">step the simulator</span></div>
+        <div class="krow"><kbd>Ctrl</kbd><kbd>E</kbd><span data-t="export|exportar">export</span></div>
+      </div>
+    </article>
+
+    <article class="gcard">
+      <div class="gh"><span class="gi" style="color:var(--warn)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
+        <h2 data-t="What this tool does not do|Lo que esta herramienta no hace">What it does not do</h2></div>
+      <ul class="glist">
+        <li data-t="It does not manage a firewall. Validation here is eFeFlow's own analyser; the authority is nft -c, which needs the desktop app and a Linux host — locally or over SSH.|No gestiona un firewall. La validación aquí es el analizador de eFeFlow; la autoridad es nft -c, que necesita la app de escritorio y una máquina Linux, local o por SSH.">It does not manage a firewall.</li>
+        <li data-t="Counters shown on rules come from the text you imported, not from a running kernel.|Los contadores que ves en las reglas vienen del texto que importaste, no de un kernel en marcha.">Counters come from the import.</li>
+        <li data-t="Undo history lives in the session. Save the project to keep your work.|El historial de deshacer vive en la sesión. Guarda el proyecto para conservar tu trabajo.">History is per session.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
 <!-- ══════════════════════════════════════════════════════════════════════
      OVERLAYS · export dialog + command palette
      ══════════════════════════════════════════════════════════════════ -->
@@ -691,6 +793,58 @@
     <div class="modal-ft">
       <span class="lbl" style="flex:1;text-transform:none;letter-spacing:0;font-size:11.5px" data-t="A design tool, not a firewall manager — nothing is applied to a live host.|Una herramienta de diseño, no un gestor de firewall — nada se aplica a un host en producción.">A design tool, not a firewall manager — nothing is applied to a live host.</span>
       <button class="tb pri" data-close data-t="Close|Cerrar">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim-welcome">
+  <div class="modal glass" style="width:min(620px,92vw);margin-top:12vh">
+    <div class="welcome-hd">
+      <svg class="w-mark" viewBox="20 4 236 192" aria-hidden="true">
+        <defs>
+          <linearGradient id="w-trunk" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#39D5FF"/><stop offset="1" stop-color="#0078FF"/></linearGradient>
+          <linearGradient id="w-ok" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#3AD5FF"/><stop offset="1" stop-color="#46FF75"/></linearGradient>
+          <linearGradient id="w-no" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#4BBEFF"/><stop offset="1" stop-color="#FF5050"/></linearGradient>
+        </defs>
+        <g fill="none" stroke-width="19" stroke-linecap="round">
+          <path d="M90 20V180" stroke="url(#w-trunk)"/><path d="M90 20H228" stroke="url(#w-ok)"/>
+          <path d="M38 100H228" stroke="url(#w-trunk)"/><path d="M90 180H228" stroke="url(#w-no)"/>
+        </g>
+        <circle cx="90" cy="100" r="17" fill="none" stroke="#39D5FF" stroke-width="10"/>
+      </svg>
+      <div>
+        <h2 data-t="Where would you like to start?|¿Por dónde quieres empezar?">Where would you like to start?</h2>
+        <p data-t="eFeFlow designs nftables rulesets. It does not manage a firewall — nothing reaches a live host unless you ask.|eFeFlow diseña rulesets de nftables. No gestiona un firewall: nada llega a una máquina en producción salvo que lo pidas.">eFeFlow designs nftables rulesets.</p>
+      </div>
+    </div>
+    <div class="modal-body" style="gap:8px">
+      <button class="choice" data-start="import">
+        <span class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 16V3"/><path d="m7 8 5-5 5 5"/><path d="M4 21h16"/></svg></span>
+        <span><span class="h" data-t="Import a ruleset|Importar un ruleset">Import a ruleset</span>
+          <span class="d" data-t="Paste the output of nft list ruleset, or open a .nft file. eFeFlow verifies it can reproduce every rule before importing anything.|Pega la salida de nft list ruleset, o abre un fichero .nft. eFeFlow verifica que puede reproducir cada regla antes de importar nada.">Paste nft list ruleset.</span></span>
+        <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+      </button>
+      <button class="choice" data-start="sample">
+        <span class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h9"/></svg></span>
+        <span><span class="h" data-t="Explore the sample|Explorar el ejemplo">Explore the sample</span>
+          <span class="d" data-t="A small ruleset planted with the defects the analyser is built to catch — a shadowed rule, conflicting DNAT targets, an unused set.|Un ruleset pequeño con los defectos que el analizador está hecho para cazar: una regla eclipsada, destinos DNAT en conflicto, un set sin usar.">Planted with defects to find.</span></span>
+        <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+      </button>
+      <button class="choice" data-start="empty">
+        <span class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+        <span><span class="h" data-t="Start empty|Empezar en blanco">Start empty</span>
+          <span class="d" data-t="A bare inet table with the three filter hooks and a drop policy, ready to build on.|Una tabla inet vacía con los tres hooks de filtrado y política drop, lista para construir.">A bare inet table.</span></span>
+        <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+      </button>
+    </div>
+    <div class="modal-ft">
+      <button class="tb" data-start="sample" data-t="Read the guide first|Leer primero la guía" data-guide>Read the guide first</button>
+      <span style="flex:1"></span>
+      <span class="lbl" style="text-transform:none;letter-spacing:0;font-size:11px"
+            data-t="You can switch at any time from the toolbar.|Puedes cambiar cuando quieras desde la barra.">You can switch at any time.</span>
     </div>
   </div>
 </div>

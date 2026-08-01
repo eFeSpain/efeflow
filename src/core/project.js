@@ -8,6 +8,11 @@ export const project = {
   path: null,          // filesystem path once saved or opened
   origin: null,        // { kind: 'file' | 'local' | 'ssh', detail }
   dirty: false,
+  /* The ruleset shipped in model.js is a fixture, not anyone's firewall. It
+     carries the defects the analyser is meant to find, so the app has
+     something to demonstrate — but it must never be mistaken for real
+     configuration, so everything that displays a project name says so. */
+  sample: true,
 };
 
 export const PROJECT = () => project.name;

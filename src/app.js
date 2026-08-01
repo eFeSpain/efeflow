@@ -128,6 +128,8 @@ const NAV = [
   {id:"topo",     en:"Topology",         es:"Topología",           k:"5", d:"M12 7.5v4m0 0-5 5m5-5 5 5M12 5a2.5 2.5 0 1 0 0-.01M5 19a2.5 2.5 0 1 0 0-.01M19 19a2.5 2.5 0 1 0 0-.01"},
   {id:"code",     en:"Generated code",   es:"Código generado",     k:"6", d:"m9 8-5 4 5 4M15 8l5 4-5 4"},
   {id:"validate", en:"Validation",       es:"Validación",          k:"7", d:"M12 3 4 6v6c0 4.5 3.2 8.4 8 9.5 4.8-1.1 8-5 8-9.5V6zm-3 9 2 2 4-4", b:"3"},
+  {id:"help",     en:"Guide",            es:"Guía",                k:"8",
+   d:"M12 17h.01M9.1 9a3 3 0 1 1 4.2 2.7c-.8.4-1.3 1.2-1.3 2.1V15M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18"},
 ];
 const rail = $("#rail");
 function renderRail(){
@@ -170,7 +172,7 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("keydown",e=>{
   if(e.key==="Escape") $$(".scrim").forEach(s=>s.classList.remove("on"));
-  if(e.altKey && /^[1-7]$/.test(e.key)){ e.preventDefault(); go(NAV[+e.key-1].id); }
+  if(e.altKey && /^[1-8]$/.test(e.key) && NAV[+e.key-1]){ e.preventDefault(); go(NAV[+e.key-1].id); }
   if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="k"){ e.preventDefault(); go("open"); }
   if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="e"){ e.preventDefault(); go("export"); }
 });
@@ -2486,6 +2488,62 @@ go = function(id){
   return _go2(id);
 };
 
+/* ══ FIRST RUN ══════════════════════════════════════════════════════════
+   The bundled ruleset is a fixture. Opening straight into it made it look
+   like a loaded project, and a firewall you did not write is a confusing
+   thing to be shown without explanation. */
+const EMPTY_RULESET = () => ({
+  chains: ["input","forward","output"].map(hook=>({
+    id: hook, table: "inet filter", hook, prio: 0, type: "filter",
+    policy: hook === "output" ? "accept" : "drop",
+    rules: hook === "output" ? [] : [R("ct state established,related","accept",{pkts:0,bytes:0})],
+  })),
+  sets: [],
+});
+
+function startEmpty(){
+  edit(t("new ruleset","ruleset nuevo"), ()=>{
+    const e = EMPTY_RULESET();
+    MODEL.chains = e.chains; MODEL.sets = e.sets;
+  });
+  setProject({name:"untitled", sample:false, origin:null});
+  markSample();
+  go("editor");
+}
+
+function markSample(){
+  const tag = $("#sample-tag");
+  if(tag) tag.style.display = project.sample ? "" : "none";
+  const nm = $(".proj .nm");
+  if(nm) nm.textContent = project.name;
+  const tb = $("#tb-proj");
+  if(tb) tb.textContent = project.name;
+}
+
+$("#scrim-welcome").addEventListener("click", e=>{
+  const b = e.target.closest("[data-start]");
+  if(!b) return;
+  $$(".scrim").forEach(s=>s.classList.remove("on"));
+  localStorage.setItem("efeflow.seen", "1");
+  if(b.dataset.start === "import") go("import");
+  else if(b.dataset.start === "empty") startEmpty();
+  else if(b.hasAttribute("data-guide")) go("help");
+  else go("editor");
+});
+$("#g-empty")?.addEventListener("click", startEmpty);
+
+/* anything that replaces the ruleset stops it being the sample */
+MODEL_HOOKS.push(()=>{
+  if(project.sample && !MODEL.chains.some(c=>c.id==="raw_pre")) {
+    setProject({sample:false});
+    markSample();
+  }
+});
+
 /* ══ keep every derived view in step with the model ═════════════════════ */
 [renderSets, renderTopo, renderDash].forEach(f=>{ MODEL_HOOKS.push(f); RERENDER.push(f); });
 renderSets(); renderTopo(); renderDash();
+markSample();
+
+if(!localStorage.getItem("efeflow.seen"))
+  setTimeout(()=>$("#scrim-welcome").classList.add("on"), 250);

@@ -248,6 +248,191 @@
 }
 @keyframes fill { to { width: 100%; } }
 
+/* ── the sample must never pass for someone's real firewall ────────── */
+.sample-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: rgba(240, 193, 60, 0.13);
+  border: 1px solid rgba(240, 193, 60, 0.32);
+  color: var(--warn);
+  font: 600 9.5px var(--mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  transition: background 0.14s var(--ease);
+}
+.sample-tag:hover {
+  background: rgba(240, 193, 60, 0.22);
+}
+
+/* ── welcome ───────────────────────────────────────────────────────── */
+.welcome-hd {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 22px 18px;
+  border-bottom: 1px solid var(--line);
+  background: radial-gradient(120% 140% at 14% 10%, rgba(57, 213, 255, 0.12), transparent 62%);
+}
+.welcome-hd .w-mark {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  filter: drop-shadow(0 0 10px rgba(57, 213, 255, 0.4));
+}
+.welcome-hd h2 {
+  font: 600 17px var(--sans);
+  letter-spacing: -0.4px;
+  margin-bottom: 5px;
+}
+.welcome-hd p {
+  font-size: 12px;
+  color: var(--t3);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+#scrim-welcome .choice {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+}
+#scrim-welcome .choice > svg {
+  color: var(--t4);
+}
+#scrim-welcome .choice:hover > svg {
+  color: var(--aqua);
+}
+
+/* ── guide ─────────────────────────────────────────────────────────── */
+#s-help {
+  overflow-y: auto;
+  background: var(--void);
+}
+.guide {
+  max-width: 1020px;
+  margin: 0 auto;
+  padding: 28px 30px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.guide-hd h1 {
+  font: 600 25px/1.15 var(--sans);
+  letter-spacing: -0.7px;
+}
+.guide-hd p {
+  color: var(--t3);
+  font-size: 13px;
+  margin-top: 7px;
+  max-width: 62ch;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.guide-grid {
+  align-items: start;
+}
+.gcard {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 17px 19px 19px;
+}
+#g-sample {
+  border-color: rgba(240, 193, 60, 0.28);
+  background: linear-gradient(180deg, rgba(240, 193, 60, 0.06), transparent 60%), var(--panel);
+}
+.gh {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 11px;
+}
+.gh h2 {
+  font: 600 14px var(--sans);
+  letter-spacing: -0.2px;
+}
+.gi {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+}
+.gcard p {
+  font-size: 12.5px;
+  line-height: 1.68;
+  color: var(--t2);
+  max-width: 68ch;
+  text-wrap: pretty;
+}
+.gnote {
+  margin-top: 11px;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid var(--aqua-line);
+  font-size: 12px !important;
+  color: var(--t3) !important;
+}
+.glist {
+  list-style: none;
+  margin: 11px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.glist li {
+  position: relative;
+  padding-left: 15px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--t2);
+  text-wrap: pretty;
+}
+.glist li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 5px;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--aqua);
+  opacity: 0.55;
+}
+.glist b {
+  color: var(--t1);
+  font-weight: 600;
+  margin-right: 5px;
+}
+.gacts {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 9px 22px;
+}
+.krow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--t3);
+}
+.krow span {
+  margin-left: 4px;
+}
+
 /* ── a dead button should say why it is dead ───────────────────────── */
 #runtime-error {
   position: fixed;
