@@ -512,12 +512,23 @@ select{appearance:none;cursor:pointer;padding-right:26px;
 .minimap .blk.a{background:rgba(57,213,255,.5)}
 .minimap .vp{position:absolute;border:1.5px solid var(--aqua);border-radius:3px;background:rgba(57,213,255,.09);cursor:grab}
 
+/* Along the bottom edge with the other canvas furniture, immediately left of
+   the minimap. It used to sit top-left, on top of the priority ruler — the
+   one column of the canvas that carries information you cannot get anywhere
+   else. A key is worth less than the thing it is a key to. */
 .legend{
-  position:absolute;left:14px;top:52px;z-index:20;padding:9px 11px;border-radius:var(--r-md);
-  display:flex;flex-direction:column;gap:6px;box-shadow:var(--lift);
+  position:absolute;right:200px;bottom:14px;z-index:20;
+  height:34px;padding:0 12px;border-radius:var(--r-md);
+  display:flex;flex-direction:row;align-items:center;gap:13px;
+  box-shadow:var(--lift);max-width:calc(100% - 420px);overflow:hidden;
 }
-.legend .row{display:flex;align-items:center;gap:7px;font:500 10px var(--mono);color:var(--t3);letter-spacing:.03em}
+.legend .row{display:flex;align-items:center;gap:6px;font:500 10px var(--mono);
+  color:var(--t3);letter-spacing:.03em;white-space:nowrap}
 .legend .row i{width:10px;height:3px;border-radius:99px;background:currentColor;flex:none}
+
+/* below this the strip would collide with the zoom controls; the colours are
+   also spelled out on every rule badge, so it is a loss the canvas survives */
+@media (max-width:1180px){ .legend{display:none} }
 
 /* ── code drawer ── */
 .drawer{border-top:1px solid var(--line-2);background:var(--base);display:flex;flex-direction:column;height:216px}

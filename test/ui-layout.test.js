@@ -1,6 +1,6 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { boot, shutdown, $, $$, click, settle } from "./harness.js";
+import { boot, shutdown, importFixture, $, $$, click, settle } from "./harness.js";
 
 after(shutdown);
 
@@ -10,7 +10,8 @@ after(shutdown);
    height is always going to collide with a card that grows with its content. */
 
 test("chain rows are assigned after the cards are in the document", async () => {
-  const { app } = await boot();
+  await boot();
+  await importFixture();
   click('.rb[data-go="editor"]');
   const chains = $$("#chains .chain");
   assert.ok(chains.length >= 5);
@@ -34,6 +35,7 @@ test("layout no longer estimates card height from rule count", async () => {
 
 test("chains within a hook are ordered by priority, top to bottom", async () => {
   await boot();
+  await importFixture();
   click('.rb[data-go="editor"]');
   const rows = $$("#chains .chain")
     .map((n) => ({ uid: n.dataset.chain, top: parseInt(n.style.top) }))
@@ -52,6 +54,7 @@ test("chains within a hook are ordered by priority, top to bottom", async () => 
 
 test("dragging a chain sticks, and re-arranging clears it", async () => {
   const { win } = await boot();
+  await importFixture();
   click('.rb[data-go="editor"]');
   const node = $('.chain[data-chain="inet fw/input"]');
   const before = node.style.top;
@@ -67,6 +70,15 @@ test("dragging a chain sticks, and re-arranging clears it", async () => {
 
   click("#chain-reset");
   assert.ok(!$("#chain-reset").classList.contains("on"));
+});
+
+test("canvas furniture stays out of the priority ruler", async () => {
+  const css = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("../src/styles/app.css", import.meta.url), "utf8"),
+  );
+  const rule = css.match(/\.legend\{([^}]*)\}/)[1];
+  assert.ok(!/top\s*:/.test(rule), "the legend must not be top-anchored: the ruler lives there");
+  assert.match(rule, /bottom\s*:/, "it belongs on the bottom edge with the other overlays");
 });
 
 test("nothing throws once the deferred work has landed", async () => {

@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 
 import { MODEL, ruleLine } from "../src/core/model.js";
 import { analyse, worstCase, subsumes, criteria } from "../src/core/analyse.js";
+import { loadFlawed } from "./fixture.js";
+
+/* every assertion here is about the flawed fixture, not about what the app
+   opens on — the product starts blank */
+loadFlawed();
 
 const kinds = (f) => f.map((x) => x.kind).sort();
 
@@ -41,6 +46,30 @@ test("every finding carries a fix, and applying them all converges", () => {
   }
   assert.equal(analyse().length, 0, "the analyser should be satisfiable");
   assert.ok(guard < 25, "and converge without thrashing");
+});
+
+test("a fix still works after the ruleset has been rebuilt underneath it", () => {
+  loadFlawed();
+  const finding = analyse().find((f) => f.kind === "shadowed");
+  assert.ok(finding, "the fixture contains a shadowed rule");
+
+  /* Exactly what undo does: every chain and rule replaced by fresh objects
+     parsed from a snapshot. A fix holding references would silently mutate
+     orphans and the button would appear dead. */
+  const snapshot = JSON.stringify({ c: MODEL.chains, s: MODEL.sets });
+  const restored = JSON.parse(snapshot);
+  MODEL.chains = restored.c;
+  MODEL.sets = restored.s;
+
+  const before = MODEL.chains.reduce((n, c) => n + c.rules.length, 0);
+  finding.fix.run();
+  const after = MODEL.chains.reduce((n, c) => n + c.rules.length, 0);
+
+  assert.equal(after, before - 1, "the fix did not reach the live ruleset");
+  assert.ok(
+    !analyse().some((f) => f.kind === "shadowed"),
+    "the shadowed rule should be gone",
+  );
 });
 
 test("worst case is measured over hooks, not chain names", () => {

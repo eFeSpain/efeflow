@@ -139,6 +139,24 @@ export const text = (sel) => $(sel)?.textContent.trim() ?? null;
 /* Real time, on Node's clock, so it works during and after teardown. */
 export const settle = (ms = 250) => new Promise((r) => nodeSetTimeout(r, ms));
 
+/* The app opens on a blank ruleset, so anything that needs rules to look at
+   brings its own. Loading it through the import dialog rather than poking
+   MODEL means the fixture arrives the way a user's ruleset would. */
+export async function importFixture(name = "flawed.nft") {
+  /* Blank first. edit() is a no-op when the snapshot is unchanged, so
+     re-importing the same fixture in a later test would skip the re-render
+     and leave the previous test's DOM standing. */
+  click("#btn-new");
+  await settle(20);
+
+  const text = readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
+  const area = $("#imp-text");
+  area.value = text;
+  area.dispatchEvent(new globalThis.window.Event("input", { bubbles: true }));
+  click("#imp-go");
+  await settle(80);
+}
+
 /* The interface animates on timers; poll rather than guess a duration. */
 export async function until(fn, { timeout = 6000, step = 25 } = {}) {
   const deadline = Date.now() + timeout;

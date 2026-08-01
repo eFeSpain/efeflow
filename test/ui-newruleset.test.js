@@ -23,7 +23,7 @@ test("New produces an editable ruleset", async () => {
   );
   assert.ok(MODEL.chains.length >= 3, "the new ruleset should have base chains");
   assert.ok(chains().length >= 3, `expected chain cards, got ${chains().length}`);
-  assert.equal($("#sample-tag").style.display, "none", "the sample badge should clear");
+  assert.ok(!$("#sample-tag"), "there is no sample any more, so no badge either");
 });
 
 test("a rule in the new ruleset can be selected and edited", async () => {

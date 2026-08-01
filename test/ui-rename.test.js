@@ -58,7 +58,7 @@ test("an empty or whitespace name is refused rather than accepted", async () => 
 test("the table list is derived, not hard-coded", async () => {
   await boot();
   const shown = $("#proj-tables").textContent;
-  assert.match(shown, /inet fw/, `expected the real tables, got "${shown}"`);
+  assert.match(shown, /inet filter/, `expected the real tables, got "${shown}"`);
 
   click("#btn-new");
   await settle(60);

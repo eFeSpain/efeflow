@@ -5,7 +5,7 @@
  * This module is the part that has to touch the DOM. */
 
 import {
-  MODEL, R, UID, jumpTarget, chainOf,
+  MODEL, R, UID, jumpTarget, chainOf, blankRuleset,
   VCOLOR, VNAME, fmtN, fmtB, verdictText, ruleLine,
 } from "./core/model.js";
 import { generate, generateWithMap } from "./core/generate.js";
@@ -2419,7 +2419,6 @@ $("#imp-sample").insertAdjacentElement("beforebegin", (()=>{
 const COMMANDS = () => [
   {t:t("New empty ruleset","Ruleset vacío nuevo"), k:"Ctrl N", d:"M12 5v14M5 12h14", go:()=>$("#btn-new").click()},
   {t:t("Rename the project","Renombrar el proyecto"), k:"F2", d:"M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z", go:beginRename},
-  {t:t("Replace the sample ruleset","Reemplazar el ruleset de ejemplo"), k:"", d:"M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5", go:openWelcome},
   {t:t("Run packet simulation","Ejecutar simulación de paquete"), k:"Ctrl ⇧ R", d:"M5 3v18l15-9z", go:()=>{go("sim"); runSim();}},
   {t:t("Export nftables ruleset","Exportar el ruleset nftables"), k:"Ctrl E", d:"M12 3v13M7 11l5 5 5-5M4 21h16", go:()=>go("export")},
   {t:t("Import a ruleset","Importar un ruleset"), k:"", d:"M12 16V3M7 8l5-5 5 5M4 21h16", go:()=>go("import")},
@@ -2513,28 +2512,19 @@ go = function(id){
    The bundled ruleset is a fixture. Opening straight into it made it look
    like a loaded project, and a firewall you did not write is a confusing
    thing to be shown without explanation. */
-const EMPTY_RULESET = () => ({
-  chains: ["input","forward","output"].map(hook=>({
-    id: hook, table: "inet filter", hook, prio: 0, type: "filter",
-    policy: hook === "output" ? "accept" : "drop",
-    rules: hook === "output" ? [] : [R("ct state established,related","accept",{pkts:0,bytes:0})],
-  })),
-  sets: [],
-});
 
 function startEmpty(){
   edit(t("new ruleset","ruleset nuevo"), ()=>{
-    const e = EMPTY_RULESET();
+    const e = blankRuleset();
     MODEL.chains = e.chains; MODEL.sets = e.sets;
   });
-  setProject({name:"untitled", sample:false, origin:null});
-  markSample();
+  setProject({name:"untitled", origin:null});
+  showProject();
   go("editor");
 }
 
-function markSample(){
-  const tag = $("#sample-tag");
-  if(tag) tag.style.display = project.sample ? "" : "none";
+
+function showProject(){
   const nm = $("#proj-name-t");
   if(nm) nm.textContent = project.name;
   const tb = $("#tb-proj");
@@ -2566,7 +2556,7 @@ function beginRename(){
     const next = input.value.trim().replace(/[\r\n"]/g, "");
     if(save && next && next !== project.name){
       setProject({name: next});
-      markSample();
+      showProject();
       paintCode();        /* the header comment carries the name */
       toast(t(`Renamed to ${next}`, `Renombrado a ${next}`));
     }
@@ -2600,12 +2590,10 @@ $("#scrim-welcome").addEventListener("click", e=>{
   else if(b.hasAttribute("data-guide")) go("help");
   else go("editor");
 });
-$("#g-empty")?.addEventListener("click", startEmpty);
 
 /* The sample badge is the affordance, not just a label: it says what this is
    and clicking it offers the way out. A first-run dialog you can dismiss is
    not a way to get rid of something permanently. */
-$("#sample-tag").addEventListener("click", openWelcome);
 
 /* The app's own confirmation, not window.confirm: a native modal is blocked
    in some webviews and looks wrong against a frameless window. */
@@ -2631,7 +2619,7 @@ function confirmDialog(title, body, ok){
 }
 
 $("#btn-new").addEventListener("click", async ()=>{
-  if(HIST.past.length && !project.sample){
+  if(HIST.past.length){
     const go_ahead = await confirmDialog(
       t("Discard the current ruleset?","¿Descartar el ruleset actual?"),
       t("You have unsaved edits. Starting empty replaces them — Ctrl+Z will bring them back.",
@@ -2649,18 +2637,11 @@ document.addEventListener("keydown", e=>{
   }
 });
 
-/* anything that replaces the ruleset stops it being the sample */
-MODEL_HOOKS.push(()=>{
-  if(project.sample && !MODEL.chains.some(c=>c.id==="raw_pre")) {
-    setProject({sample:false});
-    markSample();
-  }
-});
 
 /* ══ keep every derived view in step with the model ═════════════════════ */
 [renderSets, renderTopo, renderDash].forEach(f=>{ MODEL_HOOKS.push(f); RERENDER.push(f); });
 renderSets(); renderTopo(); renderDash();
-markSample();
+showProject();
 
 if(!localStorage.getItem("efeflow.seen"))
   setTimeout(()=>$("#scrim-welcome")?.classList.add("on"), 250);

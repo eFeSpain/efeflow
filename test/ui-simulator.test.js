@@ -1,6 +1,6 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { boot, shutdown, $, $$, click, setValue, until } from "./harness.js";
+import { boot, shutdown, importFixture, $, $$, click, setValue, until } from "./harness.js";
 
 after(shutdown);
 
@@ -13,6 +13,7 @@ const enterSim = () => click('.rb[data-go="sim"]');
 
 test("the screen arrives already run", async () => {
   await boot();
+  await importFixture();
   enterSim();
   await until(() => $$("#lane .hop").length > 0);
   assert.ok($$("#lane .hop").length >= 2, "the packet path should be laid out");
@@ -21,6 +22,7 @@ test("the screen arrives already run", async () => {
 
 test("the first trace row appears synchronously", async () => {
   await boot();
+  await importFixture();
   enterSim();
   await until(() => traceRows().length > 0);
   const header = traceRows()[0];
@@ -30,6 +32,7 @@ test("the first trace row appears synchronously", async () => {
 
 test("the run reaches a verdict", async () => {
   await boot();
+  await importFixture();
   enterSim();
   await until(() => $("#vb").classList.contains("show"), { timeout: 8000 });
   const verdict = $("#vb-txt").textContent.trim();
@@ -39,6 +42,7 @@ test("the run reaches a verdict", async () => {
 
 test("the step counter is written, which is where the shadowed helper threw", async () => {
   await boot();
+  await importFixture();
   enterSim();
   await until(() => /\d/.test($("#tr-count").textContent));
   assert.match($("#tr-count").textContent, /\d+\s*(steps|pasos)/);
@@ -46,6 +50,7 @@ test("the step counter is written, which is where the shadowed helper threw", as
 
 test("changing a control re-runs and can change the verdict", async () => {
   await boot();
+  await importFixture();
   enterSim();
   await until(() => $("#vb").classList.contains("show"), { timeout: 8000 });
 
@@ -64,6 +69,7 @@ test("changing a control re-runs and can change the verdict", async () => {
 
 test("direction rewrites the path through the hooks", async () => {
   await boot();
+  await importFixture();
   enterSim();
   click('#sim-dir [data-dir="out"]');
   await until(() => $$("#lane .hop").length > 0);
@@ -75,6 +81,7 @@ test("direction rewrites the path through the hooks", async () => {
 
 test("leaving the screen stops the animation", async () => {
   await boot();
+  await importFixture();
   enterSim();
   await until(() => traceRows().length > 1);
   click('.rb[data-go="dash"]');

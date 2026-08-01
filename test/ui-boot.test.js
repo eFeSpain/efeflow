@@ -1,6 +1,6 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { boot, shutdown, $, $$, click, text, settle } from "./harness.js";
+import { boot, shutdown, importFixture, $, $$, click, text, settle } from "./harness.js";
 
 after(shutdown);
 
@@ -40,6 +40,7 @@ test("every screen renders content when navigated to", async () => {
 
 test("the canvas is built from the model, not from markup", async () => {
   await boot();
+  await importFixture();
   click('.rb[data-go="editor"]');
   const chains = $$("#chains .chain");
   assert.ok(chains.length >= 5, `expected chains on the canvas, got ${chains.length}`);
@@ -53,6 +54,7 @@ test("the canvas is built from the model, not from markup", async () => {
 
 test("generated code is emitted into the drawer", async () => {
   await boot();
+  await importFixture();
   const lines = $$("#codeout .ln");
   assert.ok(lines.length > 30, `expected generated nft source, got ${lines.length} lines`);
   const src = lines.map((l) => l.textContent).join("\n");
@@ -73,6 +75,7 @@ test("nothing throws on a deferred timer either", async () => {
 
 test("the analyser reaches the badges", async () => {
   await boot();
+  await importFixture();
   click('.rb[data-go="validate"]');
   const findings = $$("#findings .finding");
   assert.ok(findings.length > 0, "the demo ruleset contains defects; none were reported");

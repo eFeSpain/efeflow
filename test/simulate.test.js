@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { evaluate, matches, PRESETS } from "../src/core/simulate.js";
+import { loadFlawed } from "./fixture.js";
+
+loadFlawed();
 
 const run = (over = {}) => {
   const p = { ...PRESETS.ssh, ...over };

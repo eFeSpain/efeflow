@@ -1,6 +1,12 @@
 /* Findings are derived from the model, never authored. The core relation
    is subsumption: A subsumes B when every packet matching B matches A. */
-import { MODEL, R, ruleLine, jumpTarget } from './model.js';
+import { MODEL, R, ruleLine, jumpTarget, UID, chainOf } from './model.js';
+
+/* A finding describes the ruleset; applying it must act on the ruleset as
+   it is now. Capturing object references looked fine until undo — which
+   rebuilds every chain and rule from JSON — left the fixes pointing at
+   orphans, so the button did nothing and said nothing. Resolve on apply. */
+const at = (uid, i) => { const c = chainOf(uid); return c && c.rules[i] ? c : null; };
 import { inSet, inCidr } from './simulate.js';
 import { t } from '../i18n.js';
 const CRIT = [
@@ -77,7 +83,7 @@ export function analyse(){
                   `La regla ${a.i+1} ya aplica ${a.r.verdict} a todo paquete que podría casar con la ${b.i+1}, y va antes. La regla ${b.i+1} cuesta una evaluación en cada paquete que llega hasta ella y no cambia nada.`],
           code:[[a.i+1, ruleLine(a.r), "neg"],[b.i+1, ruleLine(b.r), "dead"]],
           fix:{label:["Delete rule "+(b.i+1),"Eliminar la regla "+(b.i+1)],
-               run:()=>{ ch.rules.splice(b.i,1); }},
+               run:()=>{ const c = at(UID(ch), b.i); if(c) c.rules.splice(b.i,1); }},
         }));
         break;
       }
@@ -96,7 +102,9 @@ export function analyse(){
                 `Las reglas ${a.i+1} y ${b.i+1} coinciden con tráfico a <code>${a.c.dport||"?"}</code> pero lo traducen a hosts distintos. nftables termina la cadena en el primer veredicto NAT, así que la regla ${a.i+1} gana en silencio para todo paquete que case con ambas y la ${b.i+1} nunca se dispara.`],
         code:[[a.i+1, ruleLine(a.r), "neg"],[b.i+1, ruleLine(b.r), "dead"]],
         fix:{label:["Narrow rule "+(a.i+1),"Restringir la regla "+(a.i+1)],
-             run:()=>{ if(!/ip saddr/.test(a.r.expr)) a.r.expr += " ip saddr != @admin_nets"; }},
+             run:()=>{ const c = at(UID(ch), a.i); if(!c) return;
+                    const r = c.rules[a.i];
+                    if(!/ip saddr/.test(r.expr)) r.expr += " ip saddr != @admin_nets"; }},
       }));
     }));
 
@@ -126,15 +134,17 @@ export function analyse(){
                              (a.c.saddr?" ip saddr "+a.c.saddr:"")+" "+a.r.verdict, "pos"]]),
         fix:{label:match?["Merge into @"+match.n,"Fusionar en @"+match.n]:["Create set","Crear set"],
              run:()=>{
+               const c = chainOf(UID(ch)); if(!c) return;
                const name = match ? match.n : "ports";
-               if(!match) MODEL.sets.push({n:name, table:ch.table, t:"inet_service", f:"", el:ports});
-               const keep = sibs[0];
-               keep.r.expr = keep.r.expr.replace(/dport \S+/, "dport @"+name);
-               keep.r.pkts = sibs.reduce((s,x)=>s+x.r.pkts,0);
-               keep.r.bytes = sibs.reduce((s,x)=>s+x.r.bytes,0);
-               sibs.slice(1).map(s=>s.r).forEach(r=>{
-                 const j = ch.rules.indexOf(r); if(j>=0) ch.rules.splice(j,1);
-               });
+               if(!match) MODEL.sets.push({n:name, table:c.table, t:"inet_service", f:"", el:ports});
+               /* indices, resolved now — the rule objects analysed may be gone */
+               const idx = sibs.map(x=>x.i).filter(i=>c.rules[i]);
+               if(!idx.length) return;
+               const keep = c.rules[idx[0]];
+               keep.expr = keep.expr.replace(/dport \S+/, "dport @"+name);
+               keep.pkts = idx.reduce((n,i)=>n+c.rules[i].pkts, 0);
+               keep.bytes = idx.reduce((n,i)=>n+c.rules[i].bytes, 0);
+               idx.slice(1).sort((x,y)=>y-x).forEach(i=>c.rules.splice(i,1));
              }},
       }));
     });
@@ -152,7 +162,8 @@ export function analyse(){
                 `Esta cadena da vía rápida al tráfico <code>established</code> pero deja que los paquetes <code>invalid</code> recorran las ${rs.length} reglas antes de caer en la política. Descartarlos primero es más seguro y más barato.`],
         code:[["+", "ct state invalid counter drop", "pos"]],
         fix:{label:["Insert at position 1","Insertar en la posición 1"],
-             run:()=>{ ch.rules.unshift(R("ct state invalid","drop",{pkts:0,bytes:0})); }},
+             run:()=>{ const c = chainOf(UID(ch));
+                    if(c) c.rules.unshift(R("ct state invalid","drop",{pkts:0,bytes:0})); }},
       }));
     }
 
@@ -168,7 +179,9 @@ export function analyse(){
         code:[[x.i+1, ruleLine(x.r), "neg"],
               ["→", ruleLine(x.r).replace(/\blog\b/, "limit rate 5/second burst 10 packets log"), "pos"]],
         fix:{label:["Add rate limit","Añadir límite de tasa"],
-             run:()=>{ x.r.expr = x.r.expr.replace(/\blog\b/, "limit rate 5/second burst 10 packets log"); }},
+             run:()=>{ const c = at(UID(ch), x.i); if(!c) return;
+                    const r = c.rules[x.i];
+                    r.expr = r.expr.replace(/\blog\b/, "limit rate 5/second burst 10 packets log"); }},
       }));
     });
   });
@@ -186,7 +199,8 @@ export function analyse(){
               `Sus ${s.el.length} elemento${s.el.length===1?"":"s"} se cargan en el kernel en cada recarga sin que ninguna regla los consuma.`],
       code:[["", `set ${s.n} { type ${s.t}${s.f?" ; flags "+s.f:""} }`, "neg"]],
       fix:{label:["Remove set","Eliminar el set"],
-           run:()=>{ MODEL.sets.splice(MODEL.sets.indexOf(s),1); }},
+           run:()=>{ const i = MODEL.sets.findIndex(x=>x.n===s.n);
+                  if(i>=0) MODEL.sets.splice(i,1); }},
       go:"sets",
     }));
   });

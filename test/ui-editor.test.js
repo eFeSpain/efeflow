@@ -1,6 +1,6 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { boot, shutdown, $, $$, click, setValue, text } from "./harness.js";
+import { boot, shutdown, importFixture, $, $$, click, setValue, text } from "./harness.js";
 import { MODEL } from "../src/core/model.js";
 
 after(shutdown);
@@ -11,6 +11,7 @@ const inputChain = () => MODEL.chains.find((c) => c.id === "input");
 
 test("selecting a rule fills the properties panel", async () => {
   await boot();
+  await importFixture();
   click('.rb[data-go="editor"]');
   click(rules()[4]);
 
@@ -22,6 +23,7 @@ test("selecting a rule fills the properties panel", async () => {
 
 test("selecting highlights the matching line of generated code", async () => {
   await boot();
+  await importFixture();
   click('.rb[data-go="editor"]');
   const row = $('.chain[data-chain="inet fw/input"] .rule');
   click(row);
@@ -38,6 +40,7 @@ test("selecting highlights the matching line of generated code", async () => {
 
 test("editing a field re-emits the ruleset", async () => {
   await boot();
+  await importFixture();
   click('.rb[data-go="editor"]');
   click(rules()[5]); // tcp dport 443 ip saddr @admin_nets
 
@@ -49,6 +52,7 @@ test("editing a field re-emits the ruleset", async () => {
 
 test("an edit lands in history and undo puts it back", async () => {
   await boot();
+  await importFixture();
   click('.rb[data-go="editor"]');
   const before = inputChain().rules.length;
 
@@ -67,6 +71,7 @@ test("an edit lands in history and undo puts it back", async () => {
 
 test("the canvas flags the rules the analyser reported", async () => {
   await boot();
+  await importFixture();
   click('.rb[data-go="editor"]');
   const flagged = $$("#chains .rule.warn, #chains .rule.err");
   assert.ok(flagged.length > 0, "findings never reached the canvas");
@@ -74,21 +79,35 @@ test("the canvas flags the rules the analyser reported", async () => {
 
 test("applying a fix changes the model and the findings", async () => {
   await boot();
+  await importFixture();
   click('.rb[data-go="validate"]');
   const before = $$("#findings .finding").length;
   assert.ok(before > 0);
 
   const fix = $("#findings [data-fix]");
   assert.ok(fix, "no finding offered an automatic fix");
+
+  /* assert the effect, not a count: the number of findings is a proxy that can
+     stay level if one fix uncovers something else */
+  const natPre = MODEL.chains.find((c) => c.id === "nat_pre");
+  const wasExpr = natPre.rules[0].expr;
+  const wasTitle = $("#findings .finding .h").textContent;
+
   click(fix);
 
-  const after_ = $$("#findings .finding").length;
-  assert.ok(after_ < before, `findings should drop after a fix: ${before} → ${after_}`);
+  assert.notEqual(natPre.rules[0].expr, wasExpr, "the fix did not mutate the ruleset");
+  assert.notEqual(
+    $("#findings .finding .h")?.textContent,
+    wasTitle,
+    "the finding it fixed is still being reported",
+  );
+  assert.ok($$("#findings .finding").length <= before);
   click("#undo");
 });
 
 test("the language switch translates without breaking the views", async () => {
   await boot();
+  await importFixture();
   click('.rb[data-go="editor"]');
   const es = text('.addrule');
   click('#lang button[data-lang="en"]');

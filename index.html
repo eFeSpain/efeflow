@@ -189,11 +189,6 @@
         <svg class="pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg>
       </button>
       <input id="proj-input" spellcheck="false" maxlength="60">
-      <button class="sample-tag" id="sample-tag"
-              data-tt="A built-in example, not your firewall. Click to replace it.|Un ejemplo incorporado, no tu firewall. Pulsa para reemplazarlo.">
-        <span data-t="sample|ejemplo">sample</span>
-        <svg class="ico sm" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="m6 9 6 6 6-6"/></svg>
-      </button>
       <span class="dimmer mono" id="proj-tables" style="font-size:11px"></span>
       <span class="dot-live" data-tt="Unsaved changes|Cambios sin guardar"></span>
     </div>
@@ -595,16 +590,6 @@
       <p data-t="A designer, not a firewall manager. It edits a ruleset and emits nft source. Nothing reaches a live host unless you ask it to.|Un diseñador, no un gestor de firewall. Edita un ruleset y emite código nft. Nada llega a una máquina en producción salvo que lo pidas.">A designer, not a firewall manager.</p>
     </header>
 
-    <article class="gcard" id="g-sample">
-      <div class="gh"><span class="pill v-warnp"><span class="sw"></span><span data-t="sample|ejemplo">sample</span></span>
-        <h2 data-t="Why edge-fw-01 is already open|Por qué edge-fw-01 ya está abierto">Why edge-fw-01 is already open</h2></div>
-      <p data-t="It is a fixture, not your firewall and not read from any machine. It exists so every screen has something to show, and it is deliberately flawed: the shadowed rule, the conflicting DNAT targets, the unused set and the four rules that should be one set lookup are all planted. Those are the six findings the analyser reports.|Es un ejemplo, no tu firewall ni algo leído de ninguna máquina. Existe para que cada pantalla tenga algo que enseñar, y está defectuoso a propósito: la regla eclipsada, los destinos DNAT en conflicto, el set sin usar y las cuatro reglas que deberían ser una consulta a set están plantadas. Son los seis hallazgos que reporta el analizador.">It is a fixture.</p>
-      <div class="gacts">
-        <button class="tb accent" data-go="import" data-t="Import a real ruleset|Importar un ruleset real">Import a real ruleset</button>
-        <button class="tb" id="g-empty" data-t="Start from an empty ruleset|Empezar con un ruleset vacío">Start from an empty ruleset</button>
-      </div>
-    </article>
-
     <div class="grid g2 guide-grid">
       <article class="gcard">
         <div class="gh"><span class="gi" style="color:var(--aqua)"><svg class="ico" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg></span>
@@ -849,12 +834,6 @@
         <span class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 16V3"/><path d="m7 8 5-5 5 5"/><path d="M4 21h16"/></svg></span>
         <span><span class="h" data-t="Import a ruleset|Importar un ruleset">Import a ruleset</span>
           <span class="d" data-t="Paste the output of nft list ruleset, or open a .nft file. eFeFlow verifies it can reproduce every rule before importing anything.|Pega la salida de nft list ruleset, o abre un fichero .nft. eFeFlow verifica que puede reproducir cada regla antes de importar nada.">Paste nft list ruleset.</span></span>
-        <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
-      </button>
-      <button class="choice" data-start="sample">
-        <span class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h9"/></svg></span>
-        <span><span class="h" data-t="Explore the sample|Explorar el ejemplo">Explore the sample</span>
-          <span class="d" data-t="A small ruleset planted with the defects the analyser is built to catch — a shadowed rule, conflicting DNAT targets, an unused set.|Un ruleset pequeño con los defectos que el analizador está hecho para cazar: una regla eclipsada, destinos DNAT en conflicto, un set sin usar.">Planted with defects to find.</span></span>
         <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
       </button>
       <button class="choice" data-start="empty">
