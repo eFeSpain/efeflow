@@ -217,7 +217,12 @@ const LIB = () => [
      if(used.length) return used.map(e=>[e.name, zoneOf(e.name)[1].toLowerCase()]);
      return [["lo","loopback"],["eth0","wan"],["eth1","lan"],["wg0","vpn"],["docker0","ctr"]];
    })()],
-  [t("Networks","Redes"),"NW",[["10.10.0.0/24",""],["10.20.0.0/16",""],["172.17.0.0/16",""],["fd00::/8",""],["0.0.0.0/0",""]]],
+  [t("Networks","Redes"),"NW", (()=>{
+     const used = addresses();
+     return used.length
+       ? used.map(a=>[a.text, `${a.n} ${a.n===1?t("rule","regla"):t("rules","reglas")}`])
+       : [["10.0.0.0/8",""],["192.168.0.0/16",""],["172.16.0.0/12",""],["fd00::/8",""],["0.0.0.0/0",""]];
+   })()],
   [t("Services","Servicios"),"SV",[["ssh","22"],["https","443"],["http","80"],["dns","53"],["wireguard","51820"],["winbox","8291"],["snmp","161"]]],
   [t("Protocols","Protocolos"),"PR",[["tcp",""],["udp",""],["icmp",""],["icmpv6",""],["sctp",""],["esp",""],["ah",""]]],
   [t("Connection states","Estados de conexión"),"CT",[["established",""],["related",""],["new",""],["invalid",""],["untracked",""],["ct status dnat",""]]],
@@ -235,9 +240,16 @@ function renderLibrary(){
   libBody.innerHTML = "";
   LIB().forEach(([cat,gl,items],i)=>{
     const d = el("details","cat"); d.open = open.length ? open[i] : i<4;
+    /* Two kinds of category, and they were indistinguishable: these four are
+       your ruleset reflected back, the rest are constants to drag. */
+    const derived = ["TB","CH","SE","MP","IF","NW"].includes(gl);
+    d.dataset.kind = gl;
     d.innerHTML = `<summary>
         <svg class="ico sm tw" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
-        <span class="nm">${esc(cat)}</span><span class="ct">${items.length}</span></summary>
+        <span class="nm">${esc(cat)}</span>
+        ${derived?`<span class="derived" title="${esc(t("From your ruleset — right-click to rename everywhere",
+                    "De tu ruleset — clic derecho para renombrar en todo"))}">·</span>`:""}
+        <span class="ct">${items.length}</span></summary>
       <div class="cat-items">${items.map(([n,r])=>
         `<div class="obj" draggable="true"><span class="gl">${gl}</span><span class="nm">${esc(n)}</span><span class="rf">${esc(r)}</span></div>`).join("")}</div>`;
     libBody.appendChild(d);
@@ -966,6 +978,21 @@ const HOOK_LABEL = {in:["prerouting","input"], fwd:["prerouting","forward","post
    Offering a closed list meant a rule mentioning vlan40 could not be edited
    without losing it — the select had no option to hold it. Suggest, never
    restrict. */
+/* The literal addresses the rules carry, so the Networks palette shows your
+   ruleset instead of five numbers I made up. Set references are excluded —
+   they belong to the Sets category and have their own editor. */
+export function addresses(){
+  const m = new Map();
+  MODEL.chains.forEach(ch=> ch.rules.forEach(r=>{
+    if(!r.on) return;
+    for(const x of r.expr.matchAll(/\bip6?\s+[sd]addr\s+(?:!=\s*)?([0-9a-fA-F.:]+(?:\/\d+)?)/g)){
+      const text = x[1];
+      m.set(text, {text, n:(m.get(text)?.n || 0) + 1});
+    }
+  }));
+  return [...m.values()].sort((a,b)=>b.n-a.n);
+}
+
 export function ifaceNames(){
   return [...new Set([...interfaces().map(e=>e.name), "lo"])].sort();
 }
@@ -1205,8 +1232,8 @@ $("#props-float").addEventListener("click", ()=>{
   });
   bar.addEventListener("pointermove", e=>{
     if(!drag) return;
-    aside.style.left = Math.min(innerWidth-120, Math.max(0, e.clientX-drag.x))+"px";
-    aside.style.top  = Math.min(innerHeight-60, Math.max(44, e.clientY-drag.y))+"px";
+    aside.style.left = Math.min(window.innerWidth-120, Math.max(0, e.clientX-drag.x))+"px";
+    aside.style.top  = Math.min(window.innerHeight-60, Math.max(44, e.clientY-drag.y))+"px";
   });
   bar.addEventListener("pointerup", ()=>{ drag = null; });
 });
@@ -1479,8 +1506,8 @@ function openCtx(x, y, items){
        <span>${it[1]}</span>${it[4]?`<span class="k">${it[4]}</span>`:""}</button>`).join("");
   document.body.appendChild(ctxEl);
   const w = ctxEl.offsetWidth, h = ctxEl.offsetHeight;
-  ctxEl.style.left = Math.min(x, innerWidth  - w - 8) + "px";
-  ctxEl.style.top  = Math.min(y, innerHeight - h - 8) + "px";
+  ctxEl.style.left = Math.min(x, window.innerWidth  - w - 8) + "px";
+  ctxEl.style.top  = Math.min(y, window.innerHeight - h - 8) + "px";
   return ctxEl;
 }
 
@@ -2846,6 +2873,116 @@ document.addEventListener("keydown", e=>{
 /* ══ keep every derived view in step with the model ═════════════════════ */
 [renderSets, renderTopo, renderDash].forEach(f=>{ MODEL_HOOKS.push(f); RERENDER.push(f); });
 renderSets(); renderTopo(); renderDash();
+/* ══ RENAMING WHAT THE RULES MENTION ════════════════════════════════════
+   An interface or an address is not an object you can open and edit — it is
+   a string repeated across rules. So the operation people actually want is
+   "change it everywhere", and without it the only route was editing every
+   rule by hand. */
+
+/* A text prompt in the app's own chrome; window.prompt is blocked in webviews. */
+function promptDialog(title, body, value, ok){
+  return new Promise(resolve=>{
+    $("#cf-title").textContent = title;
+    $("#cf-body").innerHTML = "";
+    const p = el("p"); p.textContent = body;
+    p.style.cssText = "font-size:12.5px;line-height:1.6;color:var(--t2);margin-bottom:11px";
+    const input = el("input"); input.type = "text"; input.value = value; input.spellcheck = false;
+    $("#cf-body").append(p, input);
+    $("#cf-yes").textContent = ok;
+    const scrim = $("#scrim-confirm");
+    scrim.classList.add("on");
+    input.focus(); input.select();
+
+    const done = v => {
+      scrim.classList.remove("on");
+      $("#cf-yes").removeEventListener("click", yes);
+      $("#cf-no").removeEventListener("click", no);
+      document.removeEventListener("keydown", key);
+      $("#cf-body").innerHTML = "";
+      resolve(v);
+    };
+    const yes = ()=>done(input.value.trim());
+    const no  = ()=>done(null);
+    const key = e=>{
+      if(e.key==="Enter"){ e.preventDefault(); yes(); }
+      if(e.key==="Escape"){ e.preventDefault(); no(); }
+      e.stopPropagation();
+    };
+    $("#cf-yes").addEventListener("click", yes);
+    $("#cf-no").addEventListener("click", no);
+    document.addEventListener("keydown", key);
+  });
+}
+
+/* Rewrites a bare token wherever the rules use it, quoted or not. */
+function renameEverywhere(kind, from, to){
+  const q = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = kind === "IF"
+    ? new RegExp(`((?:iif|oif)(?:name)?\\s+)"?${q(from)}"?(?![\\w.-])`, "g")
+    : new RegExp(`(\\bip6?\\s+[sd]addr\\s+(?:!=\\s*)?)${q(from)}(?![\\w.:/])`, "g");
+  const sub = kind === "IF" ? `$1"${to}"` : `$1${to}`;
+
+  let hits = 0;
+  MODEL.chains.forEach(ch=> ch.rules.forEach(r=>{
+    const next = r.expr.replace(re, sub);
+    if(next !== r.expr){ r.expr = next; hits++; }
+  }));
+  return hits;
+}
+
+const usagesOf = (kind, name) => {
+  const re = kind === "IF"
+    ? new RegExp(`(?:iif|oif)(?:name)?\\s+"?${name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}"?(?![\\w.-])`)
+    : new RegExp(`\\bip6?\\s+[sd]addr\\s+(?:!=\\s*)?${name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}(?![\\w.:/])`);
+  const out = [];
+  MODEL.chains.forEach(ch=> ch.rules.forEach((r,i)=>{ if(r.on && re.test(r.expr)) out.push({ch,i}); }));
+  return out;
+};
+
+document.addEventListener("contextmenu", e=>{
+  const obj = e.target.closest("#lib-body .obj");
+  if(!obj) return;
+  const kind = $(".gl", obj).textContent.trim();
+  if(kind !== "IF" && kind !== "NW") return;   /* the rest are constants */
+  const name = $(".nm", obj).textContent.trim();
+  const uses = usagesOf(kind, name);
+  if(!uses.length) return;
+  e.preventDefault();
+  e.stopPropagation();
+
+  const m = openCtx(e.clientX, e.clientY, [
+    ["ren",  t(`Rename everywhere (${uses.length})`, `Renombrar en todo (${uses.length})`),
+     "M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"],
+    ["show", t("Show the rules using it","Ver las reglas que lo usan"),
+     "M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"],
+  ]);
+  m.addEventListener("click", async ev=>{
+    const a = ev.target.closest("[data-act]"); if(!a) return;
+    const act = a.dataset.act;
+    killCtx();
+
+    if(act === "show"){
+      go("editor");
+      const keys = new Set(uses.map(u=>UID(u.ch)+":"+u.i));
+      $$(".rule").forEach(r=>r.classList.toggle("faded", !keys.has(r.dataset.chain+":"+r.dataset.i)));
+      setTimeout(()=>$$(".rule").forEach(r=>r.classList.remove("faded")), 2600);
+      select(UID(uses[0].ch), uses[0].i, true);
+      return;
+    }
+
+    const next = await promptDialog(
+      kind === "IF" ? t("Rename interface","Renombrar interfaz") : t("Change address","Cambiar dirección"),
+      t(`${name} is named by ${uses.length} rule(s). Renaming rewrites all of them; Ctrl+Z undoes it.`,
+        `${name} lo nombran ${uses.length} regla(s). Renombrar las reescribe todas; Ctrl+Z lo deshace.`),
+      name, t("Rename","Renombrar"));
+    if(!next || next === name) return;
+
+    let hits = 0;
+    edit(t("rename "+name, "renombrar "+name), ()=>{ hits = renameEverywhere(kind, name, next); });
+    toast(t(`${name} → ${next} in ${hits} rules`, `${name} → ${next} en ${hits} reglas`));
+  });
+}, true);
+
 /* ══ CHAINS ═════════════════════════════════════════════════════════════
    You could edit rules but never create the chain to put them in, which made
    a NAT ruleset impossible to build from scratch. */

@@ -71,6 +71,8 @@ export async function boot() {
   globalThis.CSS = win.CSS;
   globalThis.getComputedStyle = win.getComputedStyle.bind(win);
   globalThis.matchMedia = win.matchMedia;
+  globalThis.innerWidth = win.innerWidth;
+  globalThis.innerHeight = win.innerHeight;
   /* Timers stay on Node's. jsdom's own setTimeout delegates to the global one,
      so aliasing makes it call itself — the same trap as performance.now.
      The consequence is that the app's pending timers outlive close(); the

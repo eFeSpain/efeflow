@@ -248,6 +248,40 @@
 }
 @keyframes fill { to { width: 100%; } }
 
+/* ── which library categories are your ruleset, and which are a palette ── */
+.cat .derived {
+  width: 5px;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--aqua);
+  opacity: 0.55;
+  font-size: 0;
+  flex: none;
+}
+.cat[data-kind="IF"] .obj,
+.cat[data-kind="NW"] .obj {
+  /* right-click renames these everywhere they appear */
+  cursor: grab;
+}
+.cat[data-kind="IF"] .obj:hover .rf,
+.cat[data-kind="NW"] .obj:hover .rf {
+  color: var(--aqua);
+}
+#scrim-confirm .modal-body input {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  font: 450 12.5px var(--mono);
+  background: var(--sunken);
+  border: 1px solid var(--aqua-line);
+  border-radius: var(--r-sm);
+  color: var(--t1);
+}
+#scrim-confirm .modal-body input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(57, 213, 255, 0.13);
+}
+
 /* ── the hook rail is where you add a chain ────────────────────────────
    It already names every hook in packet order, so it is where anyone looks
    for "put a prerouting chain here". */
