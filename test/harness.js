@@ -142,12 +142,22 @@ export const settle = (ms = 250) => new Promise((r) => nodeSetTimeout(r, ms));
 /* The app opens on a blank ruleset, so anything that needs rules to look at
    brings its own. Loading it through the import dialog rather than poking
    MODEL means the fixture arrives the way a user's ruleset would. */
+/* New asks before discarding edits, so a test that just clicks it and moves on
+   is left waiting on a dialog nobody answered. */
+export async function newRuleset() {
+  click("#btn-new");
+  await settle(25);
+  if ($("#scrim-confirm")?.classList.contains("on")) {
+    click("#cf-yes");
+    await settle(25);
+  }
+}
+
 export async function importFixture(name = "flawed.nft") {
   /* Blank first. edit() is a no-op when the snapshot is unchanged, so
      re-importing the same fixture in a later test would skip the re-render
      and leave the previous test's DOM standing. */
-  click("#btn-new");
-  await settle(20);
+  await newRuleset();
 
   const text = readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
   const area = $("#imp-text");

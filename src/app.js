@@ -1597,6 +1597,83 @@ document.addEventListener("dragend", ()=>{
     .forEach(n=>n.classList.remove("dragging","dropzone","droptarget","dropbefore","dropafter"));
 });
 
+/* ── dropping a chain onto the canvas ────────────────────────────────
+   Dragging `prerouting` out of the library is the obvious gesture, and it
+   used to show the no-entry cursor: only rule-sized objects had a target.
+   The canvas itself is a target for chains, and where you drop decides the
+   hook, because that is what the horizontal axis already means. */
+const HOOK_AT = x => {
+  let best = null, dist = Infinity;
+  for(const [h, hx] of Object.entries(HOOK_X)){
+    const d = Math.abs(x - (hx + 142));
+    if(d < dist){ dist = d; best = h; }
+  }
+  return best;
+};
+const isChainDrag = () => DRAG?.type === "lib" && DRAG.k === "CH";
+const HOOK_NAMES = Object.keys(HOOK_X);
+
+function canvasPoint(e){
+  const c = $("#canvas").getBoundingClientRect();
+  return {x:(e.clientX - c.left)/zoom, y:(e.clientY - c.top)/zoom};
+}
+
+$("#cscroll").addEventListener("dragover", e=>{
+  if(!isChainDrag() || e.target.closest(".chain")) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "copy";
+  const hook = HOOK_NAMES.includes(DRAG.n) ? DRAG.n : HOOK_AT(canvasPoint(e).x);
+  $$(".hk").forEach(k=>k.classList.toggle("lit", k.dataset.hook === hook));
+});
+
+$("#cscroll").addEventListener("drop", e=>{
+  if(!isChainDrag() || e.target.closest(".chain")) return;
+  e.preventDefault();
+  $$(".hk").forEach(k=>k.classList.remove("lit"));
+
+  const named = HOOK_NAMES.includes(DRAG.n);
+  const hook = named ? DRAG.n : HOOK_AT(canvasPoint(e).x);
+  const table = MODEL.chains[0]?.table || "inet filter";
+  DRAG = null;
+
+  /* "base chain" / "regular chain" are templates, not a hook — and a name
+     that already exists needs a decision, so both go to the dialog */
+  if(!named || MODEL.chains.some(c=>c.table===table && c.id===hook)){
+    openChain(null);
+    $("#ch-name").value = named ? hook : "";
+    $("#ch-hook").value = hook;
+    if(DRAG?.n === "regular chain") $('#ch-kind [data-kind="regular"]')?.click();
+    chSync();
+    return;
+  }
+  addChainAt(hook, table);
+});
+
+function addChainAt(hook, table){
+  const facing = hook === "input" || hook === "forward";
+  edit(t("new chain","cadena nueva"), ()=>{
+    MODEL.chains.push({
+      id: hook, table, hook, prio: 0, type: "filter",
+      policy: facing ? "drop" : "accept", rules: [],
+    });
+  });
+  go("editor");
+  const uid = table + "/" + hook;
+  setTimeout(()=>$(`.chain[data-chain="${cssEsc(uid)}"]`)
+    ?.scrollIntoView({block:"center", inline:"center", behavior:"smooth"}), 40);
+  toast(t(`Added ${hook} — click its header to set type and priority`,
+          `Añadida ${hook} — pulsa su cabecera para tipo y prioridad`));
+}
+
+/* The hook rail already names every hook; clicking one adds a chain there. */
+$(".hookrail").addEventListener("click", e=>{
+  const hk = e.target.closest(".hk"); if(!hk) return;
+  const hook = hk.dataset.hook, table = MODEL.chains[0]?.table || "inet filter";
+  if(MODEL.chains.some(c=>c.table===table && c.id===hook)){
+    openChain(null); $("#ch-hook").value = hook; chSync();
+  } else addChainAt(hook, table);
+});
+
 /* ── targets ── */
 document.addEventListener("dragover", e=>{
   if(!DRAG) return;

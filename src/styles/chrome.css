@@ -248,6 +248,34 @@
 }
 @keyframes fill { to { width: 100%; } }
 
+/* ── the hook rail is where you add a chain ────────────────────────────
+   It already names every hook in packet order, so it is where anyone looks
+   for "put a prerouting chain here". */
+.hookrail .hk {
+  cursor: pointer;
+}
+.hookrail .hk::before {
+  content: "+";
+  position: absolute;
+  left: 10px;
+  font: 500 13px var(--mono);
+  color: var(--aqua);
+  opacity: 0;
+  transition: opacity 0.14s var(--ease);
+}
+.hookrail .hk:hover {
+  color: var(--t1);
+  background: linear-gradient(180deg, rgba(57, 213, 255, 0.09), transparent);
+}
+.hookrail .hk:hover::before {
+  opacity: 1;
+}
+/* the drop target while a chain is being dragged out of the library */
+.hookrail .hk.lit {
+  color: var(--aqua);
+  background: linear-gradient(180deg, rgba(57, 213, 255, 0.2), transparent);
+}
+
 /* ── a set is editable, including what it is called ────────────────── */
 .set-hero .r1 .at {
   font: 600 19px var(--mono);
