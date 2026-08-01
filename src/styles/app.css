@@ -512,10 +512,10 @@ select{appearance:none;cursor:pointer;padding-right:26px;
 .minimap .blk.a{background:rgba(57,213,255,.5)}
 .minimap .vp{position:absolute;border:1.5px solid var(--aqua);border-radius:3px;background:rgba(57,213,255,.09);cursor:grab}
 
-/* Along the bottom edge with the other canvas furniture, immediately left of
-   the minimap. It used to sit top-left, on top of the priority ruler — the
-   one column of the canvas that carries information you cannot get anywhere
-   else. A key is worth less than the thing it is a key to. */
+/* Stacked above the minimap, clear of the zoom controls. It has been wrong
+   twice: top-left it covered the priority ruler, and along the bottom edge it
+   covered the zoom buttons. A key is worth less than the thing it is a key to,
+   and worth less again than a control. */
 .legend{
   position:absolute;right:14px;bottom:130px;z-index:20;
   height:30px;padding:0 11px;border-radius:var(--r-md);
