@@ -252,8 +252,9 @@
 .sample-tag {
   display: inline-flex;
   align-items: center;
-  height: 17px;
-  padding: 0 6px;
+  gap: 3px;
+  height: 18px;
+  padding: 0 4px 0 6px;
   border-radius: 4px;
   cursor: pointer;
   background: rgba(240, 193, 60, 0.13);
@@ -266,6 +267,13 @@
 }
 .sample-tag:hover {
   background: rgba(240, 193, 60, 0.22);
+  border-color: rgba(240, 193, 60, 0.55);
+}
+.sample-tag svg {
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.2;
+  opacity: 0.7;
 }
 
 /* ── welcome ───────────────────────────────────────────────────────── */

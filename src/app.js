@@ -2399,6 +2399,8 @@ $("#imp-sample").insertAdjacentElement("beforebegin", (()=>{
 
 /* ══ COMMAND PALETTE ═══════════════════════════════════════════════════ */
 const COMMANDS = () => [
+  {t:t("New empty ruleset","Ruleset vacío nuevo"), k:"Ctrl N", d:"M12 5v14M5 12h14", go:()=>$("#btn-new").click()},
+  {t:t("Replace the sample ruleset","Reemplazar el ruleset de ejemplo"), k:"", d:"M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5", go:openWelcome},
   {t:t("Run packet simulation","Ejecutar simulación de paquete"), k:"Ctrl ⇧ R", d:"M5 3v18l15-9z", go:()=>{go("sim"); runSim();}},
   {t:t("Export nftables ruleset","Exportar el ruleset nftables"), k:"Ctrl E", d:"M12 3v13M7 11l5 5 5-5M4 21h16", go:()=>go("export")},
   {t:t("Import a ruleset","Importar un ruleset"), k:"", d:"M12 16V3M7 8l5-5 5 5M4 21h16", go:()=>go("import")},
@@ -2520,6 +2522,8 @@ function markSample(){
   if(tb) tb.textContent = project.name;
 }
 
+const openWelcome = ()=> $("#scrim-welcome").classList.add("on");
+
 $("#scrim-welcome").addEventListener("click", e=>{
   const b = e.target.closest("[data-start]");
   if(!b) return;
@@ -2531,6 +2535,25 @@ $("#scrim-welcome").addEventListener("click", e=>{
   else go("editor");
 });
 $("#g-empty")?.addEventListener("click", startEmpty);
+
+/* The sample badge is the affordance, not just a label: it says what this is
+   and clicking it offers the way out. A first-run dialog you can dismiss is
+   not a way to get rid of something permanently. */
+$("#sample-tag").addEventListener("click", openWelcome);
+
+$("#btn-new").addEventListener("click", ()=>{
+  if(HIST.past.length && !project.sample &&
+     !confirm(t("Discard the current ruleset and start empty?",
+                "¿Descartar el ruleset actual y empezar en blanco?"))) return;
+  startEmpty();
+  toast(t("New ruleset — Ctrl+Z to bring the old one back",
+          "Ruleset nuevo — Ctrl+Z recupera el anterior"));
+});
+document.addEventListener("keydown", e=>{
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="n" && !e.target.closest("input,textarea")){
+    e.preventDefault(); $("#btn-new").click();
+  }
+});
 
 /* anything that replaces the ruleset stops it being the sample */
 MODEL_HOOKS.push(()=>{
