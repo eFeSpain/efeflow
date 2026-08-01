@@ -142,7 +142,7 @@
     <span class="tb-name">eFe<b>Flow</b></span>
   </div>
   <div class="tb-mid" data-drag>
-    <span class="tb-proj" id="tb-proj">edge-fw-01</span>
+    <span class="tb-proj" id="tb-proj">untitled</span>
     <span class="tb-origin" id="tb-origin"></span>
   </div>
   <div class="tb-right">
@@ -185,7 +185,7 @@
     <div class="proj">
       <svg class="ico sm dim" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
       <button class="nm" id="proj-name" data-tt="Rename the project — F2|Renombrar el proyecto — F2">
-        <span id="proj-name-t">edge-fw-01</span>
+        <span id="proj-name-t">untitled</span>
         <svg class="pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg>
       </button>
       <input id="proj-input" spellcheck="false" maxlength="60">
@@ -329,8 +329,8 @@
   <div class="dash">
     <div class="dash-hd">
       <div style="flex:1">
-        <h1>edge-fw-01</h1>
-        <div class="sub" data-t="Family &lt;b&gt;inet&lt;/b&gt; · imported from &lt;b&gt;nft list ruleset&lt;/b&gt; 2 h ago · round-trip editing &lt;b&gt;enabled&lt;/b&gt;|Familia &lt;b&gt;inet&lt;/b&gt; · importado con &lt;b&gt;nft list ruleset&lt;/b&gt; hace 2 h · edición de ida y vuelta &lt;b&gt;activada&lt;/b&gt;" data-html>Family <b>inet</b> · imported from <b>nft list ruleset</b> 2 h ago · round-trip editing <b>enabled</b></div>
+        <h1 id="dash-name">—</h1>
+        <div class="sub" id="dash-sub">—</div>
       </div>
       <button class="tb" data-go="open"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg><span data-t="Import ruleset|Importar ruleset">Import ruleset</span></button>
       <button class="tb accent" data-go="editor"><svg class="ico" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg><span data-t="Open editor|Abrir editor">Open editor</span></button>
@@ -542,7 +542,7 @@
 <section class="screen" id="s-code">
   <div class="code-pane">
     <div class="panel-hd">
-      <span class="lbl" data-t="Generated · edge-fw-01.nft|Generado · edge-fw-01.nft">Generated · edge-fw-01.nft</span>
+      <span class="lbl" id="code-filename">—</span>
       <span class="chip" data-t="142 lines|142 líneas">142 lines</span>
       <div class="seg" style="height:24px" id="code-variant"><button class="on" data-cv="full" data-t="Full|Completo">Full</button><button data-cv="delta">Delta</button><button data-cv="atomic" data-t="Atomic|Atómico">Atomic</button></div>
       <button class="tb icon" data-tt="Wrap|Ajustar líneas"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h13a3 3 0 0 1 0 6h-3m0 0 2-2m-2 2 2 2M4 18h5"/></svg></button>
@@ -685,7 +685,8 @@
       <div class="fld"><span class="lbl" data-t="Format|Formato">Format</span>
         <div style="display:flex;flex-direction:column;gap:6px">
           <div class="choice on"><div class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M14 3v5h5M15 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></div>
-            <div><div class="h" data-html data-t="Atomic ruleset file — &lt;span class=&quot;mono&quot; style=&quot;color:var(--aqua)&quot;&gt;edge-fw-01.nft&lt;/span&gt;|Fichero de ruleset atómico — &lt;span class=&quot;mono&quot; style=&quot;color:var(--aqua)&quot;&gt;edge-fw-01.nft&lt;/span&gt;">Atomic ruleset file — <span class="mono" style="color:var(--aqua)">edge-fw-01.nft</span></div>
+            <div><div class="h" data-html data-t="Atomic ruleset file|Fichero de ruleset atómico">Atomic ruleset file</div>
+              <div class="d" style="color:var(--aqua);font-family:var(--mono);font-size:11.5px;margin:2px 0 4px"><span class="fname">—</span></div>
               <div class="d" data-html data-t="Single &lt;span class=&quot;mono&quot;&gt;nft -f&lt;/span&gt; file with &lt;span class=&quot;mono&quot;&gt;flush ruleset&lt;/span&gt;. Applies as one transaction; a syntax error leaves the running config untouched.|Un solo fichero &lt;span class=&quot;mono&quot;&gt;nft -f&lt;/span&gt; con &lt;span class=&quot;mono&quot;&gt;flush ruleset&lt;/span&gt;. Se aplica como una transacción; un error de sintaxis deja intacta la configuración en marcha.">Single <span class="mono">nft -f</span> file with <span class="mono">flush ruleset</span>. Applies as one transaction; a syntax error leaves the running config untouched.</div></div>
             <div class="radio"></div></div>
           <div class="choice"><div class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg></div>
@@ -765,7 +766,7 @@
         <dt data-t="Version|Versión">Version</dt><dd>1.0.0 · build 2026.08.01</dd>
         <dt data-t="Target|Destino">Target</dt><dd>nft 1.0.9 · nf_tables API 0.9.x</dd>
         <dt data-t="Verified on|Verificado en">Verified on</dt><dd>Linux 6.8 · inet, ip, ip6, bridge, netdev</dd>
-        <dt data-t="Project|Proyecto">Project</dt><dd>edge-fw-01 · main ↑2</dd>
+        <dt data-t="Project|Proyecto">Project</dt><dd id="about-project">—</dd>
       </dl>
     </div>
 

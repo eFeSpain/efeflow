@@ -2536,6 +2536,24 @@ function showProject(){
   if(tb2) tb2.textContent = tables.length
     ? "/ " + tables.slice(0,2).join(" · ") + (tables.length>2 ? ` +${tables.length-2}` : "")
     : "";
+
+  /* Everywhere else the name or the origin was written out by hand. Each of
+     those was a small lie the moment anything was imported or renamed. */
+  const rules = MODEL.chains.reduce((a,c)=>a+c.rules.filter(r=>r.on).length,0);
+  const dn = $("#dash-name");   if(dn) dn.textContent = project.name;
+  const ds = $("#dash-sub");
+  if(ds) ds.textContent = [
+    tables.join(" · ") || t("no tables yet","aún sin tablas"),
+    t(`${MODEL.chains.length} chains · ${rules} rules`,
+      `${MODEL.chains.length} cadenas · ${rules} reglas`),
+    project.origin
+      ? t(`from ${project.origin}`, `desde ${project.origin}`)
+      : t("not saved yet","sin guardar todavía"),
+  ].join(" · ");
+  const cf = $("#code-filename");
+  if(cf) cf.textContent = t("Generated · ","Generado · ") + project.name + ".nft";
+  const ap = $("#about-project"); if(ap) ap.textContent = project.name;
+  $$(".fname").forEach(n=> n.textContent = project.name + ".nft");
 }
 
 /* ── renaming ───────────────────────────────────────────────────────────
@@ -2641,6 +2659,9 @@ document.addEventListener("keydown", e=>{
 /* ══ keep every derived view in step with the model ═════════════════════ */
 [renderSets, renderTopo, renderDash].forEach(f=>{ MODEL_HOOKS.push(f); RERENDER.push(f); });
 renderSets(); renderTopo(); renderDash();
+/* the header follows the ruleset: chains, rules and tables all live there */
+MODEL_HOOKS.push(showProject);
+RERENDER.push(showProject);
 showProject();
 
 if(!localStorage.getItem("efeflow.seen"))
