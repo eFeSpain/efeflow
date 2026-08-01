@@ -10,9 +10,14 @@ import { onModelChange } from "./core/bus.js";
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-/* ── window chrome ─────────────────────────────────────────────────── */
-await native.ready;
-native.applyPlatformClass();
+/* ── window chrome ──────────────────────────────────────────────────────
+   No top-level await here. A module that awaits before it finishes evaluating
+   can miss the window `load` event entirely, and the boot splash would then
+   never lift — which is exactly what happened the first time. */
+native.ready.then(() => {
+  native.applyPlatformClass();
+  detectTarget();
+});
 
 $$(".tb-win button").forEach((b) =>
   b.addEventListener("click", () => native.windowAction(b.dataset.win)),
@@ -115,23 +120,13 @@ function ambientFlow() {
 }
 
 /* ── boot ──────────────────────────────────────────────────────────── */
-function finishBoot() {
-  const boot = $("#boot");
-  if (!boot) return;
-  boot.classList.add("done");
-  setTimeout(() => boot.remove(), 700);
-}
-
 applyLang();
-detectTarget();
 ambientFlow();
 
-/* Hold the splash for the length of the draw, then hand over. */
+/* Hold the splash for the length of the draw, then hand over. Driven from a
+   timer rather than an event, so nothing can strand it. */
 const MIN_SPLASH = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 2150;
-const started = performance.now();
-addEventListener("load", () =>
-  setTimeout(finishBoot, Math.max(0, MIN_SPLASH - (performance.now() - started))),
-);
+setTimeout(() => window.__efeflowBooted(), MIN_SPLASH);
 
 /* Keep the titlebar honest about what is being edited. */
 onModelChange(() => {

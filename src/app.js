@@ -22,8 +22,10 @@ import * as native from "./native.js";
 const MODEL_HOOKS = { push: onModelChange };
 const RERENDER = { push: onRender, forEach: () => {} };
 
-let FIND = [];
+/* hoisted: the prototype relied on <script> ordering for these */
+let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI;
 
+FIND = [];
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
 const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -42,8 +44,7 @@ $$(".scrim").forEach(s=>document.body.appendChild(s));
    whole class of bugs that per-field diffing invites.                    */
 const HIST = {past:[], future:[], max:80};
 const snapshot = () => JSON.stringify({c:MODEL.chains, s:MODEL.sets});
-let CUR = null, PENDING = null;
-
+CUR = null, PENDING = null;
 function restore(str){
   const o = JSON.parse(str);
   MODEL.chains = o.c; MODEL.sets = o.s;
@@ -95,7 +96,7 @@ function syncHistUI(){
   if(d) d.style.opacity = HIST.past.length ? "1" : ".25";
 }
 
-let toastT = null;
+toastT = null;
 function toast(msg){
   let n = $("#toast");
   if(!n){ n = el("div","glass"); n.id = "toast"; document.body.appendChild(n); }
@@ -143,6 +144,10 @@ function go(id){
   $$(".rb").forEach(b=>b.classList.toggle("on", b.dataset.go===id));
   if(id==="editor") requestAnimationFrame(drawWires);
   if(id==="topo")   requestAnimationFrame(renderTopo);
+  /* The simulator arrives already run. An empty stage reads as "broken", and
+     the result is cheap and deterministic — there is no reason to make the
+     user press a button to find out what their own ruleset does. */
+  if(id==="sim")    requestAnimationFrame(()=>{ readForm(); runSim(); });
 }
 document.addEventListener("click",e=>{
   const g = e.target.closest("[data-go]"); if(g){ go(g.dataset.go); return; }
@@ -224,8 +229,7 @@ const HOOK_X = {prerouting:88, input:392, forward:696, output:1000, postrouting:
 
 const ruler = $("#ruler");
 const chainH = ch => 96 + ch.rules.length*33;
-let POS = {}, LANES = [];
-
+POS = {}, LANES = [];
 /* the canvas is a field, not a freeform board: x is the hook, y is the
    priority. Layout is derived, so an imported ruleset lands correctly. */
 function layout(){
@@ -262,7 +266,7 @@ function layout(){
   }).join("");
 }
 
-let zoom = 1;
+zoom = 1;
 const chainsEl = $("#chains");
 function renderChains(){
   layout();
@@ -433,8 +437,9 @@ paintCode();
 
 /* click a code line → select the matching rule (round-trip both ways) */
 document.addEventListener("click",e=>{
-  const ln = e.target.closest(".ln"); if(!ln) return;
-  const txt = ln.querySelector(".tx").textContent.trim();
+  const ln = e.target.closest("#codeout .ln, #codeout2 .ln"); if(!ln) return;
+  const tx = ln.querySelector(".tx"); if(!tx) return;
+  const txt = tx.textContent.trim();
   for(const ch of MODEL.chains){
     const i = ch.rules.findIndex(r=>ruleLine(r)===txt || (r.cmt && ruleLine(r)+` comment "${r.cmt}"`===txt));
     if(i>=0){ select(ch.id,i,true); return; }
@@ -470,7 +475,7 @@ function parse(expr){
 }
 const opt = (v,list) => list.map(o=>`<option${o===v?" selected":""}>${o}</option>`).join("");
 
-let SEL = null;
+SEL = null;
 function select(chainId, i, fromCode){
   SEL = {chainId,i};
   const ch = chainOf(chainId), r = ch.rules[i];
@@ -478,8 +483,12 @@ function select(chainId, i, fromCode){
   $$(".chain").forEach(x=>x.classList.toggle("focus", x.dataset.chain===chainId));
 
   const line = ruleLine(r) + (r.cmt?` comment "${r.cmt}"`:"");
-  $$(".ln").forEach(l=>{
-    const hit = l.querySelector(".tx").textContent.trim()===line;
+  /* only the code panes hold real source lines — scoped, so no unrelated
+     element that happens to share the class can be mistaken for one */
+  $$("#codeout .ln, #codeout2 .ln").forEach(l=>{
+    const tx = l.querySelector(".tx");
+    if(!tx) return;
+    const hit = tx.textContent.trim()===line;
     l.classList.toggle("hl",hit);
     if(hit && !fromCode) l.scrollIntoView({block:"center",behavior:"smooth"});
   });
@@ -596,7 +605,8 @@ function select(chainId, i, fromCode){
     $$(".chain").forEach(x=>x.classList.toggle("focus", x.dataset.chain===chainId));
     $(".expr-big").innerHTML = highlight(ruleLine(r));
     const nl = ruleLine(r)+(r.cmt?` comment "${r.cmt}"`:"");
-    $$(".ln").forEach(l=>l.classList.toggle("hl", l.querySelector(".tx").textContent.trim()===nl));
+    $$("#codeout .ln, #codeout2 .ln").forEach(l=>
+      l.classList.toggle("hl", l.querySelector(".tx")?.textContent.trim()===nl));
   };
   /* Typing gives a live preview with no history entry; the change lands in
      history once, on blur — so undo steps are edits, not keystrokes. */
@@ -662,8 +672,7 @@ function renderLane(res){
     </div>`).join("");
 }
 
-let timers = [];
-
+timers = [];
 /* step mode: the trace stops after every rule and waits to be advanced */
 const STEP = {
   waiting:false, next:()=>{},
@@ -687,6 +696,11 @@ const STEP = {
   },
   stop(){ this.waiting = false; $("#step-bar")?.classList.remove("on"); },
 };
+
+/* Playback pace. The first pass ran at 190ms a rule, which meant four seconds
+   of mostly-dimmed misses before the verdict landed — long enough to read as
+   nothing happening. Fast enough to feel like a trace, slow enough to follow. */
+const RULE_MS = 95, HOP_MS = 210;
 
 function runSim(){
   timers.forEach(clearTimeout); timers = []; STEP.stop();
@@ -753,10 +767,10 @@ function runSim(){
   const advance = ()=>{
     if(idx >= flat.length){ STEP.stop(); finish(); return; }
     const f = flat[idx++];
-    d += f.type==="hop" ? 340 : 190;
+    d += f.type==="hop" ? HOP_MS : RULE_MS;
     frame(f);
     if(packet.step) STEP.arm(idx, flat.length);
-    else timers.push(setTimeout(advance, f.type==="hop" ? 340 : 190));
+    else timers.push(setTimeout(advance, f.type==="hop" ? HOP_MS : RULE_MS));
   };
   STEP.next = advance;
   if(packet.step) STEP.arm(0, flat.length); else advance();
@@ -878,8 +892,7 @@ MODEL_HOOKS.push(fillInterfaces);
 /* ══ CODE VARIANTS ═════════════════════════════════════════════════════
    Full is the ruleset. Delta is what you would send to a running box.
    Atomic is the same ruleset wrapped so a syntax error changes nothing. */
-let CODE_VARIANT = "full";
-
+CODE_VARIANT = "full";
 function codeLines(mode){
   const base = generate();
   if(mode==="delta"){
@@ -903,11 +916,11 @@ function codeLines(mode){
 
 /* ══ DIFF ══════════════════════════════════════════════════════════════
    Against the baseline: whatever was last imported, opened or exported. */
-let BASELINE = null;
+BASELINE = null;
 const setBaseline = () => { BASELINE = generate().join("\n"); paintDrawer(); };
 
 /* classic LCS diff — the rulesets are small enough that clarity wins */
-let DW_TAB = "code";
+DW_TAB = "code";
 function paintDrawer(){
   const cur = codeLines(CODE_VARIANT);
   const diff = BASELINE ? diffLines(BASELINE.split("\n"), generate()) : [];
@@ -961,7 +974,7 @@ $("#code-variant").addEventListener("click", e=>{
 });
 
 /* ══ CANVAS TOOLS ══════════════════════════════════════════════════════ */
-let TOOL = "select";
+TOOL = "select";
 $(".cv-tools").addEventListener("click", e=>{
   const b = e.target.closest("[data-tool]"); if(!b) return;
   TOOL = b.dataset.tool;
@@ -1055,7 +1068,7 @@ setTimeout(()=>{ if($("#s-sim").classList.contains("on")) runSim(); },600);
    matches A. If A comes first and terminates, B is dead code.           */
 
 /* ══ FINDINGS · rendering and wiring ════════════════════════════════════ */
-let VFILTER = "all";
+VFILTER = "all";
 const SEV = {
   error:{cls:"v-drop",   col:"var(--v-drop)", nm:["error","error"]},
   warn: {cls:"v-warn",   col:"var(--warn)",   nm:["warning","aviso"]},
@@ -1277,7 +1290,7 @@ document.addEventListener("click",e=>{
 });
 
 /* ── context menu ── */
-let ctxEl = null;
+ctxEl = null;
 const killCtx = ()=>{ if(ctxEl){ ctxEl.remove(); ctxEl = null; } };
 document.addEventListener("click", killCtx, true);
 document.addEventListener("scroll", killCtx, true);
@@ -1370,8 +1383,7 @@ $("#redo").addEventListener("click", redo);
    Two payloads share one pipeline: a library object (creates or amends a
    rule) and a rule being reordered (order is semantics, so this is an
    edit, not a cosmetic move).                                           */
-let DRAG = null;
-
+DRAG = null;
 const SVC_PROTO = {dns:"udp", wireguard:"udp", snmp:"udp"};
 
 /* what a dropped object contributes to a rule */
@@ -1567,8 +1579,7 @@ table ip nat {
 	}
 }`;
 
-let IMPORTED = null;
-
+IMPORTED = null;
 function reviewImport(){
   const text = $("#imp-text").value.trim();
   const side = $("#imp-side"), btn = $("#imp-go");
@@ -1677,8 +1688,7 @@ RERENDER.push(reviewImport);
 /* ══ SET MANAGER ════════════════════════════════════════════════════════
    References are counted by scanning live rule expressions, so a set the
    ruleset stopped using reports zero the moment you delete the last rule. */
-let SETSEL = 0;
-
+SETSEL = 0;
 function refsTo(name){
   const out = [];
   MODEL.chains.forEach(ch=> ch.rules.forEach((r,i)=>{
@@ -1833,8 +1843,10 @@ function interfaces(){
 }
 const dominant = v => Object.entries(v).sort((a,b)=>b[1]-a[1])[0]?.[0] || "log";
 
-let TOPO_MODE = "zones";
-
+TOPO_MODE = "zones";
+/* hand-placed cards, keyed by mode so each view keeps its own arrangement */
+const TOPO_POS = {};
+let TOPO_PAIRS = null, TOPO_UNITS = [];
 /* who is allowed to talk to whom, straight out of the rules that name both
    an input and an output interface */
 function flows(){
@@ -1898,18 +1910,16 @@ function renderTopo(){
   const H = cv.offsetHeight || 620, W = cv.offsetWidth || 1000;
   const left  = units.filter(e=> e.in >= e.out);
   const right = units.filter(e=> e.in <  e.out);
-  const gap = Math.min(118, (H-90) / Math.max(left.length, right.length, 1));
-  const place = (arr, x) => arr.map((e,k)=>({e, x, y: H/2 - (arr.length*gap)/2 + k*gap + 14}));
-  const laid = [...place(left, 52), ...place(right, W-240)];
-  const core = {x: W/2 - 108, y: H/2 - 78};
+  const laid = [...left.map(e=>({e, side:"l"})), ...right.map(e=>({e, side:"r"}))];
+  TOPO_UNITS = units;
   const rules = MODEL.chains.reduce((a,c)=>a+c.rules.filter(r=>r.on).length,0);
 
-  nodes.innerHTML = laid.map(({e,x,y})=>{
+  nodes.innerHTML = laid.map(({e})=>{
     const isZone = TOPO_MODE === "zones";
     const [,zone,cls,path] = isZone ? [0,e.name,e.cls,e.path] : zoneOf(e.name);
     const v = dominant(e.verdicts);
-    const key = isZone ? e.name : e.name;
-    return `<div class="node" style="left:${x}px;top:${y}px" data-if="${esc(key)}">
+    const key = e.name;
+    return `<div class="node" data-if="${esc(key)}">
       <div class="nh"><div class="zi ${cls}"><svg class="ico sm" viewBox="0 0 24 24"><path d="${path}"/></svg></div>
         <span class="nn">${esc(isZone ? e.name : e.name)}</span></div>
       <div class="nb">
@@ -1923,7 +1933,7 @@ function renderTopo(){
         <span class="chip">${[...e.chains].slice(0,2).join(", ")}</span></div>
     </div>`;
   }).join("") + (flow ? "" : `
-    <div class="node core" style="left:${core.x}px;top:${core.y}px">
+    <div class="node core" data-if="__core">
       <div class="nh"><div class="zi" style="background:var(--aqua-wash);border:1px solid var(--aqua-line);color:var(--aqua)">
         <svg class="ico sm" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 4.5 3.2 8.4 8 9.5 4.8-1.1 8-5 8-9.5V6z"/></svg></div>
         <span class="nn">${esc(tables[0]||"ruleset")}</span><span class="lbl" style="font-size:9px">${tables.length>1?"+"+(tables.length-1):"table"}</span></div>
@@ -1936,23 +1946,53 @@ function renderTopo(){
         .map(h=>`<span class="chip">${h}</span>`).join("")}</div>
     </div>`);
 
-  requestAnimationFrame(()=>drawTopoWires(laid, core, flow ? pairs : null));
+  TOPO_PAIRS = flow ? pairs : null;
+  /* Height is only knowable once the cards are in the document: they grow with
+     their content, and guessing was what made them overlap. Measure, then place. */
+  requestAnimationFrame(()=>{ placeTopo(laid, W, H); drawTopoWires(); });
 }
+
+/* Auto-layout, unless the card has been dragged — a hand-placed node stays put. */
+function placeTopo(laid, W, H){
+  const GUT = 22;
+  for(const side of ["l", "r"]){
+    const arr = laid.filter(n => n.side === side);
+    const els = arr.map(n => $(`.node[data-if="${cssEsc(n.e.name)}"]`)).filter(Boolean);
+    const total = els.reduce((a, el) => a + el.offsetHeight, 0) + GUT * Math.max(0, els.length - 1);
+    let y = Math.max(14, (H - total) / 2);
+    els.forEach((el, i) => {
+      const saved = TOPO_POS[TOPO_MODE + ":" + arr[i].e.name];
+      const x = side === "l" ? 52 : W - el.offsetWidth - 44;
+      el.style.left = (saved ? saved.x : x) + "px";
+      el.style.top  = (saved ? saved.y : y) + "px";
+      y += el.offsetHeight + GUT;
+    });
+  }
+  const core = $(".node.core");
+  if(core){
+    const saved = TOPO_POS[TOPO_MODE + ":__core"];
+    core.style.left = (saved ? saved.x : W / 2 - core.offsetWidth / 2) + "px";
+    core.style.top  = (saved ? saved.y : H / 2 - core.offsetHeight / 2) + "px";
+  }
+}
+const cssEsc = s => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, "\\$&");
 
 const TCOL = {accept:"var(--v-accept)", drop:"var(--v-drop)", reject:"var(--v-reject)",
               dnat:"var(--v-dnat)", snat:"var(--v-snat)", jump:"var(--v-jump)", log:"var(--v-log)"};
 
-function drawTopoWires(laid, core, pairs){
+/* Reads every position straight out of the DOM, so a card being dragged pulls
+   its wires with it — no cached geometry to fall out of step. */
+function drawTopoWires(){
   const svg = $("#topo-wires"), cv = $("#topo-canvas");
-  if(!cv.offsetWidth) return;
+  if(!svg || !cv || !cv.offsetWidth) return;
   svg.setAttribute("viewBox",`0 0 ${cv.offsetWidth} ${cv.offsetHeight}`);
-  if(!laid){ svg.innerHTML = ""; return; }
 
   const box = key => {
-    const n = $(`.node[data-if="${key}"]`);
+    const n = $(`.node[data-if="${cssEsc(key)}"]`);
     if(!n) return null;
     return {x:n.offsetLeft, y:n.offsetTop, w:n.offsetWidth, h:n.offsetHeight};
   };
+  const pairs = TOPO_PAIRS;
 
   /* rule-flow mode: interface → interface, straight from the rules */
   if(pairs){
@@ -1974,14 +2014,18 @@ function drawTopoWires(laid, core, pairs){
     return;
   }
 
-  const coreEl = $(".node.core"), cw = coreEl?.offsetWidth||216, chh = coreEl?.offsetHeight||156;
-  const cx = core.x + cw/2, cy = core.y + chh/2;
-  svg.innerHTML = laid.map(({e,x,y})=>{
+  const core = box("__core");
+  if(!core){ svg.innerHTML = ""; return; }
+  const cx = core.x + core.w/2, cy = core.y + core.h/2;
+
+  svg.innerHTML = TOPO_UNITS.map(e=>{
     const B = box(e.name); if(!B) return "";
-    const isLeft = x < cx;
-    const x1 = isLeft ? x+B.w : x, y1 = y + B.h/2;
-    const x2 = isLeft ? core.x : core.x+cw, y2 = cy;
-    const dx = Math.abs(x2-x1)*.5;
+    /* which side of the core it sits on is decided now, not at layout time —
+       drag a card across the middle and the wire re-routes */
+    const isLeft = B.x + B.w/2 < cx;
+    const x1 = isLeft ? B.x + B.w : B.x, y1 = B.y + B.h/2;
+    const x2 = isLeft ? core.x : core.x + core.w, y2 = cy;
+    const dx = Math.max(40, Math.abs(x2-x1)*.5);
     const col = TCOL[dominant(e.verdicts)] || "var(--t3)";
     const wgt = Math.min(3.4, 1 + Math.log2(1+e.rules));
     return `<path d="M${x1} ${y1} C${x1+(isLeft?dx:-dx)} ${y1} ${x2+(isLeft?-dx:dx)} ${y2} ${x2} ${y2}"
@@ -1990,6 +2034,50 @@ function drawTopoWires(laid, core, pairs){
   }).join("");
 }
 
+/* ── dragging ───────────────────────────────────────────────────────────
+   Auto-layout is a starting point, not a verdict: a topology is something you
+   arrange to match how you think about the network. */
+(function topoDrag(){
+  const cv = $("#topo-canvas");
+  if(!cv) return;
+  let d = null;
+
+  cv.addEventListener("pointerdown", e=>{
+    const n = e.target.closest(".node");
+    if(!n || e.button !== 0) return;
+    d = {n, dx: e.clientX - n.offsetLeft, dy: e.clientY - n.offsetTop, moved:false};
+    n.setPointerCapture(e.pointerId);
+    n.classList.add("dragging");
+    e.preventDefault();
+  });
+
+  cv.addEventListener("pointermove", e=>{
+    if(!d) return;
+    d.moved = true;
+    const x = Math.max(8, Math.min(cv.offsetWidth  - d.n.offsetWidth  - 8, e.clientX - d.dx));
+    const y = Math.max(8, Math.min(cv.offsetHeight - d.n.offsetHeight - 8, e.clientY - d.dy));
+    d.n.style.left = x + "px";
+    d.n.style.top  = y + "px";
+    drawTopoWires();
+  });
+
+  const end = ()=>{
+    if(!d) return;
+    if(d.moved)
+      TOPO_POS[TOPO_MODE + ":" + d.n.dataset.if] = {x: d.n.offsetLeft, y: d.n.offsetTop};
+    d.n.classList.remove("dragging");
+    d = null;
+    $("#topo-reset")?.classList.toggle("on", Object.keys(TOPO_POS).length > 0);
+  };
+  cv.addEventListener("pointerup", end);
+  cv.addEventListener("pointercancel", end);
+})();
+
+$("#topo-reset")?.addEventListener("click", ()=>{
+  Object.keys(TOPO_POS).forEach(k=>delete TOPO_POS[k]);
+  $("#topo-reset").classList.remove("on");
+  renderTopo();
+});
 $("#topo-mode").addEventListener("click", e=>{
   if(e.target.closest("[data-tm]")) requestAnimationFrame(renderTopo);
 });
@@ -2249,7 +2337,7 @@ function renderPalette(){
     <div style="padding:40px 20px;text-align:center;color:var(--t4);font-size:12px">
       ${t("Nothing matches","Sin coincidencias")} “${esc(q)}”</div>`;
 }
-let PAL = [], PALI = 0;
+PAL = [], PALI = 0;
 const palMove = d => {
   if(!PAL.length) return;
   PALI = (PALI + d + PAL.length) % PAL.length;

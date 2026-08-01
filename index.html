@@ -7,6 +7,50 @@
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/src/styles/app.css">
 <link rel="stylesheet" href="/src/styles/chrome.css">
+
+<script>
+/* Runs before any module, because module imports are hoisted and an error
+   thrown while evaluating them would otherwise be invisible: the splash would
+   simply sit there with nothing to tell you. A desktop app that hangs on a
+   logo is the least debuggable thing you can ship. */
+(function () {
+  var booted = false;
+
+  window.__efeflowBooted = function () {
+    if (booted) return;
+    booted = true;
+    var boot = document.getElementById("boot");
+    if (!boot || boot.dataset.failed) return;
+    boot.classList.add("done");
+    setTimeout(function () { boot.remove(); }, 700);
+  };
+
+  function fatal(what, err) {
+    var boot = document.getElementById("boot");
+    if (!boot || boot.dataset.failed) return;
+    boot.dataset.failed = "1";
+    booted = true;
+    var bar = boot.querySelector(".boot-bar");
+    if (bar) bar.remove();
+    var box = document.createElement("div");
+    box.className = "boot-error";
+    box.innerHTML = '<div class="be-t"></div><pre class="be-m"></pre>' +
+                    '<div class="be-h">Ctrl+Shift+I opens the webview inspector</div>';
+    box.querySelector(".be-t").textContent = what;
+    box.querySelector(".be-m").textContent =
+      String((err && (err.stack || err.message)) || err);
+    boot.querySelector(".boot-mark").appendChild(box);
+  }
+
+  addEventListener("error", function (e) { fatal("Startup failed", e.error || e.message); });
+  addEventListener("unhandledrejection", function (e) { fatal("Startup failed", e.reason); });
+
+  /* If the module never reaches its own dismissal, say so rather than hang. */
+  setTimeout(function () {
+    if (!booted) fatal("The interface did not start", "src/main.js never signalled ready.");
+  }, 9000);
+})();
+</script>
 </head>
 <body>
 
@@ -388,6 +432,15 @@
       <div style="flex:1"></div>
       <button class="tb" data-go="editor"><svg class="ico" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg><span data-t="Reveal rule|Ver la regla">Reveal rule</span></button>
     </div>
+    <div class="sim-legend">
+      <span class="sl-step"><b>1</b><span data-t="Describe a packet on the left|Describe un paquete a la izquierda">Describe a packet on the left</span></span>
+      <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+      <span class="sl-step"><b>2</b><span data-t="It walks your chains, rule by rule|Recorre tus cadenas, regla a regla">It walks your chains, rule by rule</span></span>
+      <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+      <span class="sl-step"><b>3</b><span data-t="The first rule that matches decides|Decide la primera regla que coincide">The first rule that matches decides</span></span>
+      <span style="flex:1"></span>
+      <span class="sl-key" data-html data-t="Any change re-runs it &middot; <kbd>↵</kbd> to replay|Cualquier cambio la relanza &middot; <kbd>↵</kbd> para repetir">Any change re-runs it</span>
+    </div>
     <div class="flowlane">
       <div class="lane" id="lane"></div>
       <div class="pkt" id="pkt"></div>
@@ -433,6 +486,9 @@
       <button data-tm="flow" data-t="Rule flow|Flujo de reglas">Rule flow</button>
     </div>
     <div style="width:1px;height:16px;background:var(--line-2);margin:0 4px"></div>
+    <button class="tb icon" id="topo-reset" data-tt="Re-arrange automatically|Reorganizar automáticamente">
+      <svg class="ico sm" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5 5m5-5 5 5"/></svg>
+    </button>
     <span class="lbl" id="topo-sub" style="padding:0 6px">&mdash;</span>
   </div>
   <div class="topo-canvas" id="topo-canvas">
@@ -595,13 +651,13 @@
 
     <div class="about-forks">
       <span class="lbl" data-t="The mark|La marca">The mark</span>
-      <div class="fork"><span class="ln" style="background:linear-gradient(90deg,#3AD5FF,#46FF75)"></span>
+      <div class="fork"><span class="fork-line" style="background:linear-gradient(90deg,#3AD5FF,#46FF75)"></span>
         <span class="nm" style="color:var(--brand-green)">ACCEPT</span>
         <span class="ds" data-t="the packet leaves the chain|el paquete sale de la cadena">the packet leaves the chain</span></div>
-      <div class="fork"><span class="ln" style="background:linear-gradient(90deg,#39D5FF,#0078FF)"></span>
+      <div class="fork"><span class="fork-line" style="background:linear-gradient(90deg,#39D5FF,#0078FF)"></span>
         <span class="nm" style="color:var(--brand-cyan)">CONTINUE</span>
         <span class="ds" data-t="evaluation carries on down the trunk|la evaluación sigue por el tronco">evaluation carries on down the trunk</span></div>
-      <div class="fork"><span class="ln" style="background:linear-gradient(90deg,#4BBEFF,#FF5050)"></span>
+      <div class="fork"><span class="fork-line" style="background:linear-gradient(90deg,#4BBEFF,#FF5050)"></span>
         <span class="nm" style="color:var(--brand-red)">DROP</span>
         <span class="ds" data-t="the packet ends here|el paquete termina aquí">the packet ends here</span></div>
     </div>

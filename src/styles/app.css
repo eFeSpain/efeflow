@@ -990,7 +990,9 @@ pre.code{margin:0;padding:10px 0 18px;font:450 11.5px/1.65 var(--mono);letter-sp
 .about-id dd{margin:0;color:var(--t2);font-family:var(--mono);font-size:11px}
 .about-forks{padding:16px 24px;display:flex;flex-direction:column;gap:9px}
 .fork{display:grid;grid-template-columns:52px auto 1fr;align-items:center;gap:11px}
-.fork .ln{height:3px;border-radius:99px}
+/* not .ln — that class means "a line of generated code" and select() walks
+   every one of them looking for a .tx child */
+.fork .fork-line{height:3px;border-radius:99px}
 .fork .nm{font:600 10px var(--mono);letter-spacing:.09em}
 .fork .ds{font-size:11.5px;color:var(--t3);text-wrap:pretty}
 
