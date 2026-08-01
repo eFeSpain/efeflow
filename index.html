@@ -287,6 +287,8 @@
         <button id="zi" data-tt="Zoom in|Acercar"><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M11 8v6M20 20l-3.5-3.5"/></svg></button>
         <div class="div"></div>
         <button data-tt="Fit to view — Shift+1|Ajustar a la vista — Shift+1" id="zf"><svg class="ico" viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg></button>
+        <div class="div"></div>
+        <button id="chain-new" data-tt="New chain — Ctrl+Shift+N|Cadena nueva — Ctrl+Mayús+N"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
         <button id="chain-reset" data-tt="Re-arrange chains automatically|Reorganizar cadenas automáticamente"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5 5m5-5 5 5"/></svg></button>
       </div>
 
@@ -788,6 +790,71 @@
     <div class="modal-ft">
       <span class="lbl" style="flex:1;text-transform:none;letter-spacing:0;font-size:11.5px" data-t="A design tool, not a firewall manager — nothing is applied to a live host.|Una herramienta de diseño, no un gestor de firewall — nada se aplica a un host en producción.">A design tool, not a firewall manager — nothing is applied to a live host.</span>
       <button class="tb pri" data-close data-t="Close|Cerrar">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim-chain">
+  <div class="modal glass" style="width:min(560px,92vw);margin-top:10vh">
+    <div class="modal-hd">
+      <div style="width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:none;
+                  background:var(--aqua-wash);border:1px solid var(--aqua-line);color:var(--aqua)">
+        <svg class="ico" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>
+      <h2 id="ch-title">—</h2>
+      <button class="tb icon" data-close><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+
+    <div class="modal-body">
+      <div class="row2">
+        <div class="fld"><span class="lbl" data-t="Chain name|Nombre de la cadena">Chain name</span>
+          <input type="text" id="ch-name" placeholder="prerouting"></div>
+        <div class="fld"><span class="lbl" data-t="Table|Tabla">Table</span>
+          <input type="text" id="ch-table" list="ch-tables" placeholder="ip nat">
+          <datalist id="ch-tables"></datalist></div>
+      </div>
+
+      <div class="fld"><span class="lbl" data-t="Kind|Tipo">Kind</span>
+        <div class="seg" id="ch-kind">
+          <button class="on" data-kind="base" data-t="Base chain|Cadena base">Base chain</button>
+          <button data-kind="regular" data-t="Regular chain|Cadena regular">Regular chain</button>
+        </div>
+        <span class="lbl" id="ch-kind-note" style="text-transform:none;letter-spacing:0;font-size:10.5px;color:var(--t4)"></span>
+      </div>
+
+      <div id="ch-base" style="display:flex;flex-direction:column;gap:11px">
+        <div class="row2">
+          <div class="fld"><span class="lbl" data-t="Type|Type">Type</span>
+            <select id="ch-type"><option>filter</option><option>nat</option><option>route</option></select></div>
+          <div class="fld"><span class="lbl">Hook</span>
+            <select id="ch-hook">
+              <option>prerouting</option><option>input</option><option>forward</option>
+              <option>output</option><option>postrouting</option></select></div>
+        </div>
+        <div class="row2">
+          <div class="fld"><span class="lbl" data-t="Priority|Prioridad">Priority</span>
+            <input type="text" id="ch-prio" list="ch-prios" placeholder="0">
+            <datalist id="ch-prios">
+              <option value="-300">raw</option><option value="-150">mangle</option>
+              <option value="-100">dstnat</option><option value="0">filter</option>
+              <option value="50">security</option><option value="100">srcnat</option>
+            </datalist></div>
+          <div class="fld"><span class="lbl" data-t="Policy|Política">Policy</span>
+            <select id="ch-policy"><option>accept</option><option>drop</option></select></div>
+        </div>
+      </div>
+
+      <div class="mono" id="ch-preview" style="font-size:11px;color:var(--t3);padding:9px 11px;
+           background:var(--sunken);border:1px solid var(--line);border-radius:var(--r-sm)">—</div>
+      <div id="ch-warn" class="tg-result bad" style="display:none"></div>
+    </div>
+
+    <div class="modal-ft">
+      <button class="tb" id="ch-delete" style="color:var(--v-drop);display:none">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+        <span data-t="Delete chain|Eliminar cadena">Delete chain</span></button>
+      <span style="flex:1"></span>
+      <button class="tb" data-close data-t="Cancel|Cancelar">Cancel</button>
+      <button class="tb pri" id="ch-save">—</button>
     </div>
   </div>
 </div>

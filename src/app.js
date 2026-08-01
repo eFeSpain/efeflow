@@ -1486,13 +1486,21 @@ document.addEventListener("contextmenu", e=>{
 
   const cid = chainCard.dataset.chain;
   const m = openCtx(e.clientX, e.clientY, [
-    ["add", t("Add rule","Añadir regla"), "M12 5v14M5 12h14", false, "Ctrl ↵"],
-    ["sim", t("Simulate through this chain","Simular por esta cadena"), "M5 3v18l15-9z"],
+    ["add",  t("Add rule","Añadir regla"), "M12 5v14M5 12h14", false, "Ctrl ↵"],
+    ["new",  t("New chain…","Cadena nueva…"), "m9 6 6 6-6 6", false, "Ctrl ⇧ N"],
+    "-",
+    ["props",t("Chain properties…","Propiedades de la cadena…"), "M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"],
+    ["sim",  t("Simulate through this chain","Simular por esta cadena"), "M5 3v18l15-9z"],
+    "-",
+    ["del",  t("Delete chain…","Eliminar cadena…"), "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13", true],
   ]);
   m.addEventListener("click", ev=>{
     const a = ev.target.closest("[data-act]"); if(!a) return;
-    if(a.dataset.act==="add") addRule(cid);
-    if(a.dataset.act==="sim"){ go("sim"); runSim(); }
+    if(a.dataset.act==="add")   addRule(cid);
+    if(a.dataset.act==="new")   openChain(null);
+    if(a.dataset.act==="props") openChain(cid);
+    if(a.dataset.act==="del"){  openChain(cid); $("#ch-delete").click(); }
+    if(a.dataset.act==="sim"){  go("sim"); runSim(); }
     killCtx();
   });
 });
@@ -1872,16 +1880,30 @@ function renderSets(){
 
   const rs = refsTo(s.n);
   $("#ref-count").textContent = rs.length;
+  /* A set's name, type and flags are as editable as its contents. They were
+     read-only, which made a set you had just created impossible to correct. */
+  const FLAGS = ["interval","timeout","constant","dynamic"];
+  const TYPES = ["ipv4_addr","ipv6_addr","inet_service","ether_addr","inet_proto","ifname","mark"];
   main.innerHTML = `
     <div class="set-hero">
       <div class="r1">
-        <h2>@${esc(s.n)}</h2>
+        <span class="at">@</span><input class="set-name" id="set-name" value="${esc(s.n)}" spellcheck="false">
         <span class="pill ${s.kind==="map"?"v-snat":"v-dnat"}"><span class="sw"></span>${s.kind||"set"}</span>
-        ${(s.f||"").split(",").filter(Boolean).map(f=>`<span class="chip">${esc(f.trim())}</span>`).join("")}
         <div style="flex:1"></div>
-        <button class="tb" id="set-del" style="color:var(--v-drop)"><svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>${t("Delete set","Eliminar set")}</button>
+        <button class="tb" id="set-del" style="color:var(--v-drop)"
+          ${rs.length?`disabled title="${esc(t(`Referenced by ${rs.length} rules`,`Referenciado por ${rs.length} reglas`))}"`:""}>
+          <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>${t("Delete set","Eliminar set")}</button>
       </div>
-      <div class="decl">${highlight(`set ${s.n} { type ${s.t}${s.f?" ; flags "+s.f:""} ; elements = { … } }`)}</div>
+      <div class="set-props">
+        <label class="fld"><span class="lbl">type</span>
+          <select id="set-type">${TYPES.map(x=>
+            `<option${x===s.t?" selected":""}>${x}</option>`).join("")}
+            ${TYPES.includes(s.t)?"":`<option selected>${esc(s.t)}</option>`}</select></label>
+        <div class="fld"><span class="lbl">flags</span>
+          <div class="preset" id="set-flags">${FLAGS.map(f=>
+            `<button data-flag="${f}"${(s.f||"").includes(f)?' class="on"':""}>${f}</button>`).join("")}</div></div>
+      </div>
+      <div class="decl">${highlight(`${s.kind==="map"?"map":"set"} ${s.n} { type ${s.t}${s.f?" ; flags "+s.f:""} ; elements = { … } }`)}</div>
     </div>
     <div class="elem-toolbar">
       <span class="lbl" style="flex:1">${s.el.length} ${t("elements","elementos")} · ${
@@ -1889,7 +1911,9 @@ function renderSets(){
                   : `<span style="color:var(--warn)">${t("never referenced","nunca referenciado")}</span>`}</span>
     </div>
     <div class="elem-grid" id="elem-grid">
-      ${s.el.map((e,i)=>`<span class="elem">${esc(e)}
+      ${s.el.map((e,i)=>`<span class="elem">
+        <input class="elem-in" data-edit="${i}" value="${esc(e)}" spellcheck="false"
+               size="${Math.max(6, String(e).length)}">
         <button class="rm" data-el="${i}"><svg class="ico sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span>`).join("")}
       <input class="elem new" id="elem-add" style="width:170px;height:29px"
              placeholder="${t("+ add element…","+ añadir elemento…")}">
@@ -1915,10 +1939,24 @@ document.addEventListener("click", e=>{
     edit(t("remove set element","quitar elemento del set"), ()=>{ s.el.splice(i,1); });
     return;
   }
+  const fl = e.target.closest("#set-flags [data-flag]");
+  if(fl){
+    const s = MODEL.sets[SETSEL], f = fl.dataset.flag;
+    const have = (s.f||"").split(",").map(x=>x.trim()).filter(Boolean);
+    const next = have.includes(f) ? have.filter(x=>x!==f) : [...have, f];
+    edit(t("set flags","flags del set"), ()=>{ s.f = next.join(", "); });
+    return;
+  }
   if(e.target.closest("#set-del")){
     const s = MODEL.sets[SETSEL];
-    if(refsTo(s.n).length){ toast(t("Still referenced by rules","Todavía referenciado por reglas")); return; }
+    if(refsTo(s.n).length){
+      toast(t(`@${s.n} is still used by ${refsTo(s.n).length} rules`,
+              `@${s.n} lo usan todavía ${refsTo(s.n).length} reglas`));
+      return;
+    }
     edit(t("delete set","eliminar set"), ()=>{ MODEL.sets.splice(SETSEL,1); });
+    SETSEL = Math.max(0, SETSEL-1);
+    renderSets();
     return;
   }
   if(e.target.closest("#set-new")){
@@ -1940,6 +1978,44 @@ document.addEventListener("keydown", e=>{
   const v = e.target.value.trim(); if(!v) return;
   const s = MODEL.sets[SETSEL];
   edit(t("add set element","añadir elemento al set"), ()=>{ s.el.push(v); });
+});
+
+/* ── editing a set in place ──────────────────────────────────────────── */
+document.addEventListener("change", e=>{
+  const s = MODEL.sets[SETSEL];
+  if(!s) return;
+
+  if(e.target.id === "set-type"){
+    edit(t("set type","tipo del set"), ()=>{ s.t = e.target.value; });
+    return;
+  }
+  if(e.target.id === "set-name"){
+    const next = e.target.value.trim().replace(/^@/, "");
+    if(!next || next === s.n){ renderSets(); return; }
+    if(MODEL.sets.some(x=>x!==s && x.n===next)){
+      toast(t(`A set called ${next} already exists`, `Ya existe un set llamado ${next}`));
+      renderSets(); return;
+    }
+    /* rename the references too, or the rules would point at nothing */
+    const was = s.n, hits = refsTo(was).length;
+    edit(t("rename set","renombrar set"), ()=>{
+      s.n = next;
+      MODEL.chains.forEach(ch=>ch.rules.forEach(r=>{
+        r.expr = r.expr.split("@"+was).join("@"+next);
+      }));
+    });
+    toast(hits
+      ? t(`Renamed, and ${hits} rules updated`, `Renombrado, y ${hits} reglas actualizadas`)
+      : t("Renamed","Renombrado"));
+    return;
+  }
+  const ed = e.target.closest("[data-edit]");
+  if(ed){
+    const i = +ed.dataset.edit, next = ed.value.trim();
+    if(next === s.el[i]) return;
+    edit(t("edit set element","editar elemento del set"),
+         ()=>{ if(next) s.el[i] = next; else s.el.splice(i,1); });
+  }
 });
 
 /* hovering a set highlights every rule that uses it, on the canvas too */
@@ -2660,6 +2736,135 @@ document.addEventListener("keydown", e=>{
 /* ══ keep every derived view in step with the model ═════════════════════ */
 [renderSets, renderTopo, renderDash].forEach(f=>{ MODEL_HOOKS.push(f); RERENDER.push(f); });
 renderSets(); renderTopo(); renderDash();
+/* ══ CHAINS ═════════════════════════════════════════════════════════════
+   You could edit rules but never create the chain to put them in, which made
+   a NAT ruleset impossible to build from scratch. */
+let chEditing = null;   /* uid when editing, null when creating */
+
+function chDraft(){
+  return {
+    id: $("#ch-name").value.trim(),
+    table: $("#ch-table").value.trim(),
+    kind: $("#ch-kind .on")?.dataset.kind || "base",
+    type: $("#ch-type").value,
+    hook: $("#ch-hook").value,
+    prio: $("#ch-prio").value.trim(),
+    policy: $("#ch-policy").value,
+  };
+}
+
+function chSync(){
+  const d = chDraft(), base = d.kind === "base";
+  $("#ch-base").style.display = base ? "flex" : "none";
+  $("#ch-kind-note").textContent = base
+    ? t("Attached to a netfilter hook — packets enter it on their own.",
+        "Enganchada a un hook de netfilter: los paquetes entran solos.")
+    : t("Reached only by jump or goto from another chain.",
+        "Solo se alcanza con jump o goto desde otra cadena.");
+
+  const prio = /^-?\d+$/.test(d.prio) ? +d.prio : (PRIO_NAME[d.prio] ?? 0);
+  $("#ch-preview").innerHTML = highlight(
+    `table ${d.table || "?"} { chain ${d.id || "?"} { ` +
+    (base ? `type ${d.type} hook ${d.hook} priority ${prio} ; policy ${d.policy} ; ` : "") + "} }");
+
+  /* nftables allows one chain name per table, and nat chains only on the
+     hooks that can translate */
+  const clash = MODEL.chains.some(c => c.table === d.table && c.id === d.id && UID(c) !== chEditing);
+  const badHook = base && d.type === "nat" &&
+    !["prerouting","input","output","postrouting"].includes(d.hook);
+  const warn = $("#ch-warn");
+  const msg = !d.id || !d.table
+    ? t("A chain needs a name and a table.","Una cadena necesita nombre y tabla.")
+    : clash ? t(`${d.table} already has a chain called ${d.id}.`,
+                `${d.table} ya tiene una cadena llamada ${d.id}.`)
+    : badHook ? t("nat chains cannot attach to the forward hook.",
+                  "Las cadenas nat no pueden engancharse al hook forward.")
+    : "";
+  warn.style.display = msg ? "" : "none";
+  warn.textContent = msg;
+  $("#ch-save").disabled = !!msg;
+}
+
+function openChain(uid){
+  chEditing = uid || null;
+  const ch = uid && chainOf(uid);
+  $("#ch-title").textContent = ch
+    ? t("Chain properties","Propiedades de la cadena")
+    : t("New chain","Cadena nueva");
+  $("#ch-save").textContent = ch ? t("Save","Guardar") : t("Create chain","Crear cadena");
+  $("#ch-delete").style.display = ch ? "" : "none";
+
+  const tables = [...new Set(MODEL.chains.map(c=>c.table))];
+  $("#ch-tables").innerHTML = tables.map(x=>`<option value="${esc(x)}">`).join("");
+
+  $("#ch-name").value  = ch ? ch.id : "";
+  $("#ch-table").value = ch ? ch.table : (tables[0] || "inet filter");
+  $("#ch-type").value  = ch?.type && ch.type !== "regular" ? ch.type : "filter";
+  $("#ch-hook").value  = ch?.hook || "prerouting";
+  $("#ch-prio").value  = ch && ch.prio !== null ? String(ch.prio) : "0";
+  $("#ch-policy").value = ch?.policy || "accept";
+  $$("#ch-kind button").forEach(b=>
+    b.classList.toggle("on", b.dataset.kind === (ch && !ch.hook ? "regular" : "base")));
+
+  chSync();
+  $("#scrim-chain").classList.add("on");
+  if(!ch) $("#ch-name").focus();
+}
+
+$("#chain-new").addEventListener("click", ()=>openChain(null));
+$("#scrim-chain").addEventListener("input", chSync);
+$("#scrim-chain").addEventListener("change", chSync);
+$("#ch-kind").addEventListener("click", e=>{
+  const b = e.target.closest("[data-kind]");
+  if(b){ $$("#ch-kind button").forEach(x=>x.classList.toggle("on", x===b)); chSync(); }
+});
+
+$("#ch-save").addEventListener("click", ()=>{
+  const d = chDraft();
+  const base = d.kind === "base";
+  const prio = /^-?\d+$/.test(d.prio) ? +d.prio : (PRIO_NAME[d.prio] ?? 0);
+  const uid = chEditing;
+  edit(uid ? t("edit chain","editar cadena") : t("new chain","cadena nueva"), ()=>{
+    const ch = uid ? chainOf(uid) : {rules:[]};
+    Object.assign(ch, {
+      id:d.id, table:d.table,
+      hook: base ? d.hook : null,
+      prio: base ? prio : null,
+      type: base ? d.type : "regular",
+      policy: base ? d.policy : null,
+    });
+    if(!uid) MODEL.chains.push(ch);
+  });
+  $("#scrim-chain").classList.remove("on");
+  go("editor");
+  toast(uid ? t("Chain updated","Cadena actualizada")
+            : t(`Added ${d.table} / ${d.id}`, `Añadida ${d.table} / ${d.id}`));
+});
+
+$("#ch-delete").addEventListener("click", async ()=>{
+  const ch = chainOf(chEditing); if(!ch) return;
+  const jumps = MODEL.chains.flatMap(c=>c.rules.filter(r=>
+    (r.verdict==="jump"||r.verdict==="goto") && r.to===ch.id && c.table===ch.table));
+  const ok = await confirmDialog(
+    t(`Delete ${ch.id}?`, `¿Eliminar ${ch.id}?`),
+    jumps.length
+      ? t(`${jumps.length} rule(s) jump to this chain and would break. Ctrl+Z undoes this.`,
+          `${jumps.length} regla(s) saltan a esta cadena y quedarían rotas. Ctrl+Z lo deshace.`)
+      : t(`Its ${ch.rules.length} rule(s) go with it. Ctrl+Z undoes this.`,
+          `Sus ${ch.rules.length} regla(s) se van con ella. Ctrl+Z lo deshace.`),
+    t("Delete","Eliminar"));
+  if(!ok) return;
+  edit(t("delete chain","eliminar cadena"), ()=>{
+    const i = MODEL.chains.indexOf(ch); if(i>=0) MODEL.chains.splice(i,1);
+  });
+  $("#scrim-chain").classList.remove("on");
+});
+
+document.addEventListener("keydown", e=>{
+  if((e.ctrlKey||e.metaKey) && e.shiftKey && e.key.toLowerCase()==="n"
+     && !e.target.closest("input,textarea")){ e.preventDefault(); openChain(null); }
+});
+
 /* ══ TARGET ═════════════════════════════════════════════════════════════
    The chip in the titlebar said "no local nft" and its tooltip suggested
    adding an SSH target, with nothing behind it. This is the something. */
