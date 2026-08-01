@@ -184,14 +184,18 @@
 
     <div class="proj">
       <svg class="ico sm dim" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-      <span class="nm">edge-fw-01</span>
+      <button class="nm" id="proj-name" data-tt="Rename the project — F2|Renombrar el proyecto — F2">
+        <span id="proj-name-t">edge-fw-01</span>
+        <svg class="pen" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg>
+      </button>
+      <input id="proj-input" spellcheck="false" maxlength="60">
       <button class="sample-tag" id="sample-tag"
               data-tt="A built-in example, not your firewall. Click to replace it.|Un ejemplo incorporado, no tu firewall. Pulsa para reemplazarlo.">
         <span data-t="sample|ejemplo">sample</span>
         <svg class="ico sm" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="m6 9 6 6 6-6"/></svg>
       </button>
-      <span class="dimmer mono" style="font-size:11px">/ inet fw</span>
-      <span class="dot-live" title="Unsaved changes"></span>
+      <span class="dimmer mono" id="proj-tables" style="font-size:11px"></span>
+      <span class="dot-live" data-tt="Unsaved changes|Cambios sin guardar"></span>
     </div>
 
     <div class="sep"></div>

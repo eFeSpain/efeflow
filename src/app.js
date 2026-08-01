@@ -1199,7 +1199,8 @@ function counts(){
 RERENDER.push(counts);
 
 go("dash");
-setTimeout(()=>{ if($("#s-sim").classList.contains("on")) runSim(); },600);
+/* the screen may be gone by the time this lands */
+setTimeout(()=>{ if($("#s-sim")?.classList.contains("on")) runSim(); },600);
 
 /* ══ ANALYSER ═══════════════════════════════════════════════════════════
    Findings are derived from MODEL, never authored. The core relation is
@@ -2417,6 +2418,7 @@ $("#imp-sample").insertAdjacentElement("beforebegin", (()=>{
 /* ══ COMMAND PALETTE ═══════════════════════════════════════════════════ */
 const COMMANDS = () => [
   {t:t("New empty ruleset","Ruleset vacío nuevo"), k:"Ctrl N", d:"M12 5v14M5 12h14", go:()=>$("#btn-new").click()},
+  {t:t("Rename the project","Renombrar el proyecto"), k:"F2", d:"M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z", go:beginRename},
   {t:t("Replace the sample ruleset","Reemplazar el ruleset de ejemplo"), k:"", d:"M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5", go:openWelcome},
   {t:t("Run packet simulation","Ejecutar simulación de paquete"), k:"Ctrl ⇧ R", d:"M5 3v18l15-9z", go:()=>{go("sim"); runSim();}},
   {t:t("Export nftables ruleset","Exportar el ruleset nftables"), k:"Ctrl E", d:"M12 3v13M7 11l5 5 5-5M4 21h16", go:()=>go("export")},
@@ -2533,11 +2535,58 @@ function startEmpty(){
 function markSample(){
   const tag = $("#sample-tag");
   if(tag) tag.style.display = project.sample ? "" : "none";
-  const nm = $(".proj .nm");
+  const nm = $("#proj-name-t");
   if(nm) nm.textContent = project.name;
   const tb = $("#tb-proj");
   if(tb) tb.textContent = project.name;
+  /* the table list was hard-coded to "inet fw", which stopped being true the
+     moment anyone imported or started fresh */
+  const tables = [...new Set(MODEL.chains.map(c=>c.table))];
+  const tb2 = $("#proj-tables");
+  if(tb2) tb2.textContent = tables.length
+    ? "/ " + tables.slice(0,2).join(" · ") + (tables.length>2 ? ` +${tables.length-2}` : "")
+    : "";
 }
+
+/* ── renaming ───────────────────────────────────────────────────────────
+   The name is not decoration: it goes in the header comment of the generated
+   ruleset and becomes the export filename. */
+function beginRename(){
+  const btn = $("#proj-name"), input = $("#proj-input");
+  input.value = project.name;
+  btn.style.display = "none";
+  input.classList.add("on");
+  input.focus();
+  input.select();
+
+  const commit = save=>{
+    if(!input.classList.contains("on")) return;
+    input.classList.remove("on");
+    btn.style.display = "";
+    const next = input.value.trim().replace(/[\r\n"]/g, "");
+    if(save && next && next !== project.name){
+      setProject({name: next});
+      markSample();
+      paintCode();        /* the header comment carries the name */
+      toast(t(`Renamed to ${next}`, `Renombrado a ${next}`));
+    }
+    input.removeEventListener("blur", onBlur);
+    input.removeEventListener("keydown", onKey);
+  };
+  const onBlur = ()=>commit(true);
+  const onKey = e=>{
+    if(e.key === "Enter"){ e.preventDefault(); commit(true); }
+    if(e.key === "Escape"){ e.preventDefault(); commit(false); }
+    e.stopPropagation();     /* keep Ctrl+N and friends out of the field */
+  };
+  input.addEventListener("blur", onBlur);
+  input.addEventListener("keydown", onKey);
+}
+
+$("#proj-name").addEventListener("click", beginRename);
+document.addEventListener("keydown", e=>{
+  if(e.key === "F2" && !e.target.closest("input, textarea")){ e.preventDefault(); beginRename(); }
+});
 
 const openWelcome = ()=> $("#scrim-welcome").classList.add("on");
 
@@ -2614,4 +2663,4 @@ renderSets(); renderTopo(); renderDash();
 markSample();
 
 if(!localStorage.getItem("efeflow.seen"))
-  setTimeout(()=>$("#scrim-welcome").classList.add("on"), 250);
+  setTimeout(()=>$("#scrim-welcome")?.classList.add("on"), 250);

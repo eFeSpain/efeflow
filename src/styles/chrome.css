@@ -248,6 +248,56 @@
 }
 @keyframes fill { to { width: 100%; } }
 
+/* ── the project name is editable, and looks it ────────────────────── */
+#proj-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 6px;
+  margin-left: -4px;
+  border-radius: var(--r-xs);
+  font: 500 12.5px var(--sans);
+  color: var(--t1);
+  transition: background 0.13s var(--ease);
+}
+#proj-name:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+#proj-name .pen {
+  width: 11px;
+  height: 11px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--t4);
+  opacity: 0;
+  transition: opacity 0.13s var(--ease);
+}
+#proj-name:hover .pen {
+  opacity: 1;
+}
+#proj-input {
+  display: none;
+  width: 168px;
+  height: 22px;
+  padding: 0 6px;
+  font: 500 12.5px var(--sans);
+  border-radius: var(--r-xs);
+  border: 1px solid var(--aqua-line);
+  background: var(--sunken);
+  color: var(--t1);
+}
+#proj-input.on {
+  display: block;
+}
+#proj-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(57, 213, 255, 0.13);
+}
+
 /* ── the sample must never pass for someone's real firewall ────────── */
 .sample-tag {
   display: inline-flex;
