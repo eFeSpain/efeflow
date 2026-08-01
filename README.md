@@ -83,8 +83,31 @@ src-tauri/     nft and ssh transports
 ```
 
 The split is the point: anything that decides a verdict lives in `core/` and is
-tested headlessly. `npm test` runs the parser against a real `nft list ruleset`
-dump and asserts that import → generate → import is a fixed point.
+tested headlessly.
+
+## Tests
+
+`npm test` — 46 assertions across two layers.
+
+**Core** (`roundtrip`, `analyse`, `simulate`) exercises the pure functions: the
+parser against a real `nft list ruleset` dump, import → generate → import as a
+fixed point across three tables, criterion subsumption, and packet evaluation
+including conntrack, TCP flag masks and nftables' rule that `accept` ends a
+chain rather than the packet.
+
+**Interface** (`ui-*`) boots the real app in jsdom, navigates every screen and
+dispatches real events. This layer exists because a green core suite is not
+evidence that the product works: the packet simulator once shipped broken while
+every core test passed, because a parameter named `t` shadowed the translation
+helper and killed `runSim` on its first line. That class of bug now has three
+guards — the UI suite, a `markup-contract` test that checks every id the code
+looks up exists in the markup, and a `shadowing` test that refuses parameters
+named after shared helpers.
+
+```bash
+npm test                            # everything
+node --test "test/ui-*.test.js"     # just the interface
+```
 
 ## Licence
 

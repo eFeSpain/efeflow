@@ -42,8 +42,33 @@
     boot.querySelector(".boot-mark").appendChild(box);
   }
 
-  addEventListener("error", function (e) { fatal("Startup failed", e.error || e.message); });
-  addEventListener("unhandledrejection", function (e) { fatal("Startup failed", e.reason); });
+  /* After boot an exception inside a click handler goes only to a console
+     nobody has open, and the button just looks dead. Surface those too. */
+  function runtimeError(err) {
+    var bar = document.getElementById("runtime-error");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "runtime-error";
+      bar.innerHTML =
+        '<svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8' +
+        'a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>' +
+        '<pre></pre><button title="Copy">copy</button><button class="x">×</button>';
+      document.body.appendChild(bar);
+      bar.querySelector(".x").onclick = function () { bar.remove(); };
+      bar.querySelector("button:not(.x)").onclick = function () {
+        navigator.clipboard && navigator.clipboard.writeText(bar.querySelector("pre").textContent);
+      };
+    }
+    bar.querySelector("pre").textContent =
+      String((err && (err.stack || err.message)) || err);
+  }
+
+  function report(err) {
+    if (booted) runtimeError(err);
+    else fatal("Startup failed", err);
+  }
+  addEventListener("error", function (e) { report(e.error || e.message); });
+  addEventListener("unhandledrejection", function (e) { report(e.reason); });
 
   /* If the module never reaches its own dismissal, say so rather than hang. */
   setTimeout(function () {

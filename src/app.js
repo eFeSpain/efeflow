@@ -8,7 +8,7 @@ import {
   MODEL, R, UID, jumpTarget, chainOf,
   VCOLOR, VNAME, fmtN, fmtB, verdictText, ruleLine,
 } from "./core/model.js";
-import { generate } from "./core/generate.js";
+import { generate, generateWithMap } from "./core/generate.js";
 import { parseNft, parseRule, roundTrip, normalise } from "./core/parse.js";
 import { analyse, worstCase } from "./core/analyse.js";
 import { evaluate, matches, inSet, inCidr, PRESETS, PATHS, packet } from "./core/simulate.js";
@@ -22,6 +22,14 @@ import * as native from "./native.js";
 const MODEL_HOOKS = { push: onModelChange };
 const RERENDER = { push: onRender, forEach: () => {} };
 
+/* The language switch. Its handler lived in the prototype's i18n block, which
+   was cut when that moved into a module — and nothing put it back, so the
+   control was inert in the desktop build. */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("#lang [data-lang]");
+  if (b) setLang(b.dataset.lang);
+});
+
 /* hoisted: the prototype relied on <script> ordering for these */
 let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI;
 
@@ -29,7 +37,7 @@ FIND = [];
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
 const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const el = (t,c,h)=>{const n=document.createElement(t); if(c)n.className=c; if(h!=null)n.innerHTML=h; return n;};
+const el = (tag,c,h)=>{const n=document.createElement(tag); if(c)n.className=c; if(h!=null)n.innerHTML=h; return n;};
 
 /* the screens live at document root while authoring; dock them into the shell */
 $$(".screen").forEach(s=>$("#screens").appendChild(s));
@@ -148,6 +156,7 @@ function go(id){
      the result is cheap and deterministic — there is no reason to make the
      user press a button to find out what their own ruleset does. */
   if(id==="sim")    requestAnimationFrame(()=>{ readForm(); runSim(); });
+  else              stopSim();
 }
 document.addEventListener("click",e=>{
   const g = e.target.closest("[data-go]"); if(g){ go(g.dataset.go); return; }
@@ -426,9 +435,16 @@ function highlight(line){
   return out + esc(line.slice(last));
 }
 function paintCode(){
-  const lines = generate();
-  const html = lines.map((l,i)=>
-    `<div class="ln" data-ln="${i+1}"><span class="no">${i+1}</span><span class="tx">${highlight(l)}</span></div>`).join("");
+  /* Each emitted line carries the rule it came from, so the code pane and the
+     canvas point at each other by identity. Matching on text looked fine until
+     two chains held the same rule and selecting one lit up all of them. */
+  const {lines, map} = generateWithMap();
+  const html = lines.map((l,i)=>{
+    const o = map[i];
+    const origin = o ? ` data-chain="${esc(o.uid)}" data-i="${o.i}"` : "";
+    return `<div class="ln" data-ln="${i+1}"${origin}><span class="no">${i+1}</span>`
+         + `<span class="tx">${highlight(l)}</span></div>`;
+  }).join("");
   $("#codeout").innerHTML = html;
   $("#codeout2").innerHTML = html;
   $$(".dw-tab")[0].querySelector(".n").textContent = lines.length;
@@ -438,12 +454,9 @@ paintCode();
 /* click a code line → select the matching rule (round-trip both ways) */
 document.addEventListener("click",e=>{
   const ln = e.target.closest("#codeout .ln, #codeout2 .ln"); if(!ln) return;
-  const tx = ln.querySelector(".tx"); if(!tx) return;
-  const txt = tx.textContent.trim();
-  for(const ch of MODEL.chains){
-    const i = ch.rules.findIndex(r=>ruleLine(r)===txt || (r.cmt && ruleLine(r)+` comment "${r.cmt}"`===txt));
-    if(i>=0){ select(ch.id,i,true); return; }
-  }
+  /* the line knows which rule it came from; no need to search by text, which
+     used to land on whichever chain happened to hold an identical rule first */
+  if(ln.dataset.chain) select(ln.dataset.chain, +ln.dataset.i, true);
 });
 
 /* ══ SELECTION + PROPERTIES ════════════════════════════════════════════ */
@@ -482,13 +495,8 @@ function select(chainId, i, fromCode){
   $$(".rule").forEach(x=>x.classList.toggle("sel", x.dataset.chain===chainId && +x.dataset.i===i));
   $$(".chain").forEach(x=>x.classList.toggle("focus", x.dataset.chain===chainId));
 
-  const line = ruleLine(r) + (r.cmt?` comment "${r.cmt}"`:"");
-  /* only the code panes hold real source lines — scoped, so no unrelated
-     element that happens to share the class can be mistaken for one */
   $$("#codeout .ln, #codeout2 .ln").forEach(l=>{
-    const tx = l.querySelector(".tx");
-    if(!tx) return;
-    const hit = tx.textContent.trim()===line;
+    const hit = l.dataset.chain===chainId && +l.dataset.i===i;
     l.classList.toggle("hl",hit);
     if(hit && !fromCode) l.scrollIntoView({block:"center",behavior:"smooth"});
   });
@@ -604,9 +612,8 @@ function select(chainId, i, fromCode){
     $$(".rule").forEach(x=>x.classList.toggle("sel", x.dataset.chain===chainId && +x.dataset.i===i));
     $$(".chain").forEach(x=>x.classList.toggle("focus", x.dataset.chain===chainId));
     $(".expr-big").innerHTML = highlight(ruleLine(r));
-    const nl = ruleLine(r)+(r.cmt?` comment "${r.cmt}"`:"");
     $$("#codeout .ln, #codeout2 .ln").forEach(l=>
-      l.classList.toggle("hl", l.querySelector(".tx")?.textContent.trim()===nl));
+      l.classList.toggle("hl", l.dataset.chain===chainId && +l.dataset.i===i));
   };
   /* Typing gives a live preview with no history entry; the change lands in
      history once, on blur — so undo steps are edits, not keystrokes. */
@@ -702,8 +709,16 @@ const STEP = {
    nothing happening. Fast enough to feel like a trace, slow enough to follow. */
 const RULE_MS = 95, HOP_MS = 210;
 
+/* Leaving the screen stops the trace. It used to keep firing its chain of
+   timers into a pane nobody was looking at. */
+function stopSim(){
+  (timers || []).forEach(clearTimeout);
+  timers = [];
+  STEP.stop();
+}
+
 function runSim(){
-  timers.forEach(clearTimeout); timers = []; STEP.stop();
+  stopSim();
   const p = {...packet};
   const res = evaluate(p);
   renderLane(res);
@@ -721,9 +736,11 @@ function runSim(){
   });
 
   const stamp = () => packet.step ? "#"+idx : (d/1000).toFixed(2)+"s";
-  const push = (cls,t,m)=>{
+  /* `when`, not `t` — a parameter called t shadowed the translation helper and
+     the call below threw on the very first trace row, taking runSim with it. */
+  const push = (cls, when, m)=>{
     const row = el("div","tr "+cls);
-    row.innerHTML = `<span class="t">${t}</span><span class="m">${m}</span>`;
+    row.innerHTML = `<span class="t">${when}</span><span class="m">${m}</span>`;
     traceEl.appendChild(row); traceEl.scrollTop = traceEl.scrollHeight;
     $("#tr-count").textContent = traceEl.querySelectorAll(".tr:not(.hd-row)").length + t(" steps"," pasos");
   };
@@ -1958,14 +1975,14 @@ function placeTopo(laid, W, H){
   for(const side of ["l", "r"]){
     const arr = laid.filter(n => n.side === side);
     const els = arr.map(n => $(`.node[data-if="${cssEsc(n.e.name)}"]`)).filter(Boolean);
-    const total = els.reduce((a, el) => a + el.offsetHeight, 0) + GUT * Math.max(0, els.length - 1);
+    const total = els.reduce((a, n) => a + n.offsetHeight, 0) + GUT * Math.max(0, els.length - 1);
     let y = Math.max(14, (H - total) / 2);
-    els.forEach((el, i) => {
+    els.forEach((node, i) => {
       const saved = TOPO_POS[TOPO_MODE + ":" + arr[i].e.name];
-      const x = side === "l" ? 52 : W - el.offsetWidth - 44;
-      el.style.left = (saved ? saved.x : x) + "px";
-      el.style.top  = (saved ? saved.y : y) + "px";
-      y += el.offsetHeight + GUT;
+      const x = side === "l" ? 52 : W - node.offsetWidth - 44;
+      node.style.left = (saved ? saved.x : x) + "px";
+      node.style.top  = (saved ? saved.y : y) + "px";
+      y += node.offsetHeight + GUT;
     });
   }
   const core = $(".node.core");
@@ -2149,7 +2166,7 @@ function download(name, text, mime){
 
 function exportPayload(){
   const fmt = $$("#scrim-export .choice").findIndex(c=>c.classList.contains("on"));
-  const opt = $$("#scrim-export .sw-toggle").map(t=>t.classList.contains("on"));
+  const opt = $$("#scrim-export .sw-toggle").map(sw=>sw.classList.contains("on"));
   const [flush, comments, optimise] = opt;
   let lines = generate().slice();
   if(!flush) lines = lines.filter(l=>l!=="flush ruleset");

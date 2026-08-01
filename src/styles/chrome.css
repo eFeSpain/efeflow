@@ -248,6 +248,65 @@
 }
 @keyframes fill { to { width: 100%; } }
 
+/* ── a dead button should say why it is dead ───────────────────────── */
+#runtime-error {
+  position: fixed;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 400;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: var(--r-md);
+  background: rgba(38, 18, 20, 0.96);
+  border: 1px solid rgba(250, 90, 90, 0.4);
+  box-shadow: var(--lift-2);
+  animation: rise 0.25s var(--ease) both;
+}
+#runtime-error svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+  stroke: var(--v-drop);
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+#runtime-error pre {
+  flex: 1;
+  margin: 0;
+  font: 450 11px/1.55 var(--mono);
+  color: #ffd9d9;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 132px;
+  overflow: auto;
+}
+#runtime-error button {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-xs);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--t2);
+  font: 500 11px var(--mono);
+  cursor: pointer;
+}
+#runtime-error button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+#runtime-error button.x {
+  border: none;
+  background: none;
+  font-size: 15px;
+  padding: 0 4px;
+}
+
 /* ── the simulator says what it is ─────────────────────────────────────
    Three unlabelled panels do not read as a sequence on their own. */
 .sim-legend {
