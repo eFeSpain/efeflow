@@ -8,7 +8,7 @@
    counter each closed their table early, so every chain below them was filed
    under a table that did not exist. Whatever we cannot model, we keep as text
    and put back where it was. */
-import { ruleLine } from './model.js';
+import { ruleLine, UID } from './model.js';
 import { generate } from './generate.js';
 import { diffLines } from './diff.js';
 import { PRIO_NAME } from './priority.js';
@@ -64,6 +64,7 @@ const OUR_PREAMBLE = /^(flush ruleset|delete table\s|table\s+\S+(\s+\S+)?$)/;
 
 export function parseNft(text){
   const chains = [], sets = [], objects = [], tables = [], errors = [], prelude = [];
+  const ruleLines = {};
 
   /* innermost frame last; every `}` pops exactly one */
   const stack = [];
@@ -142,13 +143,20 @@ export function parseNft(text){
     const rule = parseRule(line);
     if(rule){
       if(handle) rule.handle = handle;
+      /* Which line of the file this rule came from, kept beside the model
+         rather than on the rule. A rule that has been edited or dragged no
+         longer comes from anywhere, so a line number stored on it would be a
+         stale claim the moment anyone touched it — and it would ride into
+         every saved project and every undo snapshot. The CLI wants
+         `file:line:` for a machine to read, and it has the source in hand. */
+      (ruleLines[UID(cur)] ||= []).push(ln + 1);
       cur.rules.push(rule);
     }
     else errors.push({ ln: ln + 1, line: raw });
   }
   while(stack.length) close();                        /* an unterminated file */
 
-  return { chains, sets, objects, tables, prelude, errors };
+  return { chains, sets, objects, tables, prelude, errors, ruleLines };
 }
 
 /* Three of nftables' object kinds are two words, and telling them from a kind

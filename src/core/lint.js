@@ -177,3 +177,22 @@ export function lintRuleset(model){
   }
   return out;
 }
+
+/* ── what nft itself said ────────────────────────────────────────────────
+ * Everything above is a reading of nftables. This is nftables, read back.
+ *
+ * `nft -c -f file` prints one line per complaint, in the shape
+ *   /tmp/whatever.nft:6:1-2: Error: Could not process rule: Operation not supported
+ * followed by the offending source line and a caret rule. The path is a
+ * temporary nobody wants to see, and the carets are for a terminal, so what is
+ * kept is the line number and what went wrong.
+ */
+export function readNftErrors(text){
+  const out = [];
+  for(const raw of String(text || "").split("\n")){
+    if(!/:\s*Error:/.test(raw)) continue;
+    const m = raw.match(/:(\d+):[\d-]*:\s*Error:\s*(.*)$/);
+    out.push({ line: m ? +m[1] : null, message: (m ? m[2] : raw).trim() });
+  }
+  return out;
+}

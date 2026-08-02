@@ -146,7 +146,12 @@ export function overlaps(a,b){
 }
 const TERMINAL = v => v==="accept" || v==="drop" || v==="reject";
 
-const F = (sev,kind,o) => Object.assign({sev,kind},o);
+/* `at` is what the finding is about, which is not always one rule. A chain
+   that never drops invalid, a set nothing references, a whole table parked —
+   each carries a chain and an index so "Go to rule" lands somewhere sensible,
+   and quoting that rule underneath the title reads as an accusation against a
+   line that did nothing wrong. Anything not said otherwise is about its rule. */
+const F = (sev,kind,o) => Object.assign({sev,kind,at:"rule"},o);
 
 export function analyse(){
   const out = [], live = ch => ch.rules.map((r,i)=>({r,i})).filter(x=>x.r.on);
@@ -221,7 +226,7 @@ export function analyse(){
       const ports = sibs.map(s=>s.c.dport);
       const match = MODEL.sets.find(s=> s.el.length===ports.length && s.el.every(e=>ports.includes(e)));
       out.push(F("hint","merge",{
-        chain:ch, i:sibs[0].i,
+        at:"rules", chain:ch, i:sibs[0].i,
         title:[`${sibs.length} rules differ only by destination port`,
                `${sibs.length} reglas solo difieren en el puerto destino`],
         where:`${ch.table} / ${ch.id} · ${t("rules","reglas")} ${sibs.map(s=>s.i+1).join(", ")}`,
@@ -255,7 +260,7 @@ export function analyse(){
        && rs.some(x=>/ct state established/.test(x.r.expr))
        && !rs.some(x=>/ct state[\w,]*invalid|ct state invalid/.test(x.r.expr))){
       out.push(F("warn","hardening",{
-        chain:ch, i:0,
+        at:"chain", chain:ch, i:0,
         title:[`${ch.id} chain has no invalid-state drop`,
                `La cadena ${ch.id} no descarta el estado invalid`],
         where:`${ch.table} / ${ch.id} · ${t("chain-level","nivel de cadena")}`,
@@ -292,7 +297,7 @@ export function analyse(){
   MODEL.sets.forEach(s=>{
     if(allExpr.includes("@"+s.n)) return;
     out.push(F("hint","unused",{
-      set:s.n,
+      at:"set", set:s.n,
       title:[`Set @${s.n} is declared but never referenced`,
              `El set @${s.n} se declara pero nunca se referencia`],
       where:`inet fw · set`,
@@ -314,7 +319,7 @@ export function analyse(){
     const info = readTable(MODEL, name);
     if(!info.chains) return;   /* an empty parked table is a note, not a risk */
     out.push(F("warn","dormant",{
-      table:name,
+      at:"table", table:name,
       title:[`Table ${name} is dormant — its ${info.rules} rule${info.rules===1?"":"s"} are not running`,
              `La tabla ${name} está dormant — sus ${info.rules} regla${info.rules===1?"":"s"} no se están aplicando`],
       where:`${name} · ${t("table","tabla")}`,
