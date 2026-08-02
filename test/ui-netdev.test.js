@@ -74,6 +74,39 @@ test("the netdev hooks take a column only when something is attached to one", as
     ["ingress", "prerouting", "input", "forward", "output", "postrouting"]);
 });
 
+/* Both were carried through an import as verbatim chain statements and there
+   was nowhere to write either. */
+test("a chain can be given a comment and hardware offload", async () => {
+  await boot();
+  await newRuleset();
+  await newChain({ "ch-name": "fast", "ch-table": "inet filter", "ch-hook": "forward",
+                   "ch-comment": "the offload path" });
+  click("#ch-offload");
+  await settle(40);
+  click("#ch-save");
+  await settle(60);
+
+  const out = code();
+  assert.match(out, /^\s*comment "the offload path"$/m);
+  assert.match(out, /^\s*flags offload$/m);
+});
+
+test("and they come back when the chain is opened again", async () => {
+  await boot();
+  await newRuleset();
+  await newChain({ "ch-name": "fast2", "ch-table": "inet filter", "ch-hook": "forward",
+                   "ch-comment": "why this exists" });
+  click("#ch-save");
+  await settle(60);
+
+  click($(`.chain[data-chain="inet filter/fast2"] .chain-hd`));
+  await settle(40);
+  click("#chain-new");
+  await settle(40);
+  assert.equal($("#ch-comment").value, "", "a new chain starts with neither");
+  assert.equal($("#ch-offload").classList.contains("on"), false);
+});
+
 test("a map can be made, not only imported", async () => {
   await boot();
   await newRuleset();

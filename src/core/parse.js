@@ -102,10 +102,7 @@ export function parseNft(text){
        has and this model does not: a flowtable, a named counter or quota, a
        ct helper or timeout, a synproxy. Keep the body verbatim. */
     if(isOpener(line) && tableName()){
-      const o = line.match(/^(\S+)(?:\s+(\S+))?\s*\{$/);
-      stack.push({ kind: "object", obj: {
-        table: tableName(), kind: o ? o[1] : line.replace(/\s*\{$/, ""), name: (o && o[2]) || "", body: [],
-      }});
+      stack.push({ kind: "object", obj: { table: tableName(), ...splitObject(line), body: [] } });
       continue;
     }
 
@@ -144,6 +141,24 @@ export function parseNft(text){
   while(stack.length) close();                        /* an unterminated file */
 
   return { chains, sets, objects, tables, errors };
+}
+
+/* Three of nftables' object kinds are two words, and telling them from a kind
+   followed by a name is not something the shape of the line can decide:
+   `ct helper ftp-standard {` and `flowtable ft {` look alike to a regex. The
+   list is short and closed, so it is a list. Anything unrecognised keeps its
+   first word as the kind, which is what nft's own grammar does. */
+const TWO_WORD = ["ct helper", "ct timeout", "ct expectation"];
+
+export function splitObject(line){
+  const head = line.replace(/\s*\{$/, "").trim();
+  for(const k of TWO_WORD)
+    if(head === k || head.startsWith(k + " "))
+      return { kind: k, name: head.slice(k.length).trim() };
+  const cut = head.indexOf(" ");
+  return cut < 0
+    ? { kind: head, name: "" }
+    : { kind: head.slice(0, cut), name: head.slice(cut + 1).trim() };
 }
 
 /* `type`, `flags` and `elements` are the parts the set editor owns; every
@@ -222,7 +237,11 @@ export function parseRule(line){
      second loses every counter that has not matched yet — which is what a
      freshly loaded ruleset is made of, and what a rule that should be firing
      and is not looks like. Keep them apart. */
-  const k = expr.match(/\bcounter(?:\s+packets\s+(\d+)\s+bytes\s+(\d+))?/);
+  /* `counter name "http_hits"` is a reference to a named counter object, not
+     the anonymous statement — swallowing the keyword left a dangling
+     `name "http_hits"` in the expression and re-emitted the rule in a
+     different order. The lookahead keeps this off it. */
+  const k = expr.match(/\bcounter(?!\s+name\b)(?:\s+packets\s+(\d+)\s+bytes\s+(\d+))?/);
   if(k){
     ctr = true;
     pkts = +(k[1]||0); bytes = +(k[2]||0);

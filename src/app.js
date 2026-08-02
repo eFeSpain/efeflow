@@ -20,6 +20,7 @@ import { TOUR, tourStep } from "./core/tour.js";
 import { catalogue, protoOf, OWNABLE, BUILT_IN, emptyVocabulary,
          TEMPLATES, templateById } from "./core/vocabulary.js";
 import { readExpr, editExpr } from "./core/expr.js";
+import { readObject, editObject, refsToObject, OBJECT_FIELDS, OBJECT_TEMPLATE, OBJECT_KINDS } from "./core/objects.js";
 import { lintRule } from "./core/lint.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
@@ -2486,12 +2487,116 @@ const setIcon = s => s.kind==="map"
   ? "M5 8h6l3 4h5M5 16h6"
   : (s.f||"").includes("timeout") ? "M12 8v8m-4-4h8" : "M4 7h16M4 12h16M4 17h9";
 
-function renderSets(){
-  if(SETSEL >= MODEL.sets.length) SETSEL = Math.max(0, MODEL.sets.length-1);
-  const list = $("#set-list");
-  $("#set-count").textContent = MODEL.sets.length;
+/* The editor for a flowtable, a counter, a quota, a ct helper — and for a kind
+   nobody here has heard of.
+ *
+ * Same split as the rule editor: fields for what people change, the source
+ * underneath for everything else. A `ct timeout` gets no fields and is still
+ * editable, which is the whole reason the body is the thing being kept rather
+ * than a parse of it. */
+const OBJ_LABEL = {
+  hook: () => "hook", priority: () => t("priority","prioridad"),
+  devices: () => t("devices","dispositivos"),
+  packets: () => t("packets","paquetes"), bytes: () => "bytes",
+  mode: () => t("mode","modo"), amount: () => t("amount","cantidad"),
+  unit: () => t("unit","unidad"),
+  type: () => t("helper","helper"), protocol: () => t("protocol","protocolo"),
+};
+const OBJ_CHOICES = {
+  hook: ["ingress","egress","prerouting","input","forward","output","postrouting"],
+  mode: ["over","until"],
+  unit: ["bytes","kbytes","mbytes","gbytes"],
+  protocol: ["tcp","udp","sctp","dccp"],
+};
 
-  list.innerHTML = MODEL.sets.length ? MODEL.sets.map((s,i)=>{
+function renderObjectEditor(o, main, refs){
+  const f = readObject(o);
+  const fields = OBJECT_FIELDS[o.kind] || [];
+  const rs = refsToObject(o, MODEL.chains);
+  $("#ref-count").textContent = rs.length;
+
+  const field = k => OBJ_CHOICES[k]
+    ? `<label class="fld"><span class="lbl">${OBJ_LABEL[k]()}</span>
+         <select id="obj-${k}">${OBJ_CHOICES[k].map(x=>
+           `<option${x===f[k]?" selected":""}>${x}</option>`).join("")}
+           ${OBJ_CHOICES[k].includes(f[k])||!f[k]?"":`<option selected>${esc(f[k])}</option>`}</select></label>`
+    : `<label class="fld"><span class="lbl">${OBJ_LABEL[k]()}</span>
+         <input type="text" id="obj-${k}" value="${esc(f[k])}" spellcheck="false"
+           ${k==="devices"?'list="dl-ifaces" placeholder="eth0, eth1"':""}></label>`;
+
+  main.innerHTML = `
+    <div class="set-hero">
+      <div class="r1">
+        <input class="set-name" id="obj-name" value="${esc(o.name)}" spellcheck="false">
+        <span class="pill v-aqua"><span class="sw"></span>${esc(o.kind)}</span>
+        <div style="flex:1"></div>
+        <button class="tb" id="obj-del" style="color:var(--v-drop)"
+          ${rs.length?`disabled title="${esc(t(`Referenced by ${rs.length} rules`,`Referenciado por ${rs.length} reglas`))}"`:""}>
+          <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>${t("Delete","Eliminar")}</button>
+      </div>
+      ${fields.length?`<div class="set-props">${fields.map(field).join("")}</div>`:""}
+      <div class="decl">${highlight(`${o.kind} ${o.name} { ${o.body.join(" ; ")} }`)}</div>
+    </div>
+    <div class="elem-toolbar">
+      <span class="lbl" style="flex:1">${t("Source","Código")} · ${
+        rs.length ? t(`referenced by ${rs.length} rule${rs.length===1?"":"s"}`,`referenciado por ${rs.length} regla${rs.length===1?"":"s"}`)
+                  : `<span style="color:var(--warn)">${t("never referenced","nunca referenciado")}</span>`}</span>
+    </div>
+    <div style="padding:12px 16px">
+      <!-- the body as it will be written out. A kind with no fields above is
+           edited entirely here, which is why it is not tucked away. -->
+      <textarea id="obj-body" spellcheck="false" rows="${Math.max(4, o.body.length+1)}"
+        style="width:100%;font:450 12px/1.7 var(--mono);color:var(--t1);background:var(--sunken);
+               border:1px solid var(--line);border-radius:var(--r-sm);padding:9px 11px;resize:vertical"
+        >${esc(o.body.join("\n"))}</textarea>
+      <div id="obj-warn" style="margin-top:8px"></div>
+    </div>`;
+
+  refs.innerHTML = rs.length ? rs.map(({ch,r,i})=>`
+    <div class="ref" data-ref="${esc(UID(ch))}:${i}">
+      <div class="loc"><span style="color:var(--${VCOLOR[r.verdict]||"--t3"})">◆</span>${esc(ch.table)} / ${esc(ch.id)} · ${t("rule","regla")} ${i+1}</div>
+      <div class="ex">${highlight(ruleLine(r))}</div>
+    </div>`).join("") : `
+    <div style="padding:32px 18px;text-align:center;font-size:11.5px;color:var(--t4);line-height:1.6">
+      ${t(`No rule names this ${o.kind}. It is loaded into the kernel on every reload for nothing.`,
+           `Ninguna regla nombra este ${o.kind}. Se carga en el kernel en cada recarga para nada.`)}</div>`;
+
+  objWarn(o);
+}
+
+/* A flowtable with no device is the one template that ships incomplete, on
+   purpose — naming a device the user does not have is the thing the palette
+   was cleaned of. Say it rather than emit a ruleset nft refuses. */
+function objWarn(o){
+  const box = $("#obj-warn");
+  if(!box) return;
+  const f = readObject(o);
+  const msg = o.kind === "flowtable" && !f.devices
+    ? t("A flowtable has to name at least one device, or nft will not take it.",
+        "Un flowtable tiene que nombrar al menos un dispositivo, o nft no lo acepta.")
+    : !o.name
+      ? t("This object has no name, so no rule can reach it.",
+          "Este objeto no tiene nombre, así que ninguna regla puede alcanzarlo.")
+      : "";
+  box.innerHTML = msg
+    ? `<div class="raw-lint"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span>${esc(msg)}</span></div>`
+    : "";
+}
+
+/* The list is everything the table holds that is not a chain. Sets first, so
+   an index into MODEL.sets is still an index into this — the code that jumps
+   here from a rule or a finding keeps working unchanged. */
+const nSets = () => MODEL.sets.length;
+const curSet = () => (SETSEL < nSets() ? MODEL.sets[SETSEL] : null);
+const curObj = () => (SETSEL >= nSets() ? MODEL.objects[SETSEL - nSets()] : null);
+
+function renderSets(){
+  const total = nSets() + MODEL.objects.length;
+  if(SETSEL >= total) SETSEL = Math.max(0, total-1);
+  const list = $("#set-list");
+  $("#set-count").textContent = total;
+
+  const setRows = MODEL.sets.map((s,i)=>{
     const n = refsTo(s.n).length;
     return `<div class="set-item${i===SETSEL?" on":""}${n?"":" warnish"}" data-si="${i}">
       <div class="ic"><svg class="ico sm" viewBox="0 0 24 24"><path d="${setIcon(s)}"/>${
@@ -2500,17 +2605,32 @@ function renderSets(){
         <div class="ty">${esc(s.t)}${s.f?" · "+esc(s.f):""}${n?"":" · "+t("unused","sin usar")}</div></div>
       <div class="ct">${s.el.length>999?(s.el.length/1000).toFixed(1)+"k":s.el.length}</div>
     </div>`;
-  }).join("") : `<div style="padding:34px 18px;text-align:center;font-size:12px;color:var(--t4);line-height:1.6">
-      ${t("No sets in this ruleset.","Este ruleset no tiene sets.")}</div>`;
+  });
+  const objRows = MODEL.objects.map((o,k)=>{
+    const i = nSets()+k, n = refsToObject(o, MODEL.chains).length;
+    return `<div class="set-item${i===SETSEL?" on":""}${n?"":" warnish"}" data-si="${i}">
+      <div class="ic"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4"/></svg></div>
+      <div><div class="nm">${esc(o.name || o.kind)}</div>
+        <div class="ty">${esc(o.kind)}${n?"":" · "+t("unused","sin usar")}</div></div>
+      <div class="ct">${o.body.length}</div>
+    </div>`;
+  });
 
-  const s = MODEL.sets[SETSEL];
+  list.innerHTML = total ? setRows.concat(objRows).join("")
+    : `<div style="padding:34px 18px;text-align:center;font-size:12px;color:var(--t4);line-height:1.6">
+        ${t("Nothing in this table but chains.","Esta tabla no tiene más que cadenas.")}</div>`;
+
   const main = $("#set-main"), refs = $("#set-refs");
+  const o = curObj();
+  if(o) return renderObjectEditor(o, main, refs);
+
+  const s = curSet();
   if(!s){
     main.innerHTML = `<div class="empty-props" style="height:100%">
       <div class="art"><svg viewBox="0 0 24 24" style="width:28px;height:28px;stroke:currentColor;fill:none;stroke-width:1.4"><path d="M4 7h16M4 12h16M4 17h9"/></svg></div>
-      <h4>${t("No set selected","Ningún set seleccionado")}</h4>
-      <p>${t("Sets turn repeated rules into one hash lookup. The optimiser will offer to create them for you.",
-              "Los sets convierten reglas repetidas en una sola consulta hash. El optimizador se ofrecerá a crearlos.")}</p></div>`;
+      <h4>${t("Nothing selected","Nada seleccionado")}</h4>
+      <p>${t("Sets turn repeated rules into one hash lookup. Flowtables, counters and ct helpers live here too.",
+              "Los sets convierten reglas repetidas en una sola consulta hash. Los flowtables, counters y helpers de ct también viven aquí.")}</p></div>`;
     refs.innerHTML = ""; $("#ref-count").textContent = "0";
     return;
   }
@@ -2568,7 +2688,7 @@ function renderSets(){
     </div>
     <div class="elem-toolbar">
       <span class="lbl" style="flex:1">${s.el.length} ${t("elements","elementos")} · ${
-        rs.length ? t(`referenced by ${rs.length} rules`,`referenciado por ${rs.length} reglas`)
+        rs.length ? t(`referenced by ${rs.length} rule${rs.length===1?"":"s"}`,`referenciado por ${rs.length} regla${rs.length===1?"":"s"}`)
                   : `<span style="color:var(--warn)">${t("never referenced","nunca referenciado")}</span>`}</span>
     </div>
     <div class="elem-grid" id="elem-grid">
@@ -2596,27 +2716,29 @@ document.addEventListener("click", e=>{
 
   const rm = e.target.closest("[data-el]");
   if(rm){
-    const s = MODEL.sets[SETSEL], i = +rm.dataset.el;
+    const s = curSet(); if(!s) return;
+    const i = +rm.dataset.el;
     edit(t("remove set element","quitar elemento del set"), ()=>{ s.el.splice(i,1); });
     return;
   }
   const fl = e.target.closest("#set-flags [data-flag]");
   if(fl){
-    const s = MODEL.sets[SETSEL], f = fl.dataset.flag;
+    const s = curSet(); if(!s) return;
+    const f = fl.dataset.flag;
     const have = (s.f||"").split(",").map(x=>x.trim()).filter(Boolean);
     const next = have.includes(f) ? have.filter(x=>x!==f) : [...have, f];
     edit(t("set flags","flags del set"), ()=>{ s.f = next.join(", "); });
     return;
   }
   if(e.target.closest("#set-a-automerge")){
-    const s = MODEL.sets[SETSEL];
+    const s = curSet(); if(!s) return;
     edit(t("auto-merge","auto-merge"), ()=>{
       s.attr = {...s.attr, "auto-merge": !s.attr?.["auto-merge"]};
     });
     return;
   }
   if(e.target.closest("#set-del")){
-    const s = MODEL.sets[SETSEL];
+    const s = curSet(); if(!s) return;
     if(refsTo(s.n).length){
       toast(t(`@${s.n} is still used by ${refsTo(s.n).length} rules`,
               `@${s.n} lo usan todavía ${refsTo(s.n).length} reglas`));
@@ -2656,13 +2778,84 @@ document.addEventListener("click", e=>{
 document.addEventListener("keydown", e=>{
   if(e.target.id!=="elem-add" || e.key!=="Enter") return;
   const v = e.target.value.trim(); if(!v) return;
-  const s = MODEL.sets[SETSEL];
+  const s = curSet(); if(!s) return;
   edit(t("add set element","añadir elemento al set"), ()=>{ s.el.push(v); });
+});
+
+/* ── editing an object in place ──────────────────────────────────────── */
+document.addEventListener("click", e=>{
+  /* the kinds this knows how to start you off with; anything else you get by
+     importing it, and can then edit like the rest */
+  if(e.target.closest("#obj-new")){
+    const b = e.target.closest("#obj-new").getBoundingClientRect();
+    const m = openCtx(b.left, b.bottom + 4, OBJECT_KINDS.map(k =>
+      [k, k, "M12 3 4 7v10l8 4 8-4V7z"]));
+    m.addEventListener("click", ev=>{
+      const a = ev.target.closest("[data-act]"); if(!a) return;
+      const kind = a.dataset.act;
+      const table = MODEL.chains[0]?.table || "inet fw";
+      const n = `new_${kind.replace(/\W+/g,"_")}_${MODEL.objects.filter(o=>o.kind===kind).length+1}`;
+      edit(t(`new ${kind}`, `${kind} nuevo`), ()=>{
+        MODEL.objects.push({ table, kind, name: n, body: [...(OBJECT_TEMPLATE[kind]||[])] });
+      });
+      SETSEL = nSets() + MODEL.objects.length - 1;
+      killCtx(); renderSets();
+    });
+    return;
+  }
+  if(e.target.closest("#obj-del")){
+    const o = curObj(); if(!o) return;
+    const rs = refsToObject(o, MODEL.chains);
+    if(rs.length){
+      toast(t(`${o.name} is still named by ${rs.length} rules`,
+              `${o.name} lo nombran todavía ${rs.length} reglas`));
+      return;
+    }
+    const k = MODEL.objects.indexOf(o);
+    edit(t(`delete ${o.kind}`, `eliminar ${o.kind}`), ()=>{ MODEL.objects.splice(k,1); });
+    SETSEL = Math.max(0, SETSEL-1);
+    renderSets();
+  }
+});
+
+document.addEventListener("change", e=>{
+  const o = curObj();
+  if(!o || !e.target.id?.startsWith("obj-")) return;
+  const key = e.target.id.slice(4);
+
+  if(key === "name"){
+    const next = e.target.value.trim();
+    if(!next || next === o.name){ renderSets(); return; }
+    const was = o.name, hits = refsToObject(o, MODEL.chains).length;
+    /* the same promise the set editor makes: rename it and the rules follow */
+    edit(t(`rename ${o.kind}`, `renombrar ${o.kind}`), ()=>{
+      o.name = next;
+      MODEL.chains.forEach(ch=>{ if(ch.table !== o.table) return;
+        ch.rules.forEach(r=>{
+          r.expr = r.expr.split(`@${was}`).join(`@${next}`).split(`"${was}"`).join(`"${next}"`);
+        });
+      });
+    });
+    toast(hits ? t(`Renamed, and ${hits} rules updated`, `Renombrado, y ${hits} reglas actualizadas`)
+               : t("Renamed","Renombrado"));
+    return;
+  }
+
+  if(key === "body"){
+    const body = e.target.value.split("\n").map(l=>l.trim()).filter(Boolean);
+    edit(t(`edit ${o.kind}`, `editar ${o.kind}`), ()=>{ o.body = body; });
+    return;
+  }
+
+  if((OBJECT_FIELDS[o.kind] || []).includes(key)){
+    const v = e.target.value.trim();
+    edit(t(`edit ${o.kind}`, `editar ${o.kind}`), ()=>{ o.body = editObject(o, {[key]: v}); });
+  }
 });
 
 /* ── editing a set in place ──────────────────────────────────────────── */
 document.addEventListener("change", e=>{
-  const s = MODEL.sets[SETSEL];
+  const s = curSet();
   if(!s) return;
 
   /* a map's type is `key : value`, and both halves are edited separately */
@@ -3750,6 +3943,8 @@ function chDraft(){
     hook: $("#ch-hook").value,
     dev: $("#ch-dev").value.trim(),
     prio: $("#ch-prio").value.trim(),
+    comment: $("#ch-comment").value.trim(),
+    offload: $("#ch-offload").classList.contains("on"),
     policy: $("#ch-policy").value,
   };
 }
@@ -3826,6 +4021,9 @@ function openChain(uid){
     .replace(/^devices\s*=\s*\{\s*|\s*\}$/g, "").replace(/"/g, "");
   $("#ch-prio").value  = ch && ch.prio !== null ? String(ch.prio) : "0";
   $("#ch-policy").value = ch?.policy || "accept";
+  /* both live in ch.extra, the verbatim list of chain statements that are not rules */
+  $("#ch-comment").value = ((ch?.extra||[]).find(l=>/^comment /.test(l))||"").replace(/^comments+"?|"$/g, "");
+  $("#ch-offload").classList.toggle("on", (ch?.extra||[]).some(l=>/^flags.*offload/.test(l)));
   $$("#ch-kind button").forEach(b=>
     b.classList.toggle("on", b.dataset.kind === (ch && !ch.hook ? "regular" : "base")));
 
@@ -3841,6 +4039,9 @@ $("#ch-kind").addEventListener("click", e=>{
   const b = e.target.closest("[data-kind]");
   if(b){ $$("#ch-kind button").forEach(x=>x.classList.toggle("on", x===b)); chSync(); }
 });
+/* A global handler already flips every .sw-toggle; flipping it again here
+   cancelled it out. All this one owes is the preview refresh. */
+$("#ch-offload").addEventListener("click", ()=>chSync());
 
 $("#ch-save").addEventListener("click", ()=>{
   const d = chDraft();
@@ -3856,6 +4057,12 @@ $("#ch-save").addEventListener("click", ()=>{
       prio: base ? prio : null,
       type: base ? d.type : "regular",
       policy: base ? d.policy : null,
+      /* everything else in extra is kept as it came; only these two are ours */
+      extra: [
+        ...((ch.extra || []).filter(l => !/^(comment |flags\b.*\boffload\b)/.test(l))),
+        ...(d.offload ? ["flags offload"] : []),
+        ...(d.comment ? [`comment "${d.comment.replace(/"/g, "")}"`] : []),
+      ],
     });
     if(!uid) MODEL.chains.push(ch);
   });

@@ -22,8 +22,10 @@ const CREATED = new Set([
 /* The properties panel writes its own form every time a rule is selected, and
    every field in it is `f-something`. Naming them one by one meant the list
    went stale the moment the panel grew a control — which it needed to, since
-   several of the ones already there were painted and wired to nothing. */
-const created = (id) => CREATED.has(id) || id.startsWith("f-");
+   several of the ones already there were painted and wired to nothing. The
+   object editor writes its own the same way, with `obj-`. */
+const created = (id) =>
+  CREATED.has(id) || id.startsWith("f-") || (id.startsWith("obj-") && id !== "obj-new");
 
 test("every id the interface looks up exists in the markup", () => {
   const missing = new Map();

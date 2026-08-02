@@ -71,6 +71,29 @@ test("a target that is not in the ruleset is caught", () => {
   clean("ip saddr @admins drop", { sets: ["admins"] });
 });
 
+/* `@` does not only mean a set: a flowtable is reached with `flow add @ft`.
+   Checked against the sets alone, every offload rule in every router ruleset
+   came back naming a set that does not exist. */
+test("a flowtable is a thing an @ can name", () => {
+  const ctx = { sets: ["admins"], flowtables: ["ft"], objects: [] };
+  clean("ip protocol { tcp, udp } flow add @ft", ctx);
+  assert.deepEqual(codes("flow add @nope", ctx), ["unknown-set"]);
+});
+
+/* The objects named in a statement rather than with an @ were not checked at
+   all, which is the same gap seen from the other side. */
+test("an object named in a statement has to exist too", () => {
+  const objects = [
+    { kind: "counter", name: "hits" },
+    { kind: "ct helper", name: "ftp-standard" },
+  ];
+  const ctx = { sets: [], objects };
+  clean('tcp dport 80 counter name "hits" accept', ctx);
+  clean('tcp dport 21 ct helper set "ftp-standard" accept', ctx);
+  assert.deepEqual(codes('tcp dport 80 counter name "nope" accept', ctx), ["unknown-object"]);
+  assert.deepEqual(codes('tcp dport 21 ct helper set "nope" accept', ctx), ["unknown-object"]);
+});
+
 /* Without the ruleset to check against there is nothing to be sure of, so an
    unresolvable name is not reported rather than reported wrongly. */
 test("names are only checked when there is something to check them against", () => {

@@ -17,7 +17,9 @@ import { ruleLine } from "./model.js";
 const TRANSPORT = /\b(tcp|udp|udplite|sctp|dccp|th)\s+[sd]port\b/;
 const PORT = /\b[sd]port\b/;
 
-/* everything `log` owns; each of these is meaningless without it */
+/* the whole log statement, arguments and all — the one place a rule carries
+   quoted text that is not the name of something */
+const LOG_STMT = /\blog\b(?:\s+(?:prefix\s+"(?:[^"\\]|\\.)*"|level\s+\S+|group\s+\d+|snaplen\s+\d+|queue-threshold\s+\d+|flags\s+\S+))*/g;
 const LOG_ARG = /\b(prefix\s+"|level\s+\w|group\s+\d|snaplen\s+\d|queue-threshold\s+\d)/;
 
 const VERDICTS = /\b(accept|drop|reject|return|continue|masquerade)\b/g;
@@ -118,12 +120,39 @@ export function lintRule(line, ctx = {}){
         `No chain called ${m[1]} in this table`,
         `No hay ninguna cadena llamada ${m[1]} en esta tabla`));
   }
+  /* A flowtable is reached with `flow add @ft`, so `@` does not only mean a
+     set — reported against the sets alone, every offload rule in every router
+     ruleset came back as naming a set that does not exist. */
   if(Array.isArray(ctx.sets)){
+    const named = [...ctx.sets, ...(ctx.flowtables || [])];
     for(const m of e.matchAll(/@([A-Za-z_]\w*)/g))
-      if(!ctx.sets.includes(m[1]))
+      if(!named.includes(m[1]))
         out.push(F("unknown-set",
-          `No set or map called @${m[1]} in this table`,
-          `No hay ningún set o map llamado @${m[1]} en esta tabla`));
+          `Nothing called @${m[1]} in this table`,
+          `No hay nada llamado @${m[1]} en esta tabla`));
+  }
+
+  /* The objects that are named in a statement rather than with an @. The set
+     reference was checked and these were not, which is the same gap seen from
+     the other side. */
+  if(Array.isArray(ctx.objects)){
+    /* Against the source, not the blanked copy: for these the quoted text is
+       the name, and bare() exists precisely to hide quoted text. The one place
+       stray quoted text comes from is a log prefix, so that goes instead. */
+    const named = src.replace(LOG_STMT, " ");
+    const NAMED = [
+      [/\bcounter\s+name\s+"([^"]*)"/g,      "counter"],
+      [/\bquota\s+name\s+"([^"]*)"/g,        "quota"],
+      [/\bct\s+helper\s+set\s+"([^"]*)"/g,   "ct helper"],
+      [/\bct\s+timeout\s+set\s+"([^"]*)"/g,  "ct timeout"],
+      [/\bsynproxy\s+name\s+"([^"]*)"/g,     "synproxy"],
+    ];
+    for(const [re, kind] of NAMED)
+      for(const m of named.matchAll(re))
+        if(!ctx.objects.some(o => o.kind === kind && o.name === m[1]))
+          out.push(F("unknown-object",
+            `No ${kind} called ${m[1]} in this table`,
+            `No hay ningún ${kind} llamado ${m[1]} en esta tabla`));
   }
   return out;
 }
@@ -133,9 +162,12 @@ export function lintRule(line, ctx = {}){
 export function lintRuleset(model){
   const out = [];
   for(const ch of model.chains || []){
+    const own = (model.objects || []).filter(o => o.table === ch.table);
     const ctx = {
       chains: (model.chains || []).filter(c => c.table === ch.table).map(c => c.id),
       sets: (model.sets || []).filter(s => !s.table || s.table === ch.table).map(s => s.n),
+      flowtables: own.filter(o => o.kind === "flowtable").map(o => o.name),
+      objects: own,
     };
     ch.rules.forEach((r, i) => {
       if(!r.on) return;

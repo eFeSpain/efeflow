@@ -458,11 +458,14 @@
 
 <section class="screen" id="s-sets">
   <aside class="set-list">
-    <div class="panel-hd"><span class="lbl" data-t="Sets &amp; maps|Sets y maps">Sets &amp; maps</span>
+    <!-- everything a table holds that is not a chain: sets, maps, and the
+         flowtables, counters, quotas and ct helpers that were carried through
+         an import and could not be made, changed or removed -->
+    <div class="panel-hd"><span class="lbl" data-t="Table objects|Objetos de la tabla">Table objects</span>
       <span class="chip" id="set-count">0</span>
       <button class="tb icon" id="set-new" data-tt="New set|Nuevo set"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
-      <!-- maps could be imported, listed and referenced, and not made -->
-      <button class="tb icon" id="map-new" data-tt="New map|Nuevo map"><svg class="ico sm" viewBox="0 0 24 24"><path d="M5 8h6l3 4h5M5 16h6"/><path d="M12 5v14" opacity=".35"/></svg></button></div>
+      <button class="tb icon" id="map-new" data-tt="New map|Nuevo map"><svg class="ico sm" viewBox="0 0 24 24"><path d="M5 8h6l3 4h5M5 16h6"/><path d="M12 5v14" opacity=".35"/></svg></button>
+      <button class="tb icon" id="obj-new" data-tt="New flowtable, counter, quota…|Nuevo flowtable, counter, quota…"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4"/></svg></button></div>
     <div class="body" id="set-list"></div>
   </aside>
   <div class="set-main" id="set-main"></div>
@@ -873,6 +876,15 @@
           <div class="fld"><span class="lbl" data-t="Policy|Política">Policy</span>
             <select id="ch-policy"><option>accept</option><option>drop</option></select></div>
         </div>
+      </div>
+
+      <!-- both were preserved through an import and could not be written -->
+      <div class="row2">
+        <div class="fld"><span class="lbl" data-t="Comment|Comentario">Comment</span>
+          <input type="text" id="ch-comment" data-tp="why this chain exists|por qué existe esta cadena"></div>
+        <div class="fld"><span class="lbl" data-t="Hardware offload|Offload por hardware">Hardware offload</span>
+          <div class="inline" style="height:29px"><span class="lbl" style="text-transform:none;letter-spacing:0;font-size:11.5px">flags offload</span>
+            <span class="sw-toggle" id="ch-offload"></span></div></div>
       </div>
 
       <div class="mono" id="ch-preview" style="font-size:11px;color:var(--t3);padding:9px 11px;
