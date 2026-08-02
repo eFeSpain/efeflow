@@ -71,3 +71,31 @@ test("every command registered in Rust is reachable, and vice versa", () => {
   }
   assert.ok(registered.length >= 5, "expected the nft commands to be registered");
 });
+
+/* The catalogue is a file in the app config directory. Every one of these is a
+   silent rejection if it is missing: readSetting returns null and the entries
+   you added yesterday are simply not there, with nothing said. */
+test("the settings file the catalogue lives in is reachable", () => {
+  for (const p of ["fs:allow-read-text-file", "fs:allow-write-text-file",
+                   "fs:allow-mkdir", "fs:allow-exists"])
+    assert.ok(granted.has(p), `native.js reads and writes settings; ${p} is not granted`);
+
+  const scope = caps.permissions.find((p) => p && p.identifier === "fs:scope");
+  assert.ok(scope, "fs:scope is what says which directories those permissions apply to");
+  const paths = scope.allow.map((a) => a.path);
+  assert.ok(paths.includes("$APPCONFIG"), "the directory itself, so it can be created");
+  assert.ok(paths.includes("$APPCONFIG/**"), "and the file inside it");
+});
+
+/* $APPCONFIG is a Tauri variable; a typo in one is not an error, it is a scope
+   that matches nothing. The generated schema is the list of real ones. */
+test("every path variable in the scope is one Tauri defines", () => {
+  const schema = readFileSync(
+    new URL("../src-tauri/gen/schemas/desktop-schema.json", import.meta.url), "utf8");
+  const scope = caps.permissions.find((p) => p && p.identifier === "fs:scope");
+  for (const { path } of scope.allow) {
+    const v = path.match(/^\$[A-Z]+/)?.[0];
+    if (!v) continue;
+    assert.ok(schema.includes(v), `${v} is not a path variable Tauri knows`);
+  }
+});
