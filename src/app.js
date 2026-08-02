@@ -26,6 +26,7 @@ import { modelChanged, rerender, onModelChange, onRender, findings, setFindings 
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
 import { target, loadTarget, saveTarget, asTauriTarget, describe, probe } from "./target.js";
 import { applyWithNet, keep, rollBackNow, pendingRollback } from "./apply.js";
+import { refreshCounters, checkDrift, pushRule } from "./host.js";
 import * as native from "./native.js";
 
 const MODEL_HOOKS = { push: onModelChange };
@@ -40,7 +41,7 @@ document.addEventListener("click", (e) => {
 });
 
 /* hoisted: the prototype relied on <script> ordering for these */
-let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI, TOURI, APPLY, REACH;
+let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI, TOURI, APPLY, REACH, WATCH;
 
 FIND = [];
 const $  = (s,r=document)=>r.querySelector(s);
@@ -932,10 +933,10 @@ function select(chainId, i, fromCode){
     <div class="rule-hero">
       <div class="top">
         <span class="pill v-${r.verdict}"><span class="sw"></span>${VNAME[r.verdict]}</span>
-        ${r.handle ? `<span class="chip" title="${esc(t(
-            "The handle this rule had on the host it was read from — how you address it with nft on a live ruleset.",
-            "El handle que tenía esta regla en el host del que se leyó — con él se la direcciona con nft en un ruleset vivo."))}"
-          >handle ${r.handle}</span>` : ""}
+        ${r.handle ? `<button class="chip" id="rule-push" title="${esc(t(
+            "The handle this rule had on the host it was read from. Click to change just this rule there, instead of replacing the whole table.",
+            "El handle que tenía esta regla en el host del que se leyó. Púlsalo para cambiar solo esta regla allí, en vez de reemplazar la tabla entera."))}"
+          >handle ${r.handle}</button>` : ""}
         <div style="flex:1"></div>
         <span class="sw-toggle${r.on?" on":""}" id="rule-on" title="${t("Enable rule","Activar la regla")}"></span>
       </div>
@@ -1154,6 +1155,26 @@ function select(chainId, i, fromCode){
     const q = readExpr(r.expr);
     edit(t("invert rate limit","invertir límite de tasa"),
          ()=>{ r.expr = editExpr(r.expr, {limit: q.limit || "5/second", over: !q.over}); }, true);
+  });
+
+  /* Changing one rule where it runs, rather than replacing the table it is in
+     to change one line. host.js re-reads the chain first and refuses if the
+     host no longer agrees about it — a handle is a position in somebody else's
+     kernel, and acting on a stale one deletes a rule you never looked at. */
+  $("#rule-push")?.addEventListener("click", async ()=>{
+    if(!REACH?.ok){ toast(t(`No host to change — ${REACH?.why||""}`,
+                            `Ninguna máquina que cambiar — ${REACH?.why||""}`)); return; }
+    const res = await pushRule({model: MODEL, chain: ch, index: i,
+                                op: "replace", target: asTauriTarget()});
+    if(res.ok){
+      toast(t(`Rule ${i+1} replaced on ${describe()} · handle ${res.handle}`,
+              `Regla ${i+1} reemplazada en ${describe()} · handle ${res.handle}`));
+      return;
+    }
+    toast(res.error === "unaddressable"
+      ? t(`${describe()} no longer agrees about this chain — re-read it first`,
+          `${describe()} ya no coincide en esta cadena — reléelo primero`)
+      : t(`nft refused it — ${res.error}`, `nft lo rechazó — ${res.error}`));
   });
 
   const onT = $("#rule-on");
@@ -4362,6 +4383,30 @@ function tickCountdown(){
   APPLY.left--;
 }
 
+/* Has the host moved since you read it?
+ *
+ * The scoped apply keeps Docker's tables out of it, but inside your own table
+ * twenty rules added by fail2ban while you were editing are invisible — and
+ * the apply takes them with it. This is the look before that, and it runs when
+ * the dialog opens rather than on a button, because the moment it matters is
+ * the moment before you press Apply. */
+async function warnOnDrift(){
+  if(!REACH?.ok) return;
+  const box = $("#ap-drift");
+  box.style.display = "none";
+  const r = await checkDrift({model: MODEL, target: asTauriTarget()});
+  if(!r.ok || r.inSync || !$("#scrim-apply").classList.contains("on")) return;
+  const bits = [
+    r.added   && t(`${r.added} it has that you have not`, `${r.added} que tiene y tú no`),
+    r.missing && t(`${r.missing} you have that it has not`, `${r.missing} que tienes y él no`),
+    r.changed && t(`${r.changed} that differ`, `${r.changed} que difieren`),
+  ].filter(Boolean);
+  box.style.display = "";
+  box.textContent = t(
+    `${describe()} has moved since you read it — ${bits.join(", ")}. Applying replaces what is there with what is here.`,
+    `${describe()} ha cambiado desde que lo leíste — ${bits.join(", ")}. Aplicar reemplaza lo que hay por lo que tienes.`);
+}
+
 function openApply(){
   stopCountdown();
   /* Both choices go back to the safe one every time. A scope of "the whole
@@ -4374,6 +4419,7 @@ function openApply(){
   showApplyStage(false);
   paintApplyForm();
   $("#scrim-apply").classList.add("on");
+  warnOnDrift();
 }
 
 $("#val-apply")?.addEventListener("click", openApply);
@@ -4456,6 +4502,69 @@ $("#scrim-apply")?.addEventListener("click", e=>{
             `${describe()} sigue contando — revertirá salvo que lo conserves`));
   }
 });
+
+/* ══ THE HOST, WHILE YOU ARE EDITING ════════════════════════════════════
+   Three things that ask a running machine rather than reason about a
+   document. src/host.js owns what they do; this owns when and what they say. */
+
+async function readCounters(){
+  if(!REACH?.ok){ toast(t(`No host to read from — ${REACH?.why||""}`,
+                          `Ninguna máquina que leer — ${REACH?.why||""}`)); return; }
+  const r = await refreshCounters({model: MODEL, target: asTauriTarget()});
+  if(!r.ok){ toast(t(`Could not read the counters — ${r.error}`,
+                     `No se pudieron leer los contadores — ${r.error}`)); return; }
+  /* Counters are not part of what a ruleset means: nothing in the generated
+     source changes, so this is a read. No history entry, no unsaved dot. */
+  rerender();
+  toast(r.updated
+    ? t(`Counters read from ${describe()} · ${r.updated} rules updated`,
+        `Contadores leídos de ${describe()} · ${r.updated} reglas actualizadas`)
+    : t(`Counters read from ${describe()} · nothing had moved`,
+        `Contadores leídos de ${describe()} · nada se había movido`));
+}
+$("#cv-counters")?.addEventListener("click", readCounters);
+
+/* `nft monitor` stays open and reports what the kernel does to the ruleset as
+   it happens. Without it the only way to learn that fail2ban added twenty
+   rules while you were editing is to apply over them. */
+WATCH = null;
+async function toggleWatch(){
+  const btn = $("#cv-watch");
+  if(WATCH){
+    await native.nftUnwatch();
+    WATCH.stop?.();
+    WATCH = null;
+    btn?.classList.remove("on");
+    toast(t("Stopped watching","Se deja de vigilar"));
+    return;
+  }
+  if(!REACH?.ok){ toast(t(`No host to watch — ${REACH?.why||""}`,
+                          `Ninguna máquina que vigilar — ${REACH?.why||""}`)); return; }
+  let seen = 0, told = false;
+  const r = await native.nftWatch(asTauriTarget(), line=>{
+    if(line === null){            /* the stream ended: nft stopped, or the link did */
+      WATCH = null; btn?.classList.remove("on");
+      toast(t(`Stopped watching ${describe()} — the stream ended`,
+              `Se deja de vigilar ${describe()} — el flujo terminó`));
+      return;
+    }
+    seen++;
+    /* one word, not a running commentary: what matters is that it moved */
+    if(!told){
+      told = true;
+      setTimeout(()=>{
+        told = false;
+        toast(t(`${describe()} changed under you — ${seen} events. Re-read it before applying.`,
+                `${describe()} ha cambiado bajo tus pies — ${seen} eventos. Reléelo antes de aplicar.`));
+      }, 1200);
+    }
+  });
+  if(!r.ok){ toast(t(`Could not watch — ${r.stderr}`, `No se pudo vigilar — ${r.stderr}`)); return; }
+  WATCH = r;
+  btn?.classList.add("on");
+  toast(t(`Watching ${describe()}`, `Vigilando ${describe()}`));
+}
+$("#cv-watch")?.addEventListener("click", toggleWatch);
 
 loadTarget();
 refreshTarget();

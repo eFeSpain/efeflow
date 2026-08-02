@@ -157,6 +157,30 @@ dos opciones vuelven a la segura cada vez que se abre el diálogo.
 `nft -c` se ejecuta en la máquina antes de escribir un solo byte, y se niega
 por ti.
 
+### Cuando ya está en marcha
+
+Un ruleset aplicado deja de ser un documento, y tres acciones del lienzo lo
+tratan como una máquina:
+
+**Leer contadores** trae de vuelta `nft list ruleset` y pone los paquetes y
+bytes reales sobre tus reglas. Es la única respuesta honesta a *¿esta regla se
+usa alguna vez?* — el analizador sabe decirte que una regla es inalcanzable,
+pero solo el kernel sabe decirte que una alcanzable lleva seis semanas sin
+casar nada.
+
+**Vigilar** engancha `nft monitor` y te informa de cada cambio que haga la
+máquina mientras lo tengas abierto, lo haga quien lo haga.
+
+**Handle** — el chip de una regla importada de una máquina — envía esa regla
+sola, por su handle, sin tocar el resto de la tabla. El handle es el único
+nombre estable que tiene una regla: sobrevive a que la reordenen, y el texto
+no.
+
+Las tres leen la máquina primero. El envío se niega en seco salvo que la regla
+que va a nombrar siga siendo, línea por línea, la que la máquina tiene bajo ese
+handle — y salvo que la cadena entera siga coincidiendo. Acertar
+aproximadamente qué regla estás borrando es peor que no borrar ninguna.
+
 ---
 
 ## Compilar desde el código
@@ -165,7 +189,7 @@ por ti.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 405 aserciones
+npm test             # 432 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 

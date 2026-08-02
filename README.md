@@ -157,6 +157,28 @@ dialog opens.
 
 `nft -c` runs on the host before a byte is written, and refuses for you.
 
+### Once it is running
+
+A ruleset that has been applied is no longer a document, and three things on
+the canvas treat it as a machine:
+
+**Read counters** pulls `nft list ruleset` back and puts the real packet and
+byte counts on your rules. It is the only honest answer to *is this rule ever
+hit* — the analyser can tell you a rule is unreachable, but only the kernel can
+tell you a reachable one has matched nothing in six weeks.
+
+**Watch** attaches `nft monitor` and reports every change the host makes while
+you have it open, whoever made it.
+
+**Handle** — the chip on a rule imported from a host — pushes that one rule,
+by its handle, without touching the rest of the table. Handles are the only
+stable name a rule has: they survive reordering, and text does not.
+
+All three read the host first. The push refuses outright unless the rule it is
+about to name is still, line for line, the rule the host has under that handle
+— and unless the whole chain still agrees. Being approximately right about
+which rule you are deleting is worse than not deleting one.
+
 ---
 
 ## Build from source
@@ -165,7 +187,7 @@ dialog opens.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 405 assertions
+npm test             # 432 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 ```
 

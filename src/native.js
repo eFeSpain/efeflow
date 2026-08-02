@@ -108,6 +108,35 @@ export async function nftRollback(target = LOCAL) {
   return invoke("nft_rollback", { target });
 }
 
+/* ── one rule at a time ───────────────────────────────────────────────
+   The whole-ruleset apply replaces tables entire, which resets every counter
+   in them to change one line. A handle is nftables' own name for a single
+   rule, and this is what it is for. */
+export async function nftRuleOp({ op, table, chain, handle, rule = "" }, target = LOCAL) {
+  if (!inTauri) return unavailable("Changing one rule");
+  return invoke("nft_rule_op", { target, op, table, chain, handle, rule });
+}
+
+/* ── watching ──────────────────────────────────────────────────────────
+   `nft monitor` stays open and reports what the kernel does to the ruleset as
+   it happens. Unlike everything else here it is a stream, so the lines arrive
+   as events rather than as a return value. */
+export async function nftWatch(target = LOCAL, onLine) {
+  if (!inTauri) return unavailable("Watching the ruleset");
+  const { listen } = await import("@tauri-apps/api/event");
+  const stop = [
+    await listen("nft-monitor", (e) => onLine(String(e.payload))),
+    await listen("nft-monitor-end", () => onLine(null)),
+  ];
+  const r = await invoke("nft_watch", { target });
+  if (!r.ok) stop.forEach((f) => f());
+  return { ...r, stop: () => stop.forEach((f) => f()) };
+}
+export async function nftUnwatch() {
+  if (!inTauri) return unavailable("Watching the ruleset");
+  return invoke("nft_unwatch");
+}
+
 /* ── files ─────────────────────────────────────────────────────────────
    Native dialogs when we have them, a download and an <input type=file>
    when we do not. */

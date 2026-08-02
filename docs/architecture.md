@@ -12,11 +12,18 @@ src/core/        pure, DOM-free, covered by npm test
   generate.js      model → nft source, with line provenance
   analyse.js       findings, by criterion subsumption
   simulate.js      packet evaluation
+  lint.js          what nft would reject, before nft is asked
+  expr.js          surgical edits to one match of one rule
+  objects.js       named counters, quotas, ct helpers, flowtables
+  addr.js          addresses and prefixes, v4 and v6
+  sync.js          which rule here is which rule there
   diff.js          LCS diff against the last import or export
   project.js       name, origin, and the names you keep by hand
   bus.js           one registry every derived view subscribes to
   samples.js       the worked scenarios the import dialog offers
 src/app.js       the interface
+src/apply.js     commit-confirm: arm, push, keep or roll back
+src/host.js      counters, drift and per-handle pushes against a live host
 src/native.js    bridge to Rust; degrades to browser equivalents
 src/target.js    where nft runs: this machine, or a host over SSH
 src-tauri/       nft and ssh transports, window commands
@@ -48,7 +55,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 155 assertions.
+`npm test` — 432 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across

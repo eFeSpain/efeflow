@@ -6,8 +6,10 @@
 //! side of the world behaves like one under the desk.
 
 use serde::{Deserialize, Serialize};
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter};
 
 /// Where a ruleset comes from, or where a check should run.
 #[derive(Debug, Clone, Deserialize)]
@@ -165,6 +167,68 @@ pub fn nft_check(target: Target, ruleset: String) -> Outcome {
     run(&target, &["nft", "-c", "-f", "-"], Some(&ruleset))
 }
 
+/// Change one rule of a running ruleset, addressed by its handle.
+///
+/// The whole-ruleset apply is atomic and replaces tables entire, which resets
+/// every counter in them to change one line. This is the smaller operation:
+/// nftables' own way of naming a single rule.
+///
+/// The handle is a number and the op is one of two words, both checked here
+/// rather than trusted — everything else on this side is argv, but this one
+/// composes an nft command out of what a frontend sent.
+#[tauri::command]
+pub fn nft_rule_op(
+    target: Target,
+    op: String,
+    table: String,
+    chain: String,
+    handle: u64,
+    rule: String,
+) -> Outcome {
+    if op != "delete" && op != "replace" {
+        return Outcome::failed(format!("refusing an unknown rule operation: {op}"));
+    }
+    if !is_ident(&table) || !is_ident(&chain) {
+        return Outcome::failed("refusing a table or chain name that is not one".to_string());
+    }
+    if op == "replace" && rule.trim().is_empty() {
+        return Outcome::failed("a replacement needs a rule".to_string());
+    }
+    /* Through the shell on stdin, like the rollback scripts, and for the same
+    reason: over ssh the argv is joined and re-split by the login shell, so
+    a rule carrying `log prefix "ssh "` would arrive with its quotes eaten
+    and its spaces collapsed. Single-quoted here, the rule reaches nft as
+    the one string it is. */
+    let body = if op == "replace" {
+        format!(" {}", sq(&rule))
+    } else {
+        String::new()
+    };
+    shell(
+        &target,
+        &format!("nft {op} rule {table} {chain} handle {handle}{body}\n"),
+    )
+}
+
+/// Single-quote for a POSIX shell: the only character that matters inside is
+/// the quote itself, and the way out of one is to close, escape, reopen.
+fn sq(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
+/// A table is `inet filter` and a chain is `input`: letters, digits, a few
+/// punctuation marks people really use, and nothing that could become another
+/// argument.
+fn is_ident(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() < 128
+        && s.split(' ').all(|w| {
+            !w.is_empty()
+                && w.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+        })
+}
+
 /* ── the safety net ──────────────────────────────────────────────────────
 Applying a firewall ruleset can cut off the connection you applied it over,
 and a rollback driven from the editor cannot help with that: it would have
@@ -238,4 +302,70 @@ pub fn nft_apply(target: Target, ruleset: String, confirmed: bool) -> Outcome {
         };
     }
     run(&target, &["nft", "-f", "-"], Some(&ruleset))
+}
+
+/* ── watching the host ───────────────────────────────────────────────────
+`nft monitor` stays open and prints every change the kernel makes to the
+ruleset as it happens: somebody else's `nft add rule`, fail2ban banning an
+address, Docker restarting.
+
+Every other command here is run-and-collect. This one is a child process
+that outlives the call, so its lines go to the frontend as events and the
+handle to it is kept so it can be stopped. One at a time: a second watch
+would be a second stream nobody asked for. */
+
+static WATCH: Mutex<Option<Child>> = Mutex::new(None);
+
+#[tauri::command]
+pub fn nft_watch(app: AppHandle, target: Target) -> Outcome {
+    nft_unwatch();
+
+    let (program, args) = argv(&target, &["nft", "monitor", "ruleset"]);
+    let child = Command::new(&program)
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
+
+    let mut child = match child {
+        Ok(c) => c,
+        Err(e) => return Outcome::failed(format!("could not run `{program}`: {e}")),
+    };
+
+    if let Some(out) = child.stdout.take() {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            for line in BufReader::new(out).lines().map_while(Result::ok) {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let _ = app.emit("nft-monitor", line);
+            }
+            /* the stream ending is news too: the connection dropped, or nft did */
+            let _ = app.emit("nft-monitor-end", ());
+        });
+    }
+
+    *WATCH.lock().unwrap() = Some(child);
+    Outcome {
+        ok: true,
+        stdout: String::new(),
+        stderr: String::new(),
+        code: Some(0),
+    }
+}
+
+#[tauri::command]
+pub fn nft_unwatch() -> Outcome {
+    if let Some(mut c) = WATCH.lock().unwrap().take() {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+    Outcome {
+        ok: true,
+        stdout: String::new(),
+        stderr: String::new(),
+        code: Some(0),
+    }
 }

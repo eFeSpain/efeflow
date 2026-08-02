@@ -244,6 +244,11 @@
         <div class="div"></div>
         <button id="chain-new" data-tt="New chain — Ctrl+Shift+N|Cadena nueva — Ctrl+Mayús+N"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
         <button id="chain-reset" data-tt="Re-arrange chains automatically|Reorganizar cadenas automáticamente"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5 5m5-5 5 5"/></svg></button>
+        <div class="div"></div>
+        <!-- the counters on these rules came from the text of the import and
+             have been frozen there ever since -->
+        <button id="cv-counters" data-tt="Read the counters from the host|Leer los contadores de la máquina"><svg class="ico" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 8v4l3 2"/></svg></button>
+        <button id="cv-watch" data-tt="Watch the host for changes|Vigilar los cambios de la máquina"><svg class="ico" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
 
       <!-- filled from the ruleset: a key to verdicts it does not use is both
@@ -1001,6 +1006,7 @@
         <span class="lbl" id="ap-window-note"
           style="text-transform:none;letter-spacing:0;font-size:10.5px;color:var(--t4)">—</span></div>
 
+      <div id="ap-drift" class="tg-result bad" style="display:none;border-color:rgba(240,193,60,.35);color:var(--warn)"></div>
       <div id="ap-warn" class="tg-result bad" style="display:none"></div>
     </div>
 

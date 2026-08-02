@@ -31,6 +31,9 @@ fn main() {
             nft::nft_disarm,
             nft::nft_armed,
             nft::nft_rollback,
+            nft::nft_rule_op,
+            nft::nft_watch,
+            nft::nft_unwatch,
         ])
         .setup(|app| {
             let win = app.get_webview_window("main").expect("main window");

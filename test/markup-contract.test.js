@@ -16,7 +16,7 @@ const ids = new Set([...html.matchAll(/\bid="([\w-]+)"/g)].map((m) => m[1]));
 const CREATED = new Set([
   "toast", "step-bar", "step-go", "step-n", "step-all",
   "props-dock", "mm-vp", "flow-layer", "runtime-error",
-  "rule-on", "elem-add",
+  "rule-on", "rule-push", "elem-add",
 ]);
 
 /* The properties panel writes its own form every time a rule is selected, and
