@@ -1222,3 +1222,20 @@ pre.code{margin:0;padding:10px 0 18px;font:450 11.5px/1.65 var(--mono);letter-sp
 .obj.ph{opacity:.45;cursor:default}
 .obj.ph:hover{background:none;border-color:transparent}
 .obj.ph .gl{opacity:.4}
+
+/* ── the estate ────────────────────────────────────────────────────────
+   The firewalls you look after, listed where you point at one. */
+.hostlist{display:flex;flex-direction:column;gap:3px;max-height:168px;overflow-y:auto}
+.hostrow{
+  display:grid;grid-template-columns:1fr auto 27px;align-items:center;gap:9px;
+  height:31px;padding:0 4px 0 10px;border-radius:var(--r-sm);cursor:pointer;
+  border:1px solid transparent;transition:background .13s var(--ease),border-color .13s var(--ease);
+}
+.hostrow:hover{background:var(--raised)}
+.hostrow.on{background:var(--aqua-wash);border-color:var(--aqua-line)}
+.hostrow .nm{font:500 12.5px var(--sans);color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hostrow.on .nm{color:var(--aqua)}
+.hostrow .rf{font-size:10.5px;color:var(--t4);white-space:nowrap}
+.hostrow button{opacity:0;transition:opacity .13s var(--ease)}
+.hostrow:hover button{opacity:.6}
+.hostrow button:hover{opacity:1;color:var(--v-drop)}

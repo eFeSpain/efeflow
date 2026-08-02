@@ -26,7 +26,9 @@ import { FAMILIES, splitTable, joinTable, tableNames, readTable, writeTable,
          renameTable, removeTable, isDormant, dormantTables } from "./core/tables.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
-import { target, loadTarget, saveTarget, asTauriTarget, describe, probe } from "./target.js";
+import { target, loadTarget, saveTarget, asTauriTarget, describe, probe,
+         hosts, forgetHost } from "./target.js";
+import { asTarget, matching, label as hostLabel } from "./core/hosts.js";
 import { applyWithNet, keep, rollBackNow, pendingRollback } from "./apply.js";
 import { refreshCounters, checkDrift, pushRule } from "./host.js";
 import * as native from "./native.js";
@@ -4462,9 +4464,29 @@ function syncTargetForm(){
       : t(`No nft on ${native.platform.os}. Use SSH.`, `No hay nft en ${native.platform.os}. Usa SSH.`);
 }
 
+/* The estate, listed. A hostname you have typed a hundred times should be a
+   thing you pick, and the one you are pointing at should be obvious. */
+function renderHosts(){
+  const box = $("#tg-saved"), fld = $("#tg-saved-fld");
+  if(!box) return;
+  fld.style.display = hosts.length ? "" : "none";
+  /* against the draft, not the saved target: the highlight has to follow what
+     you are choosing, or picking one in this dialog lights up nothing */
+  const here = matching(hosts, tgDraft);
+  box.innerHTML = hosts.map(h=>`
+    <div class="hostrow${here && here.id===h.id ? " on" : ""}" data-host="${esc(h.id)}">
+      <span class="nm">${esc(hostLabel(h))}</span>
+      <span class="rf mono">${esc(h.name ? describe(asTarget(h)) : "")}</span>
+      <button class="tb icon" data-forget="${esc(h.id)}" title="${esc(
+        t("Forget this one","Olvidar este"))}">
+        <svg class="ico sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>`).join("");
+}
+
 function openTarget(){
   tgDraft = {...target};
   $("#tg-result").style.display = "none";
+  renderHosts();
   syncTargetForm();
   $("#scrim-target").classList.add("on");
 }
@@ -4473,6 +4495,20 @@ $("#tb-target").addEventListener("click", openTarget);
 /* both say the same thing about the same host, so both lead to the same place */
 $("#st-host")?.addEventListener("click", openTarget);
 $("#scrim-target").addEventListener("click", e=>{
+  /* forgetting sits inside the row that selects, so it has to be asked first */
+  const gone = e.target.closest("[data-forget]");
+  if(gone){
+    e.stopPropagation();
+    forgetHost(gone.dataset.forget);
+    renderHosts();
+    return;
+  }
+  const pick = e.target.closest("[data-host]");
+  if(pick){
+    const h = hosts.find(x=>x.id === pick.dataset.host);
+    if(h){ tgDraft = {...asTarget(h)}; renderHosts(); syncTargetForm(); }
+    return;
+  }
   const c = e.target.closest("[data-target]");
   if(c){ tgDraft.kind = c.dataset.target; syncTargetForm(); }
   if(e.target.closest("#tg-sudo")){ tgDraft.sudo = !tgDraft.sudo; syncTargetForm(); }
