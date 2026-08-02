@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { evaluate, matches, PRESETS } from "../src/core/simulate.js";
+import { evaluate, matches, unmodelled, PRESETS } from "../src/core/simulate.js";
 import { MODEL } from "../src/core/model.js";
 import { loadFlawed } from "./fixture.js";
 
@@ -126,6 +126,41 @@ test("both families work in sets, lists and negations", (t) => {
   const neg = { expr: "ip6 saddr != 2001:db8::/32", verdict: "drop", on: true };
   assert.ok(matches(neg, { saddr: "2001:dbe::1", tracked: true }));
   assert.ok(!matches(neg, { saddr: "2001:db8::1", tracked: true }));
+});
+
+/* Three more of the same family, all found by asking the evaluator to account
+   for what it had read: it stopped at the first occurrence of each kind of
+   match, it never read `ip protocol` at all, and it read the `oif` out of the
+   middle of a fib lookup as though it were an interface constraint. */
+test("a second match of the same kind is not skipped", () => {
+  const r = { expr: "udp sport 67 udp dport 68", verdict: "drop", on: true };
+  assert.ok(matches(r, { proto: "udp", sport: 67, dport: 68, tracked: true }));
+  assert.ok(!matches(r, { proto: "udp", sport: 67, dport: 9999, tracked: true }),
+    "the second port match was never checked, so the rule took any port");
+});
+
+test("ip protocol constrains the protocol", () => {
+  const r = { expr: "ip protocol icmp", verdict: "drop", on: true };
+  assert.ok(matches(r, { saddr: "8.8.8.8", proto: "icmp", tracked: true }));
+  assert.ok(!matches(r, { saddr: "8.8.8.8", proto: "tcp", tracked: true }));
+});
+
+/* `fib saddr . iif oif missing` is the standard anti-spoofing rule. Reading
+   the oif out of it compared the packet's output interface against the string
+   "missing", so the rule never fired and was not flagged either — a miss for a
+   reason that was not a reason. */
+test("a fib lookup is not mistaken for an interface constraint", () => {
+  const r = { expr: "fib saddr . iif oif missing", verdict: "drop", on: true };
+  assert.ok(matches(r, { saddr: "8.8.8.8", oif: "wan0", tracked: true }),
+    "nothing here can be evaluated, so the useful guess is that it matches");
+  assert.deepEqual(unmodelled(r.expr), ["fib saddr . iif oif missing"]);
+});
+
+test("meta is allowed in front of an interface match, as nft allows it", () => {
+  const r = { expr: 'meta iifname "wan0"', verdict: "drop", on: true };
+  assert.ok(matches(r, { iif: "wan0", tracked: true }));
+  assert.ok(!matches(r, { iif: "lan0", tracked: true }));
+  assert.deepEqual(unmodelled(r.expr), []);
 });
 
 /* the exact report: the sample ruleset's third input rule is `iif "lo"` */

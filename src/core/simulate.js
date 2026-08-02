@@ -29,7 +29,10 @@ export function matchVal(v, tok){
    silently matched every packet, which is the worst way for a filter to fail.
    (iif resolves to a device index at load time and iifname compares the name;
    that changes what survives a device being recreated, not what matches.) */
-const IFACE_RE = dir => new RegExp(`\\b${dir}(?:name)?\\s+(!=\\s*)?("[^"]*"|\\{[^}]*\\}|@?\\S+)`);
+/* The lookbehind keeps this off a concatenation: `fib saddr . iif oif missing`
+   names iif as a key of the lookup, not as a constraint on the interface, and
+   reading it as one compared the packet's iif against the string "oif". */
+const IFACE_RE = dir => new RegExp(`(?<!\\.\\s)\\b(?:meta\\s+)?${dir}(?:name)?\\s+(!=\\s*)?("[^"]*"|\\{[^}]*\\}|@?\\S+)`);
 const unquote = s => s.replace(/^"([^"]*)"$/, "$1");
 function matchIface(v, tok){
   if(tok.startsWith("@")) return inSet(v, tok.slice(1));
@@ -42,48 +45,147 @@ const ADDR_RE = dir => new RegExp(`\\b(ip6?)\\s+${dir}\\s+(!=\\s*)?(\\{[^}]*\\}|
 /* A rule that names one family cannot match a packet of the other, whatever
    the address says — nftables resolves that at load time from the family
    keyword, not from the value. */
-function matchAddr(expr, dir, value){
-  const m = expr.match(ADDR_RE(dir));
-  if(!m) return true;
+function matchAddr(m, value){
   if((m[1] === "ip6" ? 6 : 4) !== family(value)) return false;
-  const hit = matchVal(value, m[3]);
-  return m[2] ? !hit : hit;
+  return negated(m[2], matchVal(value, m[3]));
 }
+
+/* Everything the evaluator reads, each fragment beside the question it
+   answers. The two live together on purpose: unmodelled() is this same list
+   subtracted from the expression, so what the evaluator reads and what it
+   admits to reading cannot drift apart. */
+const negated = (neg, hit) => (neg ? !hit : hit);
+const inList = (tok, v) => tok.startsWith("{")
+  ? tok.slice(1,-1).split(",").map(s=>s.trim()).includes(String(v))
+  : String(v) === tok;
+
+const MATCHERS = [
+  /* an untracked packet has no conntrack entry: `ct state` can only match it
+     through the untracked keyword, and `ct status` never matches */
+  { re: /\bct\s+state\s+(!=\s*)?([\w,]+)/,
+    ok: (m,p) => { const want = m[2].split(",");
+                   return negated(m[1], p.tracked ? want.includes(p.state)
+                                                  : want.includes("untracked")); } },
+  { re: /\bct\s+status\s+(!=\s*)?\w+/, ok: (m,p) => negated(m[1], !!(p.tracked && p.dnat)) },
+  /* tcp flags syn / tcp flags & (syn|ack) == syn */
+  { re: /\btcp\s+flags\s+(!=\s*)?&?\s*\(?([\w|,]+)\)?(?:\s*==\s*\(?([\w|,]+)\)?)?/,
+    ok: (m,p) => { const has = f => (p.flags||[]).includes(f);
+                   const want = (m[3]||m[2]).split(/[|,]/).map(s=>s.trim()).filter(Boolean);
+                   return negated(m[1], m[3]
+                     ? want.every(has) && (p.flags||[]).every(f=>!m[2].includes(f) || want.includes(f))
+                     : want.every(has)); } },
+  { re: IFACE_RE("iif"), ok: (m,p) => negated(m[1], matchIface(p.iif, m[2])) },
+  { re: IFACE_RE("oif"), ok: (m,p) => negated(m[1], matchIface(p.oif, m[2])) },
+  /* `ip saddr` and `ip6 saddr` are different matches, and in an inet table
+     that is the whole reason both exist. */
+  { re: ADDR_RE("saddr"), ok: (m,p) => matchAddr(m, p.saddr) },
+  { re: ADDR_RE("daddr"), ok: (m,p) => matchAddr(m, p.daddr) },
+  /* both the braced list and the single value: only the first was read, so
+     `meta l4proto sctp accept` matched a tcp packet */
+  { re: /\bmeta\s+l4proto\s+(!=\s*)?(\{[^}]*\}|\S+)/,
+    ok: (m,p) => negated(m[1], inList(m[2], p.proto)) },
+  /* `ip protocol icmp` is how a v4 rule says it, and `ip6 nexthdr` the v6 one.
+     Neither was read, so both matched every packet. */
+  { re: /\b(ip|ip6)\s+(?:protocol|nexthdr)\s+(!=\s*)?(\{[^}]*\}|\S+)/,
+    ok: (m,p) => (m[1] === "ip6" ? 6 : 4) === family(p.saddr ?? p.daddr)
+                 && negated(m[2], inList(m[3], p.proto)) },
+  { re: /\b(tcp|udp|sctp|dccp|udplite)\s+(sport|dport)\s+(!=\s*)?(\{[^}]*\}|\S+)/,
+    ok: (m,p) => m[1] === p.proto
+                 && negated(m[3], matchVal(m[2] === "dport" ? p.dport : p.sport, m[4])) },
+  { re: /\b(tcp|udp|icmp|icmpv6|sctp|dccp)\b/, ok: (m,p) => m[1] === p.proto },
+  { re: /\b(sport|dport)\s+(!=\s*)?(\{[^}]*\}|\S+)/,
+    ok: (m,p) => negated(m[2], matchVal(m[1] === "dport" ? p.dport : p.sport, m[3])) },
+];
+
+/* Statements recognised by shape and not by meaning.
+ *
+ * Naming one is not a claim to understand it. It is to stop the matchers above
+ * reading a fragment out of the middle of it: `fib saddr . iif oif missing` —
+ * the standard anti-spoofing rule — names iif and oif as keys of a lookup, and
+ * the interface matcher was comparing the packet's oif against the string
+ * "missing". The rule was therefore a certain miss for a reason that was not a
+ * reason, which is worse than the silence this whole change is about. */
+const OPAQUE = [
+  /\bfib\s+\w+(?:\s*\.\s*\w+)*\s+(?:oif(?:name)?|type|check)(?:\s+(?:!=\s*)?\S+)?/g,
+  /* `icmp type echo-request` is a match on the message, not on the protocol.
+     Left unmasked, the bare-protocol matcher took the `icmp` off the front and
+     the leftover read as a headless `type echo-request`. */
+  /\b(?:icmp|icmpv6|igmp)\s+(?:type|code)\s+(!=\s*)?(?:\{[^}]*\}|\S+)/g,
+];
+
+/* the expression with the opaque statements struck out, so nothing reads into
+   one; the spans, so the caller can put them back */
+function mask(e){
+  const chars = [...e];
+  const spans = [];
+  for(const re of OPAQUE)
+    for(const m of e.matchAll(re)){
+      spans.push([m.index, m.index + m[0].length]);
+      for(let i = m.index; i < m.index + m[0].length; i++) chars[i] = " ";
+    }
+  return { masked: chars.join(""), spans };
+}
+
+/* Every occurrence, not the first. A rule saying `udp sport 67 udp dport 68`
+   carries two port matches, and reading one of them meant the other was never
+   checked: the rule matched a packet on any destination port at all. */
+const allOf = (re, s) =>
+  [...s.matchAll(re.global ? re : new RegExp(re.source, re.flags + "g"))];
 
 export function matches(r,p){
   const e = r.expr;
   if(!e) return true;
-  let m;
-  /* an untracked packet has no conntrack entry: `ct state` can only match it
-     through the untracked keyword, and `ct status` never matches */
-  if((m=e.match(/ct state ([\w,]+)/))){
-    const want = m[1].split(",");
-    if(!p.tracked) { if(!want.includes("untracked")) return false; }
-    else if(!want.includes(p.state)) return false;
-  }
-  if(/ct status \w+/.test(e) && (!p.tracked || !p.dnat)) return false;
-  /* tcp flags syn / tcp flags & (syn|ack) == syn */
-  if((m=e.match(/tcp flags\s+(!=\s*)?&?\s*\(?([\w|,]+)\)?(?:\s*==\s*\(?([\w|,]+)\)?)?/))){
-    const has = f => (p.flags||[]).includes(f);
-    const want = (m[3]||m[2]).split(/[|,]/).map(s=>s.trim()).filter(Boolean);
-    const hit = m[3]
-      ? want.every(has) && (p.flags||[]).every(f=>!m[2].includes(f) || want.includes(f))
-      : want.every(has);
-    if(m[1] ? hit : !hit) return false;
-  }
-  if((m=e.match(IFACE_RE("iif")))){ const hit = matchIface(p.iif, m[2]); if(m[1]?hit:!hit) return false; }
-  if((m=e.match(IFACE_RE("oif")))){ const hit = matchIface(p.oif, m[2]); if(m[1]?hit:!hit) return false; }
-  /* `ip saddr` and `ip6 saddr` are different matches, and in an inet table
-     that is the whole reason both exist. `ip6` was not recognised as an address
-     match at all, so `ip6 saddr 2001:db8::/32 drop` dropped a packet from
-     8.8.8.8 — the filter doing something far larger than it said. */
-  if(!matchAddr(e, "saddr", p.saddr)) return false;
-  if(!matchAddr(e, "daddr", p.daddr)) return false;
-  if((m=e.match(/meta l4proto \{([^}]*)\}/)) && !m[1].split(",").map(s=>s.trim()).includes(p.proto)) return false;
-  if((m=e.match(/\b(tcp|udp)\b/)) && m[1]!==p.proto) return false;
-  if((m=e.match(/dport ((?:\{[^}]*\})|\S+)/)) && !matchVal(p.dport,m[1])) return false;
-  if((m=e.match(/sport ((?:\{[^}]*\})|\S+)/)) && !matchVal(p.sport,m[1])) return false;
+  const { masked } = mask(e);
+  for(const { re, ok } of MATCHERS)
+    for(const m of allOf(re, masked))
+      if(!ok(m, p)) return false;
   return true;
+}
+
+/* Statements that say what to do rather than what to match: whether the rule
+   applies does not turn on them. */
+const NOT_A_MATCH = [
+  /\blog\b(?:\s+(?:prefix\s+"(?:[^"\\]|\\.)*"|level\s+\S+|group\s+\d+|snaplen\s+\d+|queue-threshold\s+\d+|flags\s+\S+))*/g,
+  /\bcounter(?:\s+packets\s+\d+\s+bytes\s+\d+)?/g,
+  /\bcomment\s+"(?:[^"\\]|\\.)*"/g,
+];
+
+/**
+ * The parts of an expression nothing above looked at.
+ *
+ * This used to be nothing at all — an unrecognised match was skipped, so the
+ * rule matched every packet and `meta mark 0x1 drop` dropped the lot. The
+ * language is larger than any model of it and the rule editor can now write
+ * all of it, so the answer is not to model more: it is to stop being silent
+ * about the difference between a verdict that was evaluated and one that was
+ * guessed at.
+ */
+/* Struck out with a marker rather than deleted, so a leftover keeps the
+   spaces inside it: `meta mark 0x1` is one thing this cannot read, not three. */
+export function unmodelled(expr){
+  const e = String(expr || "");
+  if(!e.trim()) return [];
+
+  const { masked } = mask(e);
+  const read = [];
+  for(const re of NOT_A_MATCH)
+    for(const m of e.matchAll(re)) read.push([m.index, m.index + m[0].length]);
+  /* against the masked expression, so a matcher cannot claim part of an opaque
+     statement and leave the rest of it looking like the whole of it */
+  for(const { re } of MATCHERS)
+    for(const m of allOf(re, masked)) read.push([m.index, m.index + m[0].length]);
+  read.sort((a, b) => a[0] - b[0]);
+
+  /* whatever lies between the fragments something did look at, kept whole:
+     `meta mark 0x1` is one thing this cannot read, not three words */
+  const out = [];
+  let at = 0;
+  for(const [a, b] of read){
+    if(a > at) out.push(e.slice(at, a));
+    at = Math.max(at, b);
+  }
+  out.push(e.slice(at));
+  return out.map(s => s.trim()).filter(Boolean);
 }
 
 export const BASE = {dir:"in", oif:"", flags:["syn"], tracked:true, nat:true, step:false};
@@ -130,6 +232,8 @@ export function natTarget(spec){
 export function evaluate(p){
   const steps = [];
   let accepted = null;
+  /* the matches that were assumed rather than evaluated on the way to a verdict */
+  const guessed = [];
 
   /* How a chain ended:
        {stop:"packet", …}         the packet is finished, and here is why
@@ -145,7 +249,14 @@ export function evaluate(p){
       const r = ch.rules[i];
       if(!r.on){ hop.evs.push({r,i,st:"miss",note:"disabled"}); continue; }
       if(!matches(r,p)){ hop.evs.push({r,i,st:"miss"}); continue; }
-      hop.evs.push({r,i,st:"match"});
+      /* A rule that missed for a reason the evaluator understood is a certain
+         miss whatever else it carries. A rule taken as matching, when part of
+         why it matched was never read, is where the trace stops being a
+         statement and starts being a guess — and it was making no distinction
+         between the two. */
+      const un = unmodelled(r.expr);
+      hop.evs.push({r, i, st:"match", ...(un.length ? {unsure:un} : {})});
+      guessed.push(...un);
 
       /* NAT terminates the chain, and the packet that walks on to the next
          hook is the translated one. */
@@ -212,8 +323,17 @@ export function evaluate(p){
       accepted = {v:"accept", chain:ch, policy:true};
     }
   }
-  /* survived every hook — the verdict is whatever last accepted it */
-  return {steps, final: final || accepted || {v:"accept", chain:chainOf(last), policy:true}};
+  /* survived every hook — the verdict is whatever last accepted it.
+     `sure` is the honest half of the answer: this screen's whole claim is that
+     its verdict is the one the exported ruleset gives you, and that claim only
+     holds for a trace in which every match was actually evaluated. */
+  const unsure = [...new Set(guessed)];
+  return {
+    steps,
+    final: final || accepted || {v:"accept", chain:chainOf(last), policy:true},
+    sure: unsure.length === 0,
+    unsure,
+  };
 }
 
 export const setPacket = p => Object.assign(packet, p);

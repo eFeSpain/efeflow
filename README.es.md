@@ -78,9 +78,15 @@ veredicto — y es el veredicto que produce tu ruleset exportado, porque el
 simulador evalúa el mismo modelo del que se emite el código.
 
 Modela nftables de verdad, en ambas familias. `accept` termina la cadena, no el
-paquete. `ip6 saddr` restringe IPv6 y nada más. Desactivar
-conntrack marca el paquete como `untracked`, así que las reglas `ct state` dejan
-de casar. `tcp flags syn` casa con `syn|ack`; `tcp flags & (syn|ack) == syn` no.
+paquete. `ip6 saddr` restringe IPv6 y nada más. Desactivar conntrack marca el
+paquete como `untracked`, así que las reglas `ct state` dejan de casar. `tcp
+flags syn` casa con `syn|ack`; `tcp flags & (syn|ack) == syn` no.
+
+Y donde no puede modelar algo —nftables es un lenguaje más grande que cualquier
+modelo suyo— **lo dice en vez de suponer en silencio**. Una regla con un `meta
+mark` o una consulta `fib` se da por coincidente, se marca en la traza y se
+nombra bajo el veredicto: esto es una suposición, y esta es la parte que se ha
+asumido en lugar de evaluarse.
 
 ### Importa lo que ya tienes en marcha, y lo demuestra
 
@@ -159,7 +165,7 @@ por ti.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 318 aserciones
+npm test             # 331 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 

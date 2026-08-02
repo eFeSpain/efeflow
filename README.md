@@ -78,9 +78,15 @@ it is the verdict your exported ruleset produces, because the simulator
 evaluates the same model the code is emitted from.
 
 It models nftables properly, in both families. `accept` ends the chain, not the
-packet. `ip6 saddr` constrains IPv6 and nothing else. Turning
-conntrack off marks the packet `untracked`, so `ct state` rules stop matching
-it. `tcp flags syn` matches `syn|ack`; `tcp flags & (syn|ack) == syn` does not.
+packet. `ip6 saddr` constrains IPv6 and nothing else. Turning conntrack off
+marks the packet `untracked`, so `ct state` rules stop matching it. `tcp flags
+syn` matches `syn|ack`; `tcp flags & (syn|ack) == syn` does not.
+
+And where it cannot model something — nftables is a larger language than any
+model of it — **it says so rather than guessing quietly**. A rule carrying a
+`meta mark` or an `fib` lookup is taken as matching, marked in the trace, and
+named under the verdict: this one is a guess, and this is the part of it that
+was assumed rather than evaluated.
 
 ### It imports what you already run, and proves it
 
@@ -159,7 +165,7 @@ dialog opens.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 318 assertions
+npm test             # 331 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 ```
 

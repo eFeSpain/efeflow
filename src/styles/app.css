@@ -754,9 +754,27 @@ pre.code{margin:0;padding:10px 0 18px;font:450 11.5px/1.65 var(--mono);letter-sp
   transition:height .35s var(--ease);border-bottom:1px solid transparent;
 }
 .verdict-banner.show{height:66px;border-bottom-color:var(--line)}
+/* a verdict that rests on a match nothing evaluated needs the room to say so */
+.verdict-banner.show.unsure{height:98px}
 .verdict-banner .big{font:700 21px var(--mono);letter-spacing:-.5px}
 .verdict-banner .why{font-size:12px;color:var(--t2);line-height:1.5}
 .verdict-banner .why code{font:450 11.5px var(--mono);color:var(--t1)}
+.vb-guess{
+  display:flex;gap:7px;align-items:flex-start;margin-top:6px;
+  font-size:11.5px;line-height:1.45;color:var(--warn);
+}
+.vb-guess svg{flex:none;margin-top:1px}
+.vb-guess code{font:450 11px var(--mono);color:var(--t1)}
+
+/* the same doubt, on the rule it came from. The row is a three-column grid, so
+   the extra mark needs a column of its own or it wraps under the verdict. */
+.ev.guessed{grid-template-columns:3px 1fr auto auto}
+.ev.guessed .x{opacity:.82}
+.chip.guess{
+  height:16px;padding:0 5px;color:var(--warn);
+  background:rgba(240,193,60,.1);border-color:rgba(240,193,60,.28);
+  font:700 10px var(--mono);
+}
 
 .flowlane{flex:1;position:relative;padding:26px 34px;overflow-y:auto}
 .lane{display:flex;flex-direction:column;gap:0;max-width:640px;margin:0 auto}

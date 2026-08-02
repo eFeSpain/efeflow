@@ -1124,9 +1124,13 @@ function renderLane(res){
         ${h.chain.policy?`<span class="pill ${h.chain.policy==="drop"?"v-drop":"v-accept"}"><span class="sw"></span>policy ${h.chain.policy}</span>`:""}
       </div>
       ${h.evs.map(e=>`
-        <div class="ev" data-chain="${UID(h.chain)}" data-i="${e.i}">
+        <div class="ev${e.unsure?" guessed":""}" data-chain="${UID(h.chain)}" data-i="${e.i}"${
+          e.unsure ? ` title="${esc(t(
+            `Taken as matching. Nothing evaluated ${e.unsure.join(", ")}.`,
+            `Se da por coincidente. Nada ha evaluado ${e.unsure.join(", ")}.`))}"` : ""}>
           <span class="g"></span>
           <span class="x">${e.r.expr ? highlight(e.r.expr) : `<span class="c-cm">${t("any packet","cualquier paquete")}</span>`}</span>
+          ${e.unsure?`<span class="chip guess">?</span>`:""}
           <span class="pill v-${e.r.verdict}"><span class="sw"></span>${VNAME[e.r.verdict]}</span>
         </div>`).join("")}
       ${h.policy?`<div class="ev" data-policy="1"><span class="g"></span>
@@ -1258,11 +1262,23 @@ function runSim(){
     $("#vb-txt").textContent = VNAME[v];
     $("#vb-txt").style.color = `var(${col})`;
     const loc = `<code>${res.final.chain.table} / ${res.final.chain.id}</code>`;
-    $("#vb-why").innerHTML = res.final.policy
+    /* The verdict is only the verdict your ruleset gives you if everything on
+       the way to it was actually evaluated. Where it was not, say so here
+       rather than let the banner speak for a guess. */
+    const guessed = res.sure ? "" : `
+      <div class="vb-guess">
+        <svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <span>${t(
+          `Assumed, not evaluated: ${res.unsure.map(u=>`<code>${esc(u)}</code>`).join(", ")}. The packet was taken as matching those, so this verdict is a guess where they are concerned.`,
+          `Asumido, no evaluado: ${res.unsure.map(u=>`<code>${esc(u)}</code>`).join(", ")}. El paquete se ha dado por coincidente con eso, así que este veredicto es una suposición en esa parte.`)}</span>
+      </div>`;
+    $("#vb-why").innerHTML = (res.final.policy
       ? t(`No rule in ${loc} matched — the packet fell through to the chain policy.`,
           `Ninguna regla de ${loc} ha coincidido — el paquete cae a la política de la cadena.`)
       : t(`Matched rule ${res.final.i+1} in ${loc}: <code>${esc(ruleLine(res.final.r))}</code>`,
-          `Coincide la regla ${res.final.i+1} de ${loc}: <code>${esc(ruleLine(res.final.r))}</code>`);
+          `Coincide la regla ${res.final.i+1} de ${loc}: <code>${esc(ruleLine(res.final.r))}</code>`))
+      + guessed;
+    vb.classList.toggle("unsure", !res.sure);
     vb.classList.add("show");
     const n = traceEl.querySelectorAll(".tr").length-1;
     push(ok?"ok":"no","", t(`verdict <b>${VNAME[v]}</b> after ${n} evaluations`,
