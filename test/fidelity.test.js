@@ -89,6 +89,24 @@ test("a set whose elements wrap over several lines keeps them", () => {
   assert.deepEqual(s.el, ["1.2.3.0/24", "5.6.7.0/24", "8.9.10.0/24", "11.12.13.0/24"]);
 });
 
+/* `;` separates statements in nft, so `type ipv4_addr ; flags interval` is two
+   of them. Read as one, the type became the whole string and the flag vanished
+   from the set editor — while still round-tripping as text, which is exactly
+   why nobody noticed. */
+test("statements sharing a line by semicolon are read as the statements they are", () => {
+  const src = `table inet fw {
+	set admins {
+		type ipv4_addr ; flags interval
+		elements = { 10.0.0.0/8 }
+	}
+}`;
+  const s = parseNft(src).sets[0];
+  assert.equal(s.t, "ipv4_addr");
+  assert.equal(s.f, "interval");
+  assert.match(emit(src), /type ipv4_addr ; flags interval/, "and go back on the line they came from");
+  assert.deepEqual(verify(src).diffs, []);
+});
+
 test("set attributes the editor does not model are still emitted", () => {
   const out = emit(RICH);
   assert.match(out, /^\s*auto-merge$/m);

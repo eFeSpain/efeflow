@@ -149,6 +149,21 @@ export function parseNft(text){
    other line — size, timeout, gc-interval, auto-merge, policy, comment — is
    kept where it sat so it can be written back in the same place. */
 function readSetLine(s, line){
+  /* `;` separates statements in nft, so `type ipv4_addr ; flags interval` is
+     two of them on one line. Read as one, the type became the whole string and
+     the flag disappeared from the editor entirely — while still round-tripping
+     as text, which is how it went unnoticed. The `join` marker puts them back
+     on the line they arrived on. */
+  const parts = line.split(";").map(x => x.trim()).filter(Boolean);
+  if(parts.length > 1){
+    parts.forEach((p, i) => {
+      const before = s.body.length;
+      readSetLine(s, p);
+      if(i && s.body.length > before) s.body[before].join = true;
+    });
+    return;
+  }
+
   let m;
   if((m = line.match(/^(type|typeof)\s+(.+?)\s*;?$/))){
     s.t = m[2];

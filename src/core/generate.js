@@ -23,10 +23,16 @@ function setBody(s){
   const seen = new Set(body.map(x => x.k));
   const out = [];
   for(const slot of body){
-    if(slot.k === "type")     out.push(`${s.decl || "type"} ${s.t}`);
-    else if(slot.k === "flags"){ if(s.f) out.push(`flags ${s.f}`); }
-    else if(slot.k === "elements"){ if(s.el.length) out.push(`elements = { ${s.el.join(", ")} }`); }
-    else out.push(slot.v);
+    let line = null;
+    if(slot.k === "type")     line = `${s.decl || "type"} ${s.t}`;
+    else if(slot.k === "flags"){ if(s.f) line = `flags ${s.f}`; }
+    else if(slot.k === "elements"){ if(s.el.length) line = `elements = { ${s.el.join(", ")} }`; }
+    else line = slot.v;
+    if(line === null) continue;
+    /* it arrived sharing a line with the statement before it, separated by the
+       `;` that nft puts between statements — put it back where it was */
+    if(slot.join && out.length) out[out.length - 1] += ` ; ${line}`;
+    else out.push(line);
   }
   /* flags or elements added in the editor to a set that was read without them */
   if(s.f && !seen.has("flags")) out.splice(1, 0, `flags ${s.f}`);
