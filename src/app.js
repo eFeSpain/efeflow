@@ -9,7 +9,7 @@ import {
   VCOLOR, VNAME, fmtN, fmtB, verdictText, ruleLine,
 } from "./core/model.js";
 import { generate, generateWithMap } from "./core/generate.js";
-import { parseNft, parseRule, roundTrip, normalise } from "./core/parse.js";
+import { parseNft, parseRule, verify, normalise } from "./core/parse.js";
 import { analyse, worstCase } from "./core/analyse.js";
 import { evaluate, matches, inSet, inCidr, PRESETS, PATHS, packet } from "./core/simulate.js";
 import { diffLines } from "./core/diff.js";
@@ -19,6 +19,7 @@ import { SAMPLES, sampleById } from "./core/samples.js";
 import { TOUR, tourStep } from "./core/tour.js";
 import { catalogue, protoOf, OWNABLE, BUILT_IN, emptyVocabulary,
          TEMPLATES, templateById } from "./core/vocabulary.js";
+import { readExpr, editExpr } from "./core/expr.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
 import { target, loadTarget, saveTarget, asTauriTarget, describe, probe } from "./target.js";
@@ -61,11 +62,15 @@ $$(".scrim").forEach(s=>document.body.appendChild(s));
    snapshot is the whole ruleset, which is cheap at this size and removes a
    whole class of bugs that per-field diffing invites.                    */
 const HIST = {past:[], future:[], max:80};
-const snapshot = () => JSON.stringify({c:MODEL.chains, s:MODEL.sets});
+/* Everything the ruleset is made of, including the parts nothing edits: an
+   undo that forgot the flowtables would delete them on the first Ctrl+Z. */
+const snapshot = () => JSON.stringify(
+  {c:MODEL.chains, s:MODEL.sets, o:MODEL.objects, tb:MODEL.tables});
 CUR = null, PENDING = null;
 function restore(str){
   const o = JSON.parse(str);
   MODEL.chains = o.c; MODEL.sets = o.s;
+  MODEL.objects = o.o || []; MODEL.tables = o.tb || [];
 }
 function refresh(keepSel){
   renderChains(); paintCode(); drawWires(); modelChanged();
@@ -162,7 +167,11 @@ function go(id){
   if(id==="open"){ $("#scrim-palette").classList.add("on"); $("#pal-input").focus(); return; }
   $$(".screen").forEach(s=>s.classList.toggle("on", s.id==="s-"+id));
   $$(".rb").forEach(b=>b.classList.toggle("on", b.dataset.go===id));
-  if(id==="editor") requestAnimationFrame(drawWires);
+  /* A hidden element measures zero, so every card laid out while the editor
+     was on another screen fell back to a nominal height — and any chain taller
+     than that had the next one placed on top of it. Measure again now that
+     there is something to measure. */
+  if(id==="editor") requestAnimationFrame(()=>{ placeChains(); drawWires(); });
   if(id==="topo")   requestAnimationFrame(renderTopo);
   /* The simulator arrives already run. An empty stage reads as "broken", and
      the result is cheap and deterministic — there is no reason to make the
@@ -383,7 +392,16 @@ function layout(){
 function placeChains(){
   const TOP = 96, GUT = 34, LANE_GAP = 46;
   const elOf = uid => $(`.chain[data-chain="${cssEsc(uid)}"]`);
-  const H = uid => elOf(uid)?.offsetHeight || 160;
+  /* A card on a screen that is not showing measures zero. One nominal height
+     for every chain put a two-rule card and a twenty-rule card in the same
+     space, so the tall ones were overlapped; estimating from the rule count is
+     close enough to survive until go("editor") measures for real. */
+  const H = uid => {
+    const n = elOf(uid);
+    if(n?.offsetHeight) return n.offsetHeight;
+    const ch = chainOf(uid);
+    return 96 + (ch ? ch.rules.filter(r => r.on).length : 2) * 34;
+  };
 
   const laneTop = {};
   let y = TOP;
@@ -486,6 +504,21 @@ function renderChains(){
   });
   placeChains();
   renderMinimap();
+  renderLegend();
+}
+
+/* The key to the stripe colours, in evaluation-verdict order and holding only
+   the verdicts this ruleset actually reaches for. Fixed at seven entries it
+   was both noise — a key to a DNAT in a ruleset with no NAT at all — and
+   wider than the dock, so `goto` and `continue` were clipped off the end. */
+const VORDER = ["accept","drop","reject","jump","goto","dnat","redirect","snat",
+                "log","return","continue"];
+function renderLegend(){
+  const used = new Set(MODEL.chains.flatMap(c => c.rules.filter(r => r.on).map(r => r.verdict)));
+  const rows = VORDER.filter(v => used.has(v));
+  $("#legend").innerHTML = rows.map(v =>
+    `<div class="row" style="color:var(${VCOLOR[v]})"><i></i>${VNAME[v]}</div>`).join("");
+  $("#legend").style.display = rows.length ? "" : "none";
 }
 renderChains();
 RERENDER.push(()=>{ renderChains(); drawWires(); });
@@ -719,21 +752,23 @@ const EMPTY = () => `
     </div>
   </div>`;
 
-function parse(expr){
-  const g = (re,d="") => (expr.match(re)||[,d])[1];
-  return {
-    proto : g(/\b(tcp|udp|icmp|sctp)\b/,""),
-    saddr : g(/ip6? saddr (\S+)/,""),
-    daddr : g(/ip6? daddr (\S+)/,""),
-    sport : g(/sport (\S+)/,""),
-    dport : g(/dport ((?:\{[^}]*\})|\S+)/,""),
-    state : g(/ct state ([\w,]+)/,""),
-    iif   : g(/(?:iif|iifname) "?([\w.-]+)"?/,""),
-    oif   : g(/(?:oif|oifname) "?([\w.-]+)"?/,""),
-    limit : g(/limit rate ([\w/]+)/,""),
-  };
-}
+/* core/expr.js owns both halves of this now: what an expression says, and how
+   to change one thing it says without touching the rest. */
+const parse = readExpr;
 const opt = (v,list) => list.map(o=>`<option${o===v?" selected":""}>${o}</option>`).join("");
+
+/* Which verdicts name something, and what that something looks like. The
+   target field used to appear only when the rule already carried one, so
+   switching a rule to `jump` left nowhere to say where — and the rule emitted
+   `jump undefined`, which is a ruleset that does not load. */
+const TARGET_OF = {
+  jump:     () => t("chain name","nombre de cadena"),
+  goto:     () => t("chain name","nombre de cadena"),
+  dnat:     () => "10.0.0.5:8080",
+  snat:     () => t("address, or masquerade","dirección, o masquerade"),
+  redirect: () => t(":port — blank keeps the original",":puerto — vacío conserva el original"),
+  reject:   () => "icmp type admin-prohibited",
+};
 
 SEL = null;
 function select(chainId, i, fromCode){
@@ -760,7 +795,10 @@ function select(chainId, i, fromCode){
     <div class="rule-hero">
       <div class="top">
         <span class="pill v-${r.verdict}"><span class="sw"></span>${VNAME[r.verdict]}</span>
-        <span class="chip">handle ${4000+i*7}</span>
+        ${r.handle ? `<span class="chip" title="${esc(t(
+            "The handle this rule had on the host it was read from — how you address it with nft on a live ruleset.",
+            "El handle que tenía esta regla en el host del que se leyó — con él se la direcciona con nft en un ruleset vivo."))}"
+          >handle ${r.handle}</span>` : ""}
         <div style="flex:1"></div>
         <span class="sw-toggle${r.on?" on":""}" id="rule-on" title="${t("Enable rule","Activar la regla")}"></span>
       </div>
@@ -803,9 +841,9 @@ function select(chainId, i, fromCode){
             <input type="text" id="f-oif" list="dl-ifaces" value="${esc(p.oif)}" placeholder="${t("any","cualquiera")}" spellcheck="false"></div>
         </div>
         <div class="fld"><span class="lbl">${t("Conntrack state","Estado de conntrack")}</span>
-          <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <div style="display:flex;gap:4px;flex-wrap:wrap" id="f-state">
             ${["new","established","related","invalid","untracked"].map(s=>
-              `<button class="chip" style="${p.state.includes(s)?"color:var(--aqua);border-color:var(--aqua-line);background:var(--aqua-wash)":""}">${s}</button>`).join("")}
+              `<button class="chip" data-ct="${s}" style="${p.state.split(",").includes(s)?"color:var(--aqua);border-color:var(--aqua-line);background:var(--aqua-wash)":""}">${s}</button>`).join("")}
           </div>
         </div>
       </div>
@@ -813,20 +851,29 @@ function select(chainId, i, fromCode){
 
     <details class="pgrp" open><summary><svg class="ico sm tw" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><span class="lbl">${t("Verdict","Veredicto")}</span></summary>
       <div class="pgrp-body">
-        <div class="fld"><span class="lbl">${t("Action","Acción")}</span><select id="f-verdict">${opt(r.verdict,["accept","drop","reject","jump","goto","dnat","snat","log","return"])}</select></div>
-        ${r.to!==undefined?`<div class="fld"><span class="lbl">${t("Target","Destino")}</span><input type="text" id="f-to" value="${esc(r.to)}"></div>`:""}
-        <div class="inline"><span class="lbl">${t("Count packets","Contar paquetes")}</span><span class="sw-toggle${r.pkts?" on":""}"></span></div>
-        <div class="inline"><span class="lbl">${t("Log matches","Registrar coincidencias")}</span><span class="sw-toggle${/log/.test(r.expr)?" on":""}"></span></div>
+        <div class="fld"><span class="lbl">${t("Action","Acción")}</span><select id="f-verdict">${opt(r.verdict,["accept","drop","reject","jump","goto","dnat","snat","redirect","log","return","continue"])}</select></div>
+        ${TARGET_OF[r.verdict]?`<div class="fld"><span class="lbl">${t("Target","Destino")}</span>
+          <input type="text" id="f-to" value="${esc(r.to||"")}" placeholder="${esc(TARGET_OF[r.verdict]())}"
+            ${r.verdict==="jump"||r.verdict==="goto"?'list="dl-chains"':""}>
+          <datalist id="dl-chains">${MODEL.chains.filter(c=>c.table===ch.table && c!==ch)
+            .map(c=>`<option value="${esc(c.id)}">`).join("")}</datalist></div>`:""}
+        <div class="inline"><span class="lbl">${t("Count packets","Contar paquetes")}</span>
+          <span class="sw-toggle${r.ctr?" on":""}" id="f-ctr"></span></div>
+        <div class="inline"><span class="lbl">${t("Log matches","Registrar coincidencias")}</span>
+          <span class="sw-toggle${p.log?" on":""}" id="f-log"></span></div>
       </div>
     </details>
 
-    <details class="pgrp"><summary><svg class="ico sm tw" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><span class="lbl">${t("Rate limit","Límite de tasa")}</span>${p.limit?`<span class="chip">${esc(p.limit)}</span>`:""}</summary>
+    <details class="pgrp"${p.limit?" open":""}><summary><svg class="ico sm tw" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg><span class="lbl">${t("Rate limit","Límite de tasa")}</span>${p.limit?`<span class="chip">${esc(p.limit)}</span>`:""}</summary>
       <div class="pgrp-body">
         <div class="row2">
-          <div class="fld"><span class="lbl">${t("Rate","Tasa")}</span><input type="text" value="${esc(p.limit||"5/second")}"></div>
-          <div class="fld"><span class="lbl">${t("Burst","Ráfaga")}</span><input type="text" value="10 packets"></div>
+          <div class="fld"><span class="lbl">${t("Rate","Tasa")}</span>
+            <input type="text" id="f-limit" value="${esc(p.limit)}" placeholder="${t("no limit","sin límite")} · 5/second"></div>
+          <div class="fld"><span class="lbl">${t("Burst","Ráfaga")}</span>
+            <input type="text" id="f-burst" value="${esc(p.burst)}" placeholder="${t("none","ninguna")} · 10"></div>
         </div>
-        <div class="inline"><span class="lbl">${t("Invert (rate over)","Invertir (rate over)")}</span><span class="sw-toggle"></span></div>
+        <div class="inline"><span class="lbl">${t("Invert (rate over)","Invertir (rate over)")}</span>
+          <span class="sw-toggle${p.over?" on":""}" id="f-over"></span></div>
       </div>
     </details>
 
@@ -842,30 +889,22 @@ function select(chainId, i, fromCode){
       </div>
     </details>`;
 
-  /* live two-way binding — edit a field, the generated code re-emits */
-  const rebuild = ()=>{
-    const q = parse(r.expr), n = {};
-    ["proto","saddr","daddr","sport","dport","iif","oif"].forEach(k=>{ const f=$("#f-"+k); n[k]=f?f.value.trim():q[k]; });
-    const parts = [];
-    if(q.state) parts.push(`ct state ${q.state}`);
-    if(n.iif)   parts.push(`iifname "${n.iif}"`);
-    if(n.oif)   parts.push(`oifname "${n.oif}"`);
-    if(n.saddr) parts.push(`ip saddr ${n.saddr}`);
-    if(n.daddr) parts.push(`ip daddr ${n.daddr}`);
-    /* A port with no protocol used to produce nothing at all: the branch
-       needed both, so typing a port into a rule that had never named tcp or
-       udp silently did nothing. Ports belong to a transport, so assume the
-       common one and show the user that we did. */
-    if(n.sport || n.dport){
-      const proto = n.proto || "tcp";
-      if(!n.proto){ n.proto = proto; const sel = $("#f-proto"); if(sel) sel.value = proto; }
-      if(n.sport) parts.push(`${proto} sport ${n.sport}`);
-      if(n.dport) parts.push(`${proto} dport ${n.dport}`);
-    } else if(n.proto) parts.push(`meta l4proto ${n.proto}`);
-    if(q.limit) parts.push(`limit rate ${q.limit}`);
-    r.expr = parts.join(" ");
+  /* live two-way binding — edit a field, the generated code re-emits.
+     The patch only carries the fields the panel is actually showing; every
+     statement it has never heard of is left where it is. */
+  const rebuild = (extra = {})=>{
+    const patch = {...extra};
+    for(const k of ["proto","saddr","daddr","sport","dport","iif","oif"]){
+      const f = $("#f-"+k);
+      if(f) patch[k] = f.value.trim();
+    }
+    r.expr = editExpr(r.expr, patch);
+    /* a port typed into a rule that never named a transport gets one, and the
+       panel says so rather than doing it behind the field */
+    const sel = $("#f-proto");
+    if(sel && !sel.value) sel.value = readExpr(r.expr).proto;
     const vd = $("#f-verdict"); if(vd) r.verdict = vd.value;
-    const to = $("#f-to");      if(to) r.to = to.value;
+    const to = $("#f-to");      if(to) r.to = to.value.trim();
     const cm = $("#f-cmt");     if(cm) r.cmt = cm.value.trim();
     renderChains(); paintCode(); drawWires(); modelChanged();
     $$(".rule").forEach(x=>x.classList.toggle("sel", x.dataset.chain===chainId && +x.dataset.i===i));
@@ -876,16 +915,50 @@ function select(chainId, i, fromCode){
   };
   /* Typing gives a live preview with no history entry; the change lands in
      history once, on blur — so undo steps are edits, not keystrokes. */
-  ["f-saddr","f-daddr","f-sport","f-dport","f-cmt","f-proto","f-iif","f-oif","f-verdict","f-to"]
+  ["f-saddr","f-daddr","f-sport","f-dport","f-cmt","f-proto","f-iif","f-oif","f-verdict","f-to",
+   "f-limit","f-burst"]
     .forEach(id=>{
       const n = $("#"+id); if(!n) return;
       n.addEventListener("focus", ()=>{ PENDING = snapshot(); });
-      n.addEventListener("input", rebuild);
+      const apply = () => rebuild({
+        limit: $("#f-limit")?.value.trim(),
+        burst: $("#f-burst")?.value.trim(),
+      });
+      n.addEventListener("input", apply);
       n.addEventListener("change", ()=>{
-        rebuild();
+        apply();
         if(PENDING!==null){ pushHist(PENDING, t("rule edit","edición de regla")); PENDING = null; }
+        /* the verdict decides which fields belong on the panel — a jump needs
+           somewhere to jump to, and an accept has nowhere to put one */
+        if(id==="f-verdict") select(chainId, i);
       });
     });
+
+  /* Controls that are not text fields. Each of these looked like a control and
+     did nothing at all: the conntrack chips, both toggles under the verdict,
+     and the whole rate-limit group were painted from the rule and wired to
+     no handler. */
+  $$("#f-state [data-ct]").forEach(b=>b.addEventListener("click",()=>{
+    const have = readExpr(r.expr).state.split(",").map(x=>x.trim()).filter(Boolean);
+    const s = b.dataset.ct;
+    const next = have.includes(s) ? have.filter(x=>x!==s) : [...have, s];
+    edit(t("conntrack state","estado de conntrack"),
+         ()=>{ r.expr = editExpr(r.expr, {state: next.join(",")}); }, true);
+  }));
+  $("#f-ctr")?.addEventListener("click", ()=>
+    edit(r.ctr ? t("stop counting","dejar de contar") : t("count packets","contar paquetes"),
+         ()=>{ r.ctr = !r.ctr; if(!r.ctr){ r.pkts = 0; r.bytes = 0; } }, true));
+  $("#f-log")?.addEventListener("click", ()=>{
+    const on = readExpr(r.expr).log;
+    edit(on ? t("stop logging","dejar de registrar") : t("log matches","registrar coincidencias"),
+         ()=>{ r.expr = editExpr(r.expr, {log: !on}); }, true);
+  });
+  $("#f-over")?.addEventListener("click", ()=>{
+    const q = readExpr(r.expr);
+    edit(t("invert rate limit","invertir límite de tasa"),
+         ()=>{ r.expr = editExpr(r.expr, {limit: q.limit || "5/second", over: !q.over}); }, true);
+  });
+
   const onT = $("#rule-on");
   if(onT) onT.addEventListener("click",()=>
     edit(r.on ? t("disable rule","desactivar regla") : t("enable rule","activar regla"),
@@ -2032,8 +2105,11 @@ function reviewImport(){
     return;
   }
 
-  const p = parseNft(text);
-  const rt = roundTrip(text, p);
+  /* verify() checks the whole file, not only its rules. The rule-level count
+     could report a clean 100% on a ruleset whose netdev chain had lost its
+     device or whose flowtable had been dropped, because neither is a rule. */
+  const rt = verify(text);
+  const p = rt.parsed;
   const rules = p.chains.reduce((a,c)=>a+c.rules.length,0);
   IMPORTED = {p, rt};
   btn.disabled = !rules;
@@ -2048,9 +2124,9 @@ function reviewImport(){
       <span class="lbl" style="display:block;margin-bottom:9px">${t("Round-trip check","Verificación de ida y vuelta")}</span>
       <div class="rt-badge">
         <div class="ring" style="background:rgba(${col[0]},.12);border:1px solid rgba(${col[0]},.3);color:var(${col[1]})">${pct}%</div>
-        <div class="tx"><b>${rt.ok} / ${rt.total} ${t("rules","reglas")}</b>${
-          good ? t("re-emit byte-identical. Nothing was lost in translation.",
-                   "se reemiten idénticas. No se ha perdido nada en la traducción.")
+        <div class="tx"><b>${rt.ok} / ${rt.total} ${t("lines","líneas")}</b>${
+          good ? t("re-emit identically — rules, chain headers, sets and every object. Nothing was lost in translation.",
+                   "se reemiten idénticas — reglas, cabeceras de cadena, sets y cada objeto. No se ha perdido nada en la traducción.")
                : t("re-emit identically. The rest are shown below.",
                    "se reemiten idénticas. El resto se muestra abajo.")}</div>
       </div>
@@ -2066,6 +2142,10 @@ function reviewImport(){
       <div class="imp-stat"><span class="k">${t("Chains","Cadenas")}</span><span class="v">${p.chains.length}</span></div>
       <div class="imp-stat"><span class="k">${t("Rules","Reglas")}</span><span class="v">${rules}</span></div>
       <div class="imp-stat"><span class="k">${t("Sets","Sets")}</span><span class="v">${p.sets.length}</span></div>
+      ${p.objects.length?`<div class="imp-stat"><span class="k" title="${esc(t(
+        "Flowtables, named counters and quotas, ct helpers — carried through unchanged.",
+        "Flowtables, counters y quotas con nombre, helpers de ct — se conservan sin tocar."))}"
+        >${t("Objects carried","Objetos conservados")}</span><span class="v">${p.objects.length}</span></div>`:""}
       ${p.errors.length?`<div class="imp-stat"><span class="k" style="color:var(--warn)">${t("Unparsed lines","Líneas no analizadas")}</span>
         <span class="v" style="color:var(--warn)">${p.errors.length}</span></div>`:""}
     </div>
@@ -2117,20 +2197,22 @@ $("#imp-clear").addEventListener("click", ()=>{ $("#imp-text").value = ""; revie
 $("#imp-go").addEventListener("click", ()=>{
   if(!IMPORTED) return;
   const {p, rt} = IMPORTED;
+  /* The parse result is taken whole. Copying it field by field is how a chain
+     lost the device it was attached to and a set lost its size the moment
+     either grew a field the copy list had not heard of. */
   edit(t("import ruleset","importar ruleset"), ()=>{
-    MODEL.chains = p.chains.map(c=>({
-      id:c.id, table:c.table, hook:c.hook, prio:c.prio,
-      type:c.type, policy:c.policy, rules:c.rules,
-    }));
-    MODEL.sets = p.sets.map(s=>({n:s.n, t:s.t, f:s.f, el:s.el, kind:s.kind, table:s.table}));
+    MODEL.chains  = p.chains;
+    MODEL.sets    = p.sets;
+    MODEL.objects = p.objects;
+    MODEL.tables  = p.tables;
   });
   openProject();
   $$(".scrim").forEach(s=>s.classList.remove("on"));
   go("editor");
   setZoom(.72);
   toast(rt.diffs.length
-    ? t(`Imported · ${rt.ok}/${rt.total} rules verified`, `Importado · ${rt.ok}/${rt.total} reglas verificadas`)
-    : t(`Imported · all ${rt.total} rules verified`, `Importado · las ${rt.total} reglas verificadas`));
+    ? t(`Imported · ${rt.ok}/${rt.total} lines verified`, `Importado · ${rt.ok}/${rt.total} líneas verificadas`)
+    : t(`Imported · all ${rt.total} lines verified`, `Importado · las ${rt.total} líneas verificadas`));
 });
 
 /* the toolbar Open button and the dashboard button both land here */
@@ -2792,7 +2874,10 @@ filePick.addEventListener("change", ()=>{
     if(f.name.endsWith(".json")){
       try{
         const o = deserialise(text);
-        edit(t("open project","abrir proyecto"), ()=>{ MODEL.chains = o.chains; MODEL.sets = o.sets; });
+        edit(t("open project","abrir proyecto"), ()=>{
+          MODEL.chains = o.chains; MODEL.sets = o.sets;
+          MODEL.objects = o.objects; MODEL.tables = o.tables;
+        });
         /* the name and the scratch lists are part of the project, not the
            ruleset, so they sit outside the undo snapshot */
         setProject({open:true, name:o.name, scratch:o.scratch, origin:f.name, dirty:false});
@@ -2928,6 +3013,7 @@ function startEmpty(){
   edit(t("new ruleset","ruleset nuevo"), ()=>{
     const e = blankRuleset();
     MODEL.chains = e.chains; MODEL.sets = e.sets;
+    MODEL.objects = []; MODEL.tables = [];
   });
   showProject();
   go("editor");

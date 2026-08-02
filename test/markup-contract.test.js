@@ -16,17 +16,21 @@ const ids = new Set([...html.matchAll(/\bid="([\w-]+)"/g)].map((m) => m[1]));
 const CREATED = new Set([
   "toast", "step-bar", "step-go", "step-n", "step-all",
   "props-dock", "mm-vp", "flow-layer", "runtime-error",
-  // the properties panel writes its own form each time a rule is selected
-  "f-", "f-proto", "f-saddr", "f-daddr", "f-sport", "f-dport",
-  "f-iif", "f-oif", "f-verdict", "f-to", "f-cmt", "rule-on", "elem-add",
+  "rule-on", "elem-add",
 ]);
+
+/* The properties panel writes its own form every time a rule is selected, and
+   every field in it is `f-something`. Naming them one by one meant the list
+   went stale the moment the panel grew a control — which it needed to, since
+   several of the ones already there were painted and wired to nothing. */
+const created = (id) => CREATED.has(id) || id.startsWith("f-");
 
 test("every id the interface looks up exists in the markup", () => {
   const missing = new Map();
   for (const [file, src] of [["src/app.js", js], ["src/main.js", main]]) {
     for (const m of src.matchAll(/\$\("#([\w-]+)"/g)) {
       const id = m[1];
-      if (ids.has(id) || CREATED.has(id)) continue;
+      if (ids.has(id) || created(id)) continue;
       const line = src.slice(0, m.index).split("\n").length;
       if (!missing.has(id)) missing.set(id, `${file}:${line}`);
     }

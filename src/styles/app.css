@@ -225,10 +225,17 @@ button.st:hover{background:var(--raised);color:var(--t1)}
 .v-accept{color:var(--v-accept);background:rgba(71,224,130,.11);border-color:rgba(71,224,130,.25)}
 .v-drop  {color:var(--v-drop);  background:rgba(250,90,90,.11); border-color:rgba(250,90,90,.25)}
 .v-reject{color:var(--v-reject);background:rgba(240,160,60,.11); border-color:rgba(240,160,60,.25)}
-.v-jump  {color:var(--v-jump);  background:rgba(61,139,255,.11); border-color:rgba(61,139,255,.25)}
-.v-dnat  {color:var(--v-dnat);  background:rgba(168,123,245,.11);border-color:rgba(168,123,245,.25)}
+.v-jump,
+.v-goto  {color:var(--v-jump);  background:rgba(61,139,255,.11); border-color:rgba(61,139,255,.25)}
+.v-dnat,
+.v-redirect{color:var(--v-dnat);background:rgba(168,123,245,.11);border-color:rgba(168,123,245,.25)}
 .v-snat  {color:var(--v-snat);  background:rgba(23,196,196,.11); border-color:rgba(23,196,196,.25)}
-.v-log   {color:var(--v-log);   background:rgba(132,148,162,.11);border-color:rgba(132,148,162,.25)}
+/* A rule that settles nothing — `return`, or the implicit `continue` of one
+   that only logs or counts — is grey, because grey is what "carry on" looks
+   like. Without these three the pill rendered the string "undefined". */
+.v-log,
+.v-return,
+.v-continue{color:var(--v-log); background:rgba(132,148,162,.11);border-color:rgba(132,148,162,.25)}
 .v-warnp {color:var(--warn);    background:rgba(240,193,60,.11); border-color:rgba(240,193,60,.25)}
 .v-neutral{color:var(--t2);background:rgba(255,255,255,.05);border-color:var(--line-2)}
 .v-aqua  {color:var(--aqua);background:var(--aqua-wash);border-color:rgba(57,213,255,.28)}
@@ -439,7 +446,10 @@ select{appearance:none;cursor:pointer;padding-right:26px;
 .chain-hd{display:flex;align-items:center;gap:7px;padding:9px 10px 9px 11px;border-bottom:1px solid var(--line)}
 .chain-hd .cn{font:600 12.5px var(--mono);letter-spacing:-.2px;flex:1;color:var(--t1)}
 .chain-hd .fam{font:600 9.5px var(--mono);color:var(--t4);letter-spacing:.06em}
-.chain-meta{display:flex;align-items:center;gap:5px;padding:6px 10px;border-bottom:1px solid var(--line);background:rgba(0,0,0,.18)}
+/* wraps rather than collides: `hook prerouting` beside `prio -100` beside a
+   policy pill overruns a card sized to its rules, and the chips were drawn
+   over each other */
+.chain-meta{display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:6px 10px;border-bottom:1px solid var(--line);background:rgba(0,0,0,.18)}
 .chain-rules{display:flex;flex-direction:column;padding:4px;gap:1px}
 .chain-ft{display:flex;align-items:center;gap:6px;padding:5px 8px 7px;border-top:1px solid var(--line)}
 .addrule{

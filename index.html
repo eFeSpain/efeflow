@@ -304,15 +304,9 @@
         <button id="chain-reset" data-tt="Re-arrange chains automatically|Reorganizar cadenas automáticamente"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5 5m5-5 5 5"/></svg></button>
       </div>
 
-      <div class="legend glass">
-        <div class="row" style="color:var(--v-accept)"><i></i>ACCEPT</div>
-        <div class="row" style="color:var(--v-drop)"><i></i>DROP</div>
-        <div class="row" style="color:var(--v-reject)"><i></i>REJECT</div>
-        <div class="row" style="color:var(--v-jump)"><i></i>JUMP</div>
-        <div class="row" style="color:var(--v-dnat)"><i></i>DNAT</div>
-        <div class="row" style="color:var(--v-snat)"><i></i>SNAT</div>
-        <div class="row" style="color:var(--v-log)"><i></i>LOG</div>
-      </div>
+      <!-- filled from the ruleset: a key to verdicts it does not use is both
+           noise and, at seven fixed entries, wider than the dock has room for -->
+      <div class="legend glass" id="legend"></div>
       </div>
 
       <div class="minimap glass">
