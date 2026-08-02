@@ -72,13 +72,24 @@ test("dragging a chain sticks, and re-arranging clears it", async () => {
   assert.ok(!$("#chain-reset").classList.contains("on"));
 });
 
+/* The priority ruler runs down the left of the canvas from the top, and it is
+   the one column carrying information you cannot read anywhere else. Nothing
+   that is merely furniture may be anchored up there. The legend used to say so
+   itself; it is positioned by the dock now, so the dock has to. */
 test("canvas furniture stays out of the priority ruler", async () => {
   const css = await import("node:fs").then((fs) =>
     fs.readFileSync(new URL("../src/styles/app.css", import.meta.url), "utf8"),
   );
-  const rule = css.match(/\.legend\{([^}]*)\}/)[1];
-  assert.ok(!/top\s*:/.test(rule), "the legend must not be top-anchored: the ruler lives there");
-  assert.match(rule, /bottom\s*:/, "it belongs on the bottom edge with the other overlays");
+  const at = (sel) => css.match(new RegExp(`\\${sel}\\{([^}]*)\\}`))[1];
+
+  const dock = at(".cv-dock");
+  assert.match(dock, /bottom\s*:/, "the dock belongs on the bottom edge");
+  assert.ok(!/top\s*:/.test(dock), "not the top: the ruler lives there");
+
+  const legend = at(".legend");
+  assert.ok(!/position\s*:\s*absolute/.test(legend),
+    "the legend rides in the dock now; positioning it again would let the two drift apart");
+  assert.ok(!/top\s*:/.test(legend));
 });
 
 test("nothing throws once the deferred work has landed", async () => {

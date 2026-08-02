@@ -499,8 +499,19 @@ select{appearance:none;cursor:pointer;padding-right:26px;
 #wires .cap.act{fill:var(--aqua)}
 
 /* canvas overlays */
+/* The tools and the verdict key travel together along the bottom edge. One
+   flex row rather than two absolute boxes, because the zoom label changes
+   width as the percentage does, and anything positioned at a fixed offset
+   from it drifts. */
+.cv-dock{
+  position:absolute;left:14px;bottom:14px;z-index:20;
+  display:flex;align-items:center;gap:8px;
+  /* the minimap is 176 wide and sits 14 from the edge; the rest is clearance,
+     so a longer zoom label or a longer translation cannot push the key under it */
+  max-width:calc(100% - 232px);
+}
 .cv-tools{
-  position:absolute;left:14px;bottom:14px;z-index:20;display:flex;align-items:center;gap:2px;padding:3px;
+  display:flex;align-items:center;gap:2px;padding:3px;flex:none;
   border-radius:var(--r-md);box-shadow:var(--lift);
 }
 .cv-tools button{
@@ -522,22 +533,22 @@ select{appearance:none;cursor:pointer;padding-right:26px;
 .minimap .blk.a{background:rgba(57,213,255,.5)}
 .minimap .vp{position:absolute;border:1.5px solid var(--aqua);border-radius:3px;background:rgba(57,213,255,.09);cursor:grab}
 
-/* Stacked above the minimap, clear of the zoom controls. It has been wrong
-   twice: top-left it covered the priority ruler, and along the bottom edge it
-   covered the zoom buttons. A key is worth less than the thing it is a key to,
-   and worth less again than a control. */
+/* In the dock, immediately right of the tools. Three positions before this one
+   were wrong for the same reason: it floated over the canvas, so wherever it
+   sat it covered something — the priority ruler, then the zoom buttons, then
+   whatever card happened to be under it. A key belongs with the controls, not
+   over the drawing. */
 .legend{
-  position:absolute;right:14px;bottom:130px;z-index:20;
-  height:30px;padding:0 11px;border-radius:var(--r-md);
+  height:34px;padding:0 12px;border-radius:var(--r-md);
   display:flex;flex-direction:row;align-items:center;gap:12px;
-  box-shadow:var(--lift);max-width:calc(100% - 40px);overflow:hidden;
+  box-shadow:var(--lift);min-width:0;overflow:hidden;
 }
 .legend .row{display:flex;align-items:center;gap:6px;font:500 10px var(--mono);
   color:var(--t3);letter-spacing:.03em;white-space:nowrap}
 .legend .row i{width:10px;height:3px;border-radius:99px;background:currentColor;flex:none}
 
-/* below this the strip would collide with the zoom controls; the colours are
-   also spelled out on every rule badge, so it is a loss the canvas survives */
+/* below this the dock and the minimap would meet; the verdict is spelled out in
+   words on every rule badge anyway, so the key is the half to give up */
 @media (max-width:1180px){ .legend{display:none} }
 
 /* ── code drawer ── */
