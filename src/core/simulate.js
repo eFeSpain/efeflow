@@ -92,8 +92,29 @@ export const PATHS = {
   out: [["output"],["postrouting"]],
 };
 
+/* Where a NAT verdict sends the packet. The target is an address, a port, or
+   both — `10.0.0.5`, `10.0.0.5:8080`, `:8080`, `[2001:db8::1]:80` — and an
+   unbracketed IPv6 address is all colons and no port at all, which is why the
+   port is only read when the address is bracketed or holds no colon of its
+   own. Splitting on ":" unconditionally set the port to NaN for every
+   `dnat to <address>`, and a packet with no port matches nothing downstream. */
+export function natTarget(spec){
+  const s = String(spec ?? "").trim();
+  const m = s.match(/^(\[[^\]]*\]|[^:]*)(?::(\d+)(?:-\d+)?)?$/);
+  if(!m) return {host:s, port:null};
+  return {host:m[1] || "", port:m[2] ? +m[2] : null};
+}
+
 export function evaluate(p){
   const steps = [];
+  let accepted = null;
+
+  /* How a chain ended:
+       {stop:"packet", …}         the packet is finished, and here is why
+       {stop:"chain", settled:b}  the chain is finished; `settled` says whether
+                                  it reached a verdict — which is what decides
+                                  both whether a jump carries on afterwards and
+                                  whether a base chain's policy still applies. */
   const walk = (chainId, depth=0) => {
     const ch = chainOf(chainId);
     const hop = {chain:ch, evs:[], depth};
@@ -101,30 +122,46 @@ export function evaluate(p){
     for(let i=0;i<ch.rules.length;i++){
       const r = ch.rules[i];
       if(!r.on){ hop.evs.push({r,i,st:"miss",note:"disabled"}); continue; }
-      const hit = matches(r,p);
-      if(!hit){ hop.evs.push({r,i,st:"miss"}); continue; }
+      if(!matches(r,p)){ hop.evs.push({r,i,st:"miss"}); continue; }
       hop.evs.push({r,i,st:"match"});
+
+      /* NAT terminates the chain, and the packet that walks on to the next
+         hook is the translated one. */
+      if(r.verdict==="dnat" || r.verdict==="redirect"){
+        const {host, port} = natTarget(r.to);
+        p.dnat = true;
+        if(host) p.daddr = host;
+        if(port !== null) p.dport = port;
+        hop.nat = r.to || r.verdict;
+        return {stop:"chain", settled:true};
+      }
+      if(r.verdict==="snat"){ hop.nat = r.to; return {stop:"chain", settled:true}; }
+
+      /* jump remembers where it came from and goto does not — which is the
+         whole reason nftables has both. A goto whose target settles nothing
+         leaves the base chain's policy to decide, never the rules below it. */
+      if(r.verdict==="jump" || r.verdict==="goto"){
+        const tgt = jumpTarget(ch, r.to);
+        if(!tgt) continue;              /* a chain that is not there decides nothing */
+        const v = walk(UID(tgt), depth+1);
+        if(v.stop==="packet") return v;
+        if(r.verdict==="goto" || v.settled) return {stop:"chain", settled:v.settled};
+        continue;
+      }
+
+      /* `return` leaves this chain having decided nothing: back to the caller,
+         or to the policy if this chain is the base one. */
+      if(r.verdict==="return") return {stop:"chain", settled:false};
+
       /* nftables terminality: `accept` ends this chain but the packet carries
          on to the next hook. Only drop/reject end the packet outright. */
-      if(r.verdict==="dnat"){ p.dnat = true; p.daddr = r.to.split(":")[0]; p.dport = +r.to.split(":")[1]; hop.nat = r.to; return {stop:"chain"}; }
-      if(r.verdict==="snat"){ hop.nat = r.to; return {stop:"chain"}; }
-      if(r.verdict==="jump"){ const tgt = jumpTarget(ch, r.to);
-        if(tgt){ const v = walk(UID(tgt), depth+1); if(v) return v; } continue; }
-      if(r.verdict==="accept"){ accepted = {v:"accept", chain:ch, r, i}; return {stop:"chain"}; }
+      if(r.verdict==="accept"){ accepted = {v:"accept", chain:ch, r, i}; return {stop:"chain", settled:true}; }
       if(r.verdict==="drop" || r.verdict==="reject")
         return {stop:"packet", v:r.verdict, chain:ch, r, i};
     }
-    if(ch.policy && ch.policy!=="accept"){
-      hop.policy = ch.policy;
-      return {stop:"packet", v:ch.policy, chain:ch, policy:true};
-    }
-    if(ch.policy==="accept" && depth===0 && ch.hook){
-      hop.policy = "accept";
-      accepted = {v:"accept", chain:ch, policy:true};
-    }
-    return {stop:"chain"};
+    return {stop:"chain", settled:false};
   };
-  let accepted = null;
+
   /* nat chains can be skipped entirely, which is how you see what the filter
      path alone decides */
   const byHook = h => MODEL.chains
@@ -135,8 +172,23 @@ export function evaluate(p){
   let final = null, last = stages[0] || (MODEL.chains[0] && UID(MODEL.chains[0]));
   for(const c of stages){
     last = c;
+    const hop = steps.length;           /* walk pushes this chain's hop first */
     const out = walk(c);
-    if(out && out.stop==="packet"){ final = out; break; }   /* dropped: done */
+    if(out.stop==="packet"){ final = out; break; }   /* dropped: done */
+    if(out.settled) continue;           /* the chain decided; the policy does not */
+
+    /* it ran out of rules, or returned — a base chain's policy has the last
+       word, and it used to be skipped entirely for any chain holding a jump */
+    const ch = chainOf(c);
+    if(ch.policy && ch.policy!=="accept"){
+      steps[hop].policy = ch.policy;
+      final = {stop:"packet", v:ch.policy, chain:ch, policy:true};
+      break;
+    }
+    if(ch.policy==="accept"){
+      steps[hop].policy = "accept";
+      accepted = {v:"accept", chain:ch, policy:true};
+    }
   }
   /* survived every hook — the verdict is whatever last accepted it */
   return {steps, final: final || accepted || {v:"accept", chain:chainOf(last), policy:true}};
