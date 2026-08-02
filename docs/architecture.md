@@ -15,6 +15,7 @@ src/core/        pure, DOM-free, covered by npm test
   diff.js          LCS diff against the last import or export
   project.js       name, origin, and the names you keep by hand
   bus.js           one registry every derived view subscribes to
+  samples.js       the ruleset the import dialog offers
 src/app.js       the interface
 src/native.js    bridge to Rust; degrades to browser equivalents
 src/target.js    where nft runs: this machine, or a host over SSH
@@ -47,7 +48,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 104 assertions.
+`npm test` — 112 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across
@@ -80,6 +81,23 @@ must never open on a firewall its user did not write.
 
 UI tests load it through the import dialog rather than assigning to `MODEL`, so
 they exercise the path a real ruleset arrives by.
+
+## The sample, and why it is in `core/`
+
+`core/samples.js` holds the ruleset the import dialog offers, so the import path
+can be tried without a host. It used to be a template literal inside `app.js`,
+where no test could reach it.
+
+It sits in `core/` because it makes a promise the tests have to be able to
+check. `test/samples.test.js` holds it to two: every rule re-emits
+byte-identical — the sample is the first ruleset a new user runs the round-trip
+check against, so it had better be honest there — and every address in it is
+RFC 1918 or RFC 5737 documentation space. **Nothing that ships in a public
+repository may describe a real network**, and a shipped ruleset is exactly the
+kind of file where somebody's internal subnets get committed by accident.
+
+It is never applied. It lands in the textarea and faces the round-trip review,
+exactly like a paste.
 
 ## Screenshots
 

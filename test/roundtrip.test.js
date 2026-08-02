@@ -102,6 +102,39 @@ test("import → generate → import is a fixed point", () => {
   );
 });
 
+/* A counter that has never matched reads `counter packets 0 bytes 0`, and that
+   is not an edge case: it is what every freshly loaded ruleset looks like, and
+   what a rule that should be firing but is not looks like too. Emitting those
+   rules without their counter loses a statement the source had. */
+test("a counter with no traffic through it still survives the round-trip", () => {
+  const src = `table inet filter {
+	chain input {
+		type filter hook input priority filter; policy drop;
+		ct state invalid counter packets 0 bytes 0 drop
+		tcp dport 22 counter packets 0 bytes 0 accept comment "never used yet"
+		counter packets 0 bytes 0 drop
+	}
+}`;
+  const p = parseNft(src);
+  assert.equal(p.errors.length, 0, JSON.stringify(p.errors));
+  const rt = roundTrip(src, p);
+  assert.equal(rt.diffs.length, 0, JSON.stringify(rt.diffs, null, 2));
+  assert.equal(rt.ok, rt.total);
+});
+
+test("a counting rule with no verdict and no traffic is a rule, not an error", () => {
+  const r = parseRule("counter packets 0 bytes 0");
+  assert.ok(r, "should parse");
+  assert.equal(r.verdict, "continue");
+  assert.equal(ruleLine(r), "counter");
+});
+
+test("a bare counter claims no statistics it does not have", () => {
+  const r = parseRule("tcp dport 22 counter accept");
+  assert.equal(r.pkts, 0, "a counter with no numbers has counted nothing");
+  assert.equal(ruleLine(r), "tcp dport 22 counter accept");
+});
+
 test("every table survives generation, not just the ones we expected", () => {
   const p = parseNft(SAMPLE);
   MODEL.chains = p.chains;

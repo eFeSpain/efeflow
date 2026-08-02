@@ -45,7 +45,11 @@ export function verdictText(r){
   if(r.verdict==="reject") return r.to ? "reject with "+r.to : "reject";
   return r.verdict;
 }
-export function ruleLine(r){ return ((r.expr ? r.expr+" " : "") + (r.pkts?"counter ":"") + verdictText(r)).trim(); }
+/* `ctr` is whether the rule counts; `pkts` is what it has counted so far. A
+   rule imported with `counter packets 0 bytes 0` has the first and not the
+   second, and must still emit its counter. `pkts` is honoured too so that
+   rules built before the distinction existed keep theirs. */
+export function ruleLine(r){ return ((r.expr ? r.expr+" " : "") + (r.ctr || r.pkts ? "counter ":"") + verdictText(r)).trim(); }
 
 export const UID = ch => ch.table + '/' + ch.id;
 export const jumpTarget = (ch, name) =>

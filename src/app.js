@@ -15,6 +15,7 @@ import { evaluate, matches, inSet, inCidr, PRESETS, PATHS, packet } from "./core
 import { diffLines } from "./core/diff.js";
 import { PRIO_NAME, NAME_PRIO } from "./core/priority.js";
 import { PROJECT, project, setProject, serialise, deserialise } from "./core/project.js";
+import { SAMPLE_NFT } from "./core/samples.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
 import { target, loadTarget, saveTarget, asTauriTarget, describe, probe } from "./target.js";
@@ -1838,43 +1839,9 @@ syncHistUI();
    the counter and comment, which is what makes a byte-faithful round-trip
    possible — we re-emit what we were given, not our idea of it.         */
 
-/* ══ IMPORT UI ═════════════════════════════════════════════════════════ */
-const SAMPLE_NFT = `table inet filter {
-	set trusted_v4 {
-		type ipv4_addr
-		flags interval
-		elements = { 10.0.0.0/8, 192.168.0.0/16 }
-	}
-
-	chain input {
-		type filter hook input priority filter; policy drop;
-		ct state established,related counter packets 8812099 bytes 9400000000 accept
-		iif "lo" counter packets 120144 bytes 16700000 accept
-		ct state invalid counter packets 288 bytes 17280 drop
-		ip protocol icmp limit rate 10/second counter packets 4209 bytes 293556 accept
-		tcp dport 22 ip saddr @trusted_v4 counter packets 8402 bytes 1120400 accept comment "SSH from trusted only"
-		tcp dport { 80, 443 } counter packets 904771 bytes 620000000 accept
-		counter packets 6113 bytes 366780 drop
-	}
-
-	chain forward {
-		type filter hook forward priority filter; policy drop;
-		ct state established,related counter packets 18204113 bytes 22000000000 accept
-		iifname "eth1" oifname "eth0" counter packets 9209881 bytes 12000000000 accept
-		log prefix "fwd-deny " counter packets 512 bytes 30720
-	}
-
-	chain output {
-		type filter hook output priority filter; policy accept;
-	}
-}
-
-table ip nat {
-	chain postrouting {
-		type nat hook postrouting priority srcnat; policy accept;
-		oifname "eth0" ip saddr 192.168.0.0/16 counter packets 9209881 bytes 12000000000 masquerade
-	}
-}`;
+/* ══ IMPORT UI ═════════════════════════════════════════════════════════
+   The rulesets on offer live in core/samples.js, where the tests can hold
+   them to the same round-trip they promise the user.                     */
 
 IMPORTED = null;
 function reviewImport(){

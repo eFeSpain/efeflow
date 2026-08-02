@@ -73,15 +73,20 @@ const VERDICT_RE = [
 
 export function parseRule(line){
   let expr = line.replace(/;$/,"").trim();
-  let pkts = 0, bytes = 0, cmt = null;
+  let ctr = false, pkts = 0, bytes = 0, cmt = null;
 
   const c = expr.match(/\bcomment\s+"((?:[^"\\]|\\.)*)"\s*$/);
   if(c){ cmt = c[1]; expr = expr.slice(0, c.index).trim(); }
 
+  /* `counter` is a statement the rule either has or does not; the packet and
+     byte figures are statistics it carries. Inferring the first from the
+     second loses every counter that has not matched yet — which is what a
+     freshly loaded ruleset is made of, and what a rule that should be firing
+     and is not looks like. Keep them apart. */
   const k = expr.match(/\bcounter(?:\s+packets\s+(\d+)\s+bytes\s+(\d+))?/);
   if(k){
+    ctr = true;
     pkts = +(k[1]||0); bytes = +(k[2]||0);
-    if(!k[1]) pkts = 1;                    /* bare `counter`, no statistics yet */
     expr = (expr.slice(0,k.index) + expr.slice(k.index + k[0].length)).replace(/\s{2,}/g," ").trim();
   }
 
@@ -89,13 +94,13 @@ export function parseRule(line){
     const m = expr.match(re);
     if(!m) continue;
     const v = make(m);
-    return Object.assign({expr: expr.slice(0, m.index).trim(), on:true, pkts, bytes},
+    return Object.assign({expr: expr.slice(0, m.index).trim(), on:true, ctr, pkts, bytes},
                          v, cmt?{cmt}:{});
   }
   /* no terminal verdict — a counting or logging rule that falls through.
      A bare `counter` is a legal rule, so an empty expr is not an error. */
-  if(!expr && !pkts) return null;
-  return {expr, verdict:"continue", implicit:true, on:true, pkts, bytes, ...(cmt?{cmt}:{})};
+  if(!expr && !ctr) return null;
+  return {expr, verdict:"continue", implicit:true, on:true, ctr, pkts, bytes, ...(cmt?{cmt}:{})};
 }
 
 /* ── round-trip proof: re-emit each rule and compare to its source ── */

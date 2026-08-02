@@ -138,7 +138,7 @@ Aplicar un ruleset valida primero y se niega sin confirmación explícita. Es la
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 104 aserciones
+npm test             # 112 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 
