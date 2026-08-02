@@ -567,12 +567,21 @@ function renderChains(){
       const body = r.expr ? esc(r.expr).replace(/@(\w+)/g,'<span class="s">@$1</span>')
                                         .replace(/\b(ct|tcp|udp|ip|ip6|meta|iif|oif|iifname|oifname|limit|log)\b/g,'<span class="k">$1</span>')
                           : `<span class="dimmer">${t("any packet","cualquier paquete")}</span>`;
+      /* Once a host has been asked, a zero means something. A rule that counts
+         and still reads zero has matched nothing since the ruleset was loaded;
+         a rule with no `counter` is not cold, it is unmeasured, and marking
+         those the same way would condemn perfectly busy rules. */
+      const cold = MODEL.counters && r.on && r.ctr && !r.pkts;
+      if(cold) row.classList.add("cold");
       row.innerHTML = `
         <span class="gut"></span>
         <span class="idx">${i+1}</span>
         <span class="expr">${body}</span>
         <span class="rt">
-          ${r.pkts?`<span class="ctr">${fmtN(r.pkts)}<br>${fmtB(r.bytes)}</span>`:""}
+          ${r.pkts?`<span class="ctr">${fmtN(r.pkts)}<br>${fmtB(r.bytes)}</span>`
+                 :cold?`<span class="ctr cold" title="${esc(t(
+                     "Nothing has matched this since the ruleset was loaded",
+                     "Nada ha casado con esta desde que se cargó el ruleset"))}">0</span>`:""}
           <span class="pill v-${r.verdict}"><span class="sw"></span>${VNAME[r.verdict]}</span>
         </span>`;
       list.appendChild(row);

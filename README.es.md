@@ -120,6 +120,7 @@ Los hallazgos se derivan del ruleset en cada cambio, nunca se escriben a mano.
 | **Sin usar** | un set cargado en el kernel que ninguna regla consume |
 | **Fortificación** | una cadena que confía en conntrack pero nunca descarta `invalid` |
 | **Resiliencia** | una regla de log sin límite de tasa |
+| **Frías** | reglas que, según el kernel, no han casado nada desde que se cargó el ruleset |
 
 Casi todos llevan corrección de un clic. Todo es deshacible.
 
@@ -145,7 +146,7 @@ puede reproducir, te dice cuál antes de que te comprometas a nada.
 ## ⚠ Beta
 
 Hace el trabajo completo hoy: importar, demostrar, analizar, simular, editar,
-aplicar y exportar. Lo respaldan 512 comprobaciones automáticas, sobre el
+aplicar y exportar. Lo respaldan 519 comprobaciones automáticas, sobre el
 parser, el analizador, el evaluador de paquetes y la propia interfaz.
 
 Lo que todavía no tiene es kilometraje. **Ningún ruleset que no sea el de su
@@ -277,7 +278,7 @@ escribes `accept`, no `aceptar`.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 512 aserciones
+npm test             # 519 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 

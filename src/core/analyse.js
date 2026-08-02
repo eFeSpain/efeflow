@@ -292,6 +292,33 @@ export function analyse(){
     });
   });
 
+  /* ── rules the traffic has never reached ─────────────────────────────
+     The analyser can prove a rule unreachable. Only the kernel can say that a
+     reachable one has matched nothing, and it says it in the counters — which
+     are cumulative from the moment the ruleset was loaded, so a zero needs no
+     history to be worth something.
+     Two zeroes are not the same, and this is the whole reason to be careful:
+     a rule with no `counter` statement reads zero because nothing is counting
+     it, not because nothing matched. Those are not cold, they are unmeasured,
+     and saying otherwise would condemn perfectly busy rules. */
+  if(MODEL.counters){
+    MODEL.chains.forEach(ch=>{
+      const live = ch.rules.map((r,i)=>({r,i})).filter(x=>x.r.on);
+      const cold = live.filter(x=>x.r.ctr && !x.r.pkts);
+      const blind = live.filter(x=>!x.r.ctr).length;
+      if(cold.length < 2) return;           /* one quiet rule is not a finding */
+      out.push(F("hint","cold",{
+        at:"rules", chain:ch, i:cold[0].i,
+        title:[`${cold.length} rules in ${ch.id} have matched nothing since the ruleset was loaded`,
+               `${cold.length} reglas de ${ch.id} no han casado nada desde que se cargó el ruleset`],
+        where:`${ch.table} / ${ch.id} · ${t("rules","reglas")} ${cold.map(x=>x.i+1).join(", ")}`,
+        detail:[`The kernel counted every packet these rules could have matched, and the answer was none. That is not the same as unreachable — an emergency block or a rule for a service nobody has used yet is legitimately cold — but on a ruleset nobody has pruned in years it is where the dead weight is.${blind?` ${blind} more rule${blind===1?" carries":"s carry"} no <code>counter</code>, so nothing can be said about ${blind===1?"it":"them"} either way.`:""}`,
+                `El kernel ha contado cada paquete que estas reglas podrían haber casado, y la respuesta es ninguno. No es lo mismo que inalcanzable —un bloqueo de emergencia o una regla de un servicio que nadie ha usado todavía están frías con razón— pero en un ruleset que nadie ha podado en años, ahí es donde está el peso muerto.${blind?` Otras ${blind} regla${blind===1?"":"s"} no llevan <code>counter</code>, así que de ${blind===1?"ella":"ellas"} no se puede decir nada.`:""}`],
+        code:cold.slice(0,4).map(x=>[x.i+1, ruleLine(x.r), "neg"]),
+      }));
+    });
+  }
+
   /* ── sets that grow ──────────────────────────────────────────────────
      A set a rule writes to is filled by traffic, which means by whoever is
      sending it. `add @banned { ip saddr }` under a rate limit is the standard

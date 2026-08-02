@@ -524,6 +524,14 @@ select{appearance:none;cursor:pointer;padding-right:26px;
 .rule.sel .expr{color:var(--t1)}
 .rule.off{opacity:.38}
 .rule.off .expr{text-decoration:line-through;text-decoration-color:var(--t4)}
+/* Read from a host and matched by nothing since the ruleset was loaded. Not
+   struck through like a disabled rule and not flagged like a finding: it is
+   doing its job, there has just been nothing to do. */
+.rule.cold .expr{opacity:.55}
+.ctr.cold{
+  font:600 10px var(--mono);color:var(--t4);padding:1px 5px;border-radius:4px;
+  background:rgba(255,255,255,.04);border:1px solid var(--line);
+}
 .rule.warn::after,.rule.err::after{
   content:"";position:absolute;right:3px;top:3px;width:5px;height:5px;border-radius:99px;
   background:var(--warn);box-shadow:0 0 0 2px rgba(240,193,60,.16);

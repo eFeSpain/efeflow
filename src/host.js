@@ -31,7 +31,17 @@ const read = async (target, api) => {
 export async function refreshCounters({ model, target, api = nativeApi }) {
   const r = await read(target, api);
   if (!r.ok) return r;
-  return { ok: true, updated: applyCounters(model, r.host), host: r.host };
+  const updated = applyCounters(model, r.host);
+  /* A zero means two entirely different things, and the difference is the
+     whole value of reading them. Before a host has been asked, every rule
+     reads zero because nothing has ever counted. Afterwards, a rule that
+     counts and still reads zero has matched nothing since the ruleset was
+     loaded — which is a fact about your firewall, not about this window.
+     Recorded on the model and not in it: `snapshot()` and `serialise()` both
+     name the keys they take, so this rides in neither undo nor a project
+     file, which is right for something observed rather than authored. */
+  model.counters = { at: Date.now(), updated };
+  return { ok: true, updated, host: r.host };
 }
 
 /**
