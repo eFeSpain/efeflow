@@ -84,9 +84,11 @@ it. `tcp flags syn` matches `syn|ack`; `tcp flags & (syn|ack) == syn` does not.
 ### It imports what you already run, and proves it
 
 Paste `nft list ruleset`, or read it straight from a host. Before importing
-anything, eFeFlow **re-emits every rule from the model and compares them line by
-line**. The percentage it reports is honest evidence that nothing was lost in
-translation — and if a rule cannot be reproduced, it shows you which one.
+anything, eFeFlow **re-emits the whole file from the model and compares it line
+by line** — rules, chain headers, sets, table flags, and the flowtables, named
+counters and ct helpers it carries through untouched rather than modelling. The
+percentage it reports is honest evidence that nothing was lost in translation,
+and if a line cannot be reproduced it shows you which one.
 
 ### And the rest
 
@@ -138,7 +140,7 @@ It is the one operation that can lock you out of a machine.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 155 assertions
+npm test             # 252 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 ```
 

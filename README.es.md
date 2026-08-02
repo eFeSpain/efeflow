@@ -84,9 +84,11 @@ de casar. `tcp flags syn` casa con `syn|ack`; `tcp flags & (syn|ack) == syn` no.
 ### Importa lo que ya tienes en marcha, y lo demuestra
 
 Pega `nft list ruleset`, o léelo directamente de una máquina. Antes de importar
-nada, eFeFlow **reemite cada regla desde el modelo y las compara línea a
-línea**. El porcentaje que muestra es la prueba honesta de que no se ha perdido
-nada por el camino — y si una regla no se puede reproducir, te dice cuál.
+nada, eFeFlow **reemite el fichero entero desde el modelo y lo compara línea a
+línea** — reglas, cabeceras de cadena, sets, flags de tabla, y las flowtables,
+counters con nombre y helpers de ct que conserva intactos en vez de modelar. El
+porcentaje que muestra es la prueba honesta de que no se ha perdido nada por el
+camino, y si una línea no se puede reproducir te dice cuál.
 
 ### Y lo demás
 
@@ -138,7 +140,7 @@ Aplicar un ruleset valida primero y se niega sin confirmación explícita. Es la
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 155 aserciones
+npm test             # 252 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 
