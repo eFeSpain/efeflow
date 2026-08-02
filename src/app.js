@@ -20,6 +20,7 @@ import { TOUR, tourStep } from "./core/tour.js";
 import { catalogue, protoOf, OWNABLE, BUILT_IN, emptyVocabulary,
          TEMPLATES, templateById } from "./core/vocabulary.js";
 import { readExpr, editExpr } from "./core/expr.js";
+import { lintRule } from "./core/lint.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
 import { target, loadTarget, saveTarget, asTauriTarget, describe, probe } from "./target.js";
@@ -305,11 +306,22 @@ const LIB = () => [
     catalogue(ownOf("PR"), BUILT_IN.PR).map(p=>[p.n, ""])],
   [t("Connection states","Estados de conexión"),"CT",[["established",""],["related",""],["new",""],["invalid",""],["untracked",""],["ct status dnat",""]]],
   [t("Actions","Acciones"),"AC",[["accept",""],["drop",""],["reject with",""],["jump",""],["goto",""],["return",""],["continue",""]]],
-  ["NAT","NT",[["dnat to",""],["snat to",""],["masquerade",""],["redirect to",""]]],
+  /* `redirect` on its own is a whole rule — it sends the packet to this
+     machine on the port it arrived on — so it is not listed as needing a
+     target it does not need. dnat and snat do, and theirs is left blank. */
+  ["NAT","NT",[["dnat to",""],["snat to",""],["masquerade",""],["redirect",""]]],
   [t("Helpers","Helpers"),"HL",
     catalogue(ownOf("HL"), BUILT_IN.HL).map(h=>[h.n, `${h.p}/${h.proto}`])],
-  [t("Counters","Contadores"),"CN",[["counter",""],[t("named counter","counter con nombre"),""],["quota",""]]],
-  [t("Meters","Medidores"),"ME",[["meter flood",""],["limit rate",""],["limit rate over",""]]],
+  /* nft vocabulary, untranslated like the rest of it — and the named counters
+     are the ones this ruleset has, the way Sets and Maps are. `named counter`
+     used to be a label that dropped a plain anonymous counter, which is the
+     shape of thing this list was built to stop doing. */
+  [t("Counters","Contadores"),"CN",[
+    ["counter",""],
+    ...MODEL.objects.filter(o=>o.kind==="counter").map(o=>[`counter name "${o.name}"`, o.name]),
+    ["quota over",""],
+  ]],
+  [t("Meters","Medidores"),"ME",[["meter",""],["limit rate",""],["limit rate over",""]]],
   [t("Marks","Marcas"),"MK",[["meta mark set",""],["ct mark set",""],["meta priority",""]]],
   /* The counts here were invented and dropping one did nothing. They are real
      rule groups now, and the count is however many rules the group holds. */
@@ -803,7 +815,14 @@ function select(chainId, i, fromCode){
         <span class="sw-toggle${r.on?" on":""}" id="rule-on" title="${t("Enable rule","Activar la regla")}"></span>
       </div>
       <div class="path">${ch.table} / ${ch.id} · ${t("position","posición")} ${i+1} ${t("of","de")} ${ch.rules.length}</div>
-      <div class="expr-big">${highlight(ruleLine(r))}</div>
+      <!-- The rule as nft source, and editable as nft source. The fields below
+           cover the nine things this panel models; nftables says a great deal
+           more than nine things, and until this existed there was no way to
+           write any of the rest — only to import it and hope. -->
+      <div class="expr-big" id="f-raw" contenteditable="plaintext-only" spellcheck="false"
+           role="textbox" aria-label="${esc(t("Rule source","Código de la regla"))}"
+           >${highlight(ruleLine(r))}</div>
+      <div id="f-raw-lint"></div>
       ${findingsFor(chainId,i).map(f=>{
         const c = f.sev==="error" ? ["250,90,90","--v-drop"] : ["240,193,60","--warn"];
         return `<div style="display:flex;gap:8px;align-items:flex-start;margin-top:9px;padding:9px 10px;
@@ -933,6 +952,59 @@ function select(chainId, i, fromCode){
         if(id==="f-verdict") select(chainId, i);
       });
     });
+
+  /* ── the rule as nft source ──────────────────────────────────────────
+     The fields cover nine things. This covers nftables. Highlighting is
+     dropped while the caret is in there — re-rendering the markup under a
+     caret on every keystroke is how contenteditable ruins an editor — and put
+     back on the way out. */
+  const raw = $("#f-raw");
+  if(raw){
+    const ctx = () => ({
+      chains: MODEL.chains.filter(c=>c.table===ch.table).map(c=>c.id),
+      sets:   MODEL.sets.filter(s=>!s.table || s.table===ch.table).map(s=>s.n),
+    });
+    const showLint = text => {
+      const found = lintRule(text, ctx());
+      $("#f-raw-lint").innerHTML = found.map(f=>
+        `<div class="raw-lint"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span>${esc(tt(f.title))}</span></div>`).join("");
+      raw.classList.toggle("bad", found.length > 0);
+    };
+    showLint(ruleLine(r));
+
+    raw.addEventListener("focus", ()=>{
+      PENDING = snapshot();
+      raw.textContent = ruleLine(r);        /* plain text under the caret */
+    });
+    raw.addEventListener("input", ()=> showLint(raw.textContent.trim()));
+    raw.addEventListener("keydown", e=>{
+      if(e.key === "Enter"){ e.preventDefault(); raw.blur(); }
+      if(e.key === "Escape"){ e.preventDefault(); raw.textContent = ruleLine(r); raw.blur(); }
+    });
+    raw.addEventListener("blur", ()=>{
+      const text = raw.textContent.trim();
+      const next = text && parseRule(text);
+      if(!next || text === ruleLine(r)){
+        /* unchanged, or emptied to nothing — a rule is not deleted by
+           clearing the box, which would be a very expensive way to miss */
+        raw.innerHTML = highlight(ruleLine(r));
+        showLint(ruleLine(r));
+        PENDING = null;
+        return;
+      }
+      /* The line is the rule. Only what the line cannot carry is kept: whether
+         the rule is enabled, and its comment. The counters and the handle
+         described the rule as it was, and `nft replace` does not keep those
+         either. */
+      const keep = { on: r.on, ...(r.cmt !== undefined ? { cmt: r.cmt } : {}) };
+      PENDING = null;                       /* edit() records this one itself */
+      edit(t("edit rule source","editar el código de la regla"), ()=>{
+        for(const k of Object.keys(r)) delete r[k];
+        Object.assign(r, next, keep);
+      });
+      select(chainId, i);
+    });
+  }
 
   /* Controls that are not text fields. Each of these looked like a control and
      did nothing at all: the conntrack chips, both toggles under the verdict,
@@ -1834,7 +1906,12 @@ export function fragment(k, name, ref, ch){
     case "NW": return {expr:`ip ${egress?"daddr":"saddr"} ${name}`};
     case "IF": return {expr:`${egress?"oifname":"iifname"} "${name}"`};
     case "CT": return {expr: name.startsWith("ct ") ? name : `ct state ${name}`};
-    case "ME": return {expr:name==="limit rate" ? "limit rate 5/second burst 10 packets" : "limit rate over 100/second"};
+    /* A meter is a limit kept per key, which is the whole reason to reach for
+       one; this dropped a plain rate limit and called it a meter. */
+    case "ME":
+      if(name==="meter")      return {expr:"meter flood { ip saddr limit rate 10/second }"};
+      if(name==="limit rate") return {expr:"limit rate 5/second burst 10 packets"};
+      return {expr:"limit rate over 100/second"};
     case "MK": return {expr:`${name} 0x1`};
     case "SE": {
       const s = MODEL.sets.find(x=>"@"+x.n===name);
@@ -1862,11 +1939,17 @@ export function fragment(k, name, ref, ch){
          verdict is what was dragged; the destination is theirs to fill in. */
       if(name.startsWith("dnat"))  return {verdict:"dnat", to:""};
       if(name.startsWith("snat"))  return {verdict:"snat", to:""};
-      return {verdict:"dnat", to:""};
+      /* redirect is its own verdict, not a dnat with the target left off —
+         which is what this produced, and what nft refuses. */
+      return {verdict:"redirect"};
     }
     /* `pkts = 1` claimed one packet the rule had never seen, which is the lie
-       the counter split was made to remove. `ctr` is the statement. */
-    case "CN": return {ctr:true};
+       the counter split was made to remove. `ctr` is the statement. A named
+       counter and a quota are not that statement: they are their own. */
+    case "CN":
+      if(name.startsWith("counter name")) return {expr:name};
+      if(name === "quota over")           return {expr:"quota over 1 gbytes"};
+      return {ctr:true};
     default:   return null;
   }
 }

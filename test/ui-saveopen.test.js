@@ -32,9 +32,17 @@ async function openPayload(payload, filename = "PBX.efeflow.json") {
   const win = globalThis.window;
   const input = $('input[type="file"]');
   const file = new win.File([payload], filename, { type: "application/json" });
+  const before = JSON.stringify([project.name, MODEL.chains.length]);
   Object.defineProperty(input, "files", { value: [file], configurable: true });
   input.dispatchEvent(new win.Event("change", { bubbles: true }));
-  await settle(120);
+  /* The file is read through a FileReader, so the open lands a tick or several
+     later. Waiting a fixed 120ms was enough on an idle machine and not on a
+     loaded one, which is a test that fails for reasons the product does not
+     have. Wait for the project to arrive — and for the payload that is meant
+     to be rejected, fall through to the same short settle as before. */
+  await until(() => JSON.stringify([project.name, MODEL.chains.length]) !== before,
+              { timeout: 2000 }).catch(() => {});
+  await settle(40);
 }
 
 async function addVia(kind, value) {

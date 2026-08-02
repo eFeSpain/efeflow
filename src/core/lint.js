@@ -1,0 +1,147 @@
+/* Will nftables load this rule?
+ *
+ * A different question from the one the analyser asks. analyse() reads a
+ * ruleset that works and says what is unwise about it — a shadowed rule, an
+ * unrated log. This says whether `nft -f` would take the line at all, and
+ * until now nothing did: the only answer came from `nft -c`, which needs a
+ * Linux host within reach, and the rule that will not load is not a style
+ * problem you get to fix later. It is the whole ruleset failing to apply.
+ *
+ * Everything here is findable in the text. It is deliberately not a parser for
+ * nftables — that is nft's job and it is very good at it — but the handful of
+ * mistakes below are the ones people actually make writing a rule by hand, and
+ * catching them without leaving the editor is worth more than being complete. */
+import { ruleLine } from "./model.js";
+
+/* the transports a port match can hang off, plus `th`, which is any of them */
+const TRANSPORT = /\b(tcp|udp|udplite|sctp|dccp|th)\s+[sd]port\b/;
+const PORT = /\b[sd]port\b/;
+
+/* everything `log` owns; each of these is meaningless without it */
+const LOG_ARG = /\b(prefix\s+"|level\s+\w|group\s+\d|snaplen\s+\d|queue-threshold\s+\d)/;
+
+const VERDICTS = /\b(accept|drop|reject|return|continue|masquerade)\b/g;
+/* What each terminal verdict is allowed to carry after it. `reject with tcp
+   reset` and `masquerade to :1024-65535` are one verdict each, not a verdict
+   followed by stray text. */
+const VERDICT_TAIL = {
+  reject:     /^(with\s+\S.*)?$/,
+  masquerade: /^(to\s+:\S+)?([\s,]*(random|fully-random|persistent))*$/,
+};
+const NEEDS_TARGET = /(?:^|\s)(jump|goto|dnat\s+to|snat\s+to)\s*$/;
+
+const balanced = (s, open, close) => {
+  /* quotes first: a brace inside a string is not a brace */
+  let depth = 0, inStr = false;
+  for(let i = 0; i < s.length; i++){
+    const c = s[i];
+    if(c === "\\"){ i++; continue; }
+    if(c === '"'){ inStr = !inStr; continue; }
+    if(inStr) continue;
+    if(c === open) depth++;
+    if(c === close) depth--;
+    if(depth < 0) return false;
+  }
+  return depth === 0;
+};
+const evenQuotes = s => (s.replace(/\\./g, "").match(/"/g) || []).length % 2 === 0;
+
+/* Strip strings before looking for keywords, so a log prefix of "accept " is
+   not read as a verdict sitting in the middle of the rule. */
+const bare = s => s.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+/* Strings and braced groups both blanked. A verdict map spells its verdicts
+   inside the braces — `tcp dport vmap { 22 : accept, 80 : drop }` — and those
+   are values, not the end of the rule. */
+const outer = s => bare(s).replace(/\{[^{}]*\}/g, "{}");
+
+const F = (code, en, es) => ({ code, level: "error", title: [en, es] });
+
+/**
+ * @param line  the rule as nft source, verdict and all
+ * @param ctx   {chains, sets} — names that exist in the table this rule is in.
+ *              Omit either and the names it uses are not checked, because a
+ *              name you cannot resolve is not a name you can call wrong.
+ */
+export function lintRule(line, ctx = {}){
+  const src = String(line || "").trim();
+  const out = [];
+  if(!src) return out;
+
+  if(!evenQuotes(src))
+    out.push(F("unbalanced",
+      "Unterminated string — nft reads to the end of the line",
+      "Cadena sin cerrar — nft lee hasta el final de la línea"));
+  else if(!balanced(src, "{", "}") || !balanced(src, "(", ")"))
+    out.push(F("unbalanced",
+      "Unbalanced braces or brackets",
+      "Llaves o paréntesis sin equilibrar"));
+
+  const e = bare(src);
+
+  if(LOG_ARG.test(e) && !/\blog\b/.test(e))
+    out.push(F("orphan-log",
+      "log arguments with no log statement to belong to",
+      "argumentos de log sin una sentencia log a la que pertenecer"));
+
+  if(/\bburst\b/.test(e) && !/\blimit rate\b/.test(e))
+    out.push(F("orphan-burst",
+      "burst with no limit rate to burst against",
+      "burst sin un limit rate sobre el que aplicarse"));
+
+  if(PORT.test(e) && !TRANSPORT.test(e))
+    out.push(F("port-no-proto",
+      "A port match needs a transport in front of it — tcp dport, not dport",
+      "Una coincidencia de puerto necesita un transporte delante — tcp dport, no dport"));
+
+  if(NEEDS_TARGET.test(e))
+    out.push(F("no-target",
+      "This verdict names something, and nothing was named",
+      "Este veredicto nombra algo, y no se ha nombrado nada"));
+
+  /* a verdict is terminal: anything after it, beyond what that verdict itself
+     takes, is text nft has no room for */
+  const o = outer(src);
+  const last = [...o.matchAll(VERDICTS)].at(-1);
+  if(last){
+    const rest = o.slice(last.index + last[0].length).trim();
+    const tail = VERDICT_TAIL[last[1]];
+    if(tail ? !tail.test(rest) : rest !== "")
+      out.push(F("verdict-not-last",
+        "A verdict ends the rule — this one has a match after it",
+        "Un veredicto termina la regla — esta tiene una coincidencia después"));
+  }
+
+  if(Array.isArray(ctx.chains)){
+    const m = e.match(/\b(?:jump|goto)\s+(\S+)/);
+    if(m && !ctx.chains.includes(m[1]))
+      out.push(F("unknown-chain",
+        `No chain called ${m[1]} in this table`,
+        `No hay ninguna cadena llamada ${m[1]} en esta tabla`));
+  }
+  if(Array.isArray(ctx.sets)){
+    for(const m of e.matchAll(/@([A-Za-z_]\w*)/g))
+      if(!ctx.sets.includes(m[1]))
+        out.push(F("unknown-set",
+          `No set or map called @${m[1]} in this table`,
+          `No hay ningún set o map llamado @${m[1]} en esta tabla`));
+  }
+  return out;
+}
+
+/* Every rule in the ruleset, with the names of its own table to check against.
+   Returned in the shape analyse() uses so the two can be shown together. */
+export function lintRuleset(model){
+  const out = [];
+  for(const ch of model.chains || []){
+    const ctx = {
+      chains: (model.chains || []).filter(c => c.table === ch.table).map(c => c.id),
+      sets: (model.sets || []).filter(s => !s.table || s.table === ch.table).map(s => s.n),
+    };
+    ch.rules.forEach((r, i) => {
+      if(!r.on) return;
+      /* the rule exactly as it will be written out, which is what nft reads */
+      for(const f of lintRule(ruleLine(r), ctx)) out.push({ ...f, chain: ch, i });
+    });
+  }
+  return out;
+}

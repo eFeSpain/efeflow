@@ -8,6 +8,7 @@ import { MODEL, R, ruleLine, jumpTarget, UID, chainOf } from './model.js';
    orphans, so the button did nothing and said nothing. Resolve on apply. */
 const at = (uid, i) => { const c = chainOf(uid); return c && c.rules[i] ? c : null; };
 import { inSet, inCidr } from './simulate.js';
+import { lintRuleset } from './lint.js';
 import { t } from '../i18n.js';
 const CRIT = [
   ["proto", /\b(tcp|udp|sctp)\b/],
@@ -105,10 +106,18 @@ export function analyse(){
         detail:[`Rules ${a.i+1} and ${b.i+1} both match traffic to <code>${a.c.dport||"?"}</code> but translate it to different hosts. nftables terminates the chain on the first NAT verdict, so rule ${a.i+1} silently wins for every packet matching both and rule ${b.i+1} never fires.`,
                 `Las reglas ${a.i+1} y ${b.i+1} coinciden con tráfico a <code>${a.c.dport||"?"}</code> pero lo traducen a hosts distintos. nftables termina la cadena en el primer veredicto NAT, así que la regla ${a.i+1} gana en silencio para todo paquete que case con ambas y la ${b.i+1} nunca se dispara.`],
         code:[[a.i+1, ruleLine(a.r), "neg"],[b.i+1, ruleLine(b.r), "dead"]],
-        fix:{label:["Narrow rule "+(a.i+1),"Restringir la regla "+(a.i+1)],
-             run:()=>{ const c = at(UID(ch), a.i); if(!c) return;
-                    const r = c.rules[a.i];
-                    if(!/ip saddr/.test(r.expr)) r.expr += " ip saddr != @admin_nets"; }},
+        /* The narrowing comes from the other rule, never from a name we made
+           up. This appended `ip saddr != @admin_nets` — a set from the demo
+           ruleset, the same leftover as the jump to fwd_mgmt and the
+           10.20.0.15 target. Written into a table that has no such set, it
+           produced a rule nft refuses, so the fix broke the file it was
+           offered to repair. With nothing to derive, there is no fix. */
+        ...(b.c.saddr ? {fix:{
+          label:["Narrow rule "+(a.i+1),"Restringir la regla "+(a.i+1)],
+          run:()=>{ const c = at(UID(ch), a.i); if(!c) return;
+                 const r = c.rules[a.i];
+                 if(!/ip6? saddr/.test(r.expr)) r.expr += ` ip saddr != ${b.c.saddr}`; }},
+        } : {}),
       }));
     }));
 
@@ -209,8 +218,25 @@ export function analyse(){
     }));
   });
 
+  /* ── rules nft would refuse ──────────────────────────────────────────
+     Everything above describes a ruleset that works. This one asks whether it
+     works at all, and it belongs at the top: a shadowed rule costs you an
+     evaluation, a rule that will not parse costs you the entire apply. */
+  lintRuleset(MODEL).forEach(f=>{
+    out.push(F("error","syntax",{
+      chain:f.chain, i:f.i,
+      title:f.title,
+      where:`${f.chain.table} / ${f.chain.id} · ${t("rule","regla")} ${f.i+1}`,
+      detail:[`nft rejects this line, and it rejects the whole file with it — a ruleset is applied entire or not at all, so one rule like this is the difference between your firewall changing and nothing happening.`,
+              `nft rechaza esta línea, y con ella el fichero entero — un ruleset se aplica completo o no se aplica, así que una regla así es la diferencia entre que tu firewall cambie y que no pase nada.`],
+      code:[[f.i+1, ruleLine(f.chain.rules[f.i]), "neg"]],
+    }));
+  });
+
   const rank = {error:0, warn:1, hint:2};
-  return out.sort((a,b)=> rank[a.sev]-rank[b.sev]);
+  /* syntax first within the errors: it is the one that stops everything */
+  const kindRank = k => k==="syntax" ? 0 : 1;
+  return out.sort((a,b)=> rank[a.sev]-rank[b.sev] || kindRank(a.kind)-kindRank(b.kind));
 }
 
 /* worst-case evaluations along the two real packet paths */

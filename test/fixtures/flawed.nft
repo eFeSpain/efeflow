@@ -8,6 +8,11 @@
 #   forward         trusts conntrack but never drops invalid
 #   output rule 3   logs without a rate limit
 #   @cdn_edges      declared, never referenced
+#
+# Every defect above is a design defect: this ruleset loads. nat_pre rule 2
+# used to reach for @admin_nets, which lives in `inet fw` — a set is scoped to
+# its table, so nft refused the whole file. The defects here are meant to be
+# the analyser's to find, not nft's to reject.
 
 flush ruleset
 
@@ -88,7 +93,7 @@ table ip nat {
 	chain nat_pre {
 		type nat hook prerouting priority -100 ; policy accept ;
 		iifname "wan0" tcp dport 8443 counter dnat to 10.20.0.15:443 comment "Ingress controller"
-		ip saddr @admin_nets tcp dport 8443 dnat to 10.20.0.31:443 comment "Staging ingress"
+		ip saddr 198.51.100.0/24 tcp dport 8443 dnat to 10.20.0.31:443 comment "Staging ingress"
 		iifname "wan0" udp dport 51820 accept comment "WireGuard, no translation"
 	}
 

@@ -52,6 +52,14 @@ test("redirect is a verdict of its own, not a dnat in disguise", () => {
   assert.equal(ruleLine(bare), "udp dport 53 redirect");
 });
 
+/* `jump undefined` reads as a jump to a chain somebody called undefined, and
+   it is the shape a rule takes the moment a verdict is picked before a target.
+   Leave the gap visible instead — core/lint.js reports a bare jump. */
+test("a verdict with no target yet does not invent one", () => {
+  for (const [verdict, want] of [["jump", "jump"], ["goto", "goto"], ["dnat", "dnat to"]])
+    assert.equal(ruleLine({ expr: "tcp dport 22", verdict, on: true }), `tcp dport 22 ${want}`);
+});
+
 test("goto keeps the chain it goes to", () => {
   const r = parseRule("tcp dport 22 goto ssh_hardening");
   assert.equal(r.verdict, "goto");

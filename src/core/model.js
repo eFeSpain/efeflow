@@ -59,10 +59,13 @@ export const fmtB = n => n>=1e9?(n/1e9).toFixed(1)+" GB":n>=1e6?(n/1e6).toFixed(
 export function verdictText(r){
   if(r.implicit)           return "";   /* imported rule that falls through */
   /* jump and goto both name a chain, and a `goto` written without one is a
-     syntax error rather than a default — which is what this used to emit. */
-  if(r.verdict==="jump" || r.verdict==="goto") return r.verdict+" "+r.to;
-  if(r.verdict==="dnat")   return "dnat to "+r.to;
-  if(r.verdict==="snat")   return r.to==="masquerade" ? "masquerade" : "snat to "+r.to;
+     syntax error rather than a default — which is what this used to emit.
+     A missing target stays missing: `jump undefined` reads like a chain
+     somebody called undefined, and core/lint.js can see a bare `jump`. */
+  const to = r.to ?? "";
+  if(r.verdict==="jump" || r.verdict==="goto") return (r.verdict+" "+to).trim();
+  if(r.verdict==="dnat")   return ("dnat to "+to).trim();
+  if(r.verdict==="snat")   return r.to==="masquerade" ? "masquerade" : ("snat to "+to).trim();
   /* `redirect` takes an optional port; bare, it redirects to the same one. */
   if(r.verdict==="redirect") return r.to ? "redirect to "+r.to : "redirect";
   if(r.verdict==="reject") return r.to ? "reject with "+r.to : "reject";

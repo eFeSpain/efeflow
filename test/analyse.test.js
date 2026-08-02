@@ -18,6 +18,32 @@ test("the demo ruleset yields exactly the defects it contains", () => {
   assert.equal(f[0].kind, "conflict", "errors sort first");
 });
 
+/* The analyser reads a ruleset that works and says what is unwise about it.
+   A rule nft will not parse is a different order of problem — the apply fails
+   entire, so nothing you were told about the rest of the ruleset matters — and
+   until core/lint.js it was invisible without a Linux host to run nft -c on. */
+test("a rule nft would refuse is an error on the validation screen", () => {
+  const saved = { chains: MODEL.chains, sets: MODEL.sets };
+  MODEL.chains = [{
+    id: "input", table: "inet filter", hook: "input", prio: 0, type: "filter",
+    policy: "drop", rules: [
+      { expr: "tcp dport 22", verdict: "jump", to: "nowhere", on: true, pkts: 0, bytes: 0 },
+    ],
+  }];
+  MODEL.sets = [];
+
+  const f = analyse();
+  const syntax = f.filter((x) => x.kind === "syntax");
+  assert.equal(syntax.length, 1, JSON.stringify(kinds(f)));
+  assert.equal(syntax[0].sev, "error");
+  assert.match(syntax[0].title[0], /nowhere/);
+  assert.equal(f[0].kind, "syntax", "the ruleset not loading outranks everything else");
+  assert.ok(!syntax[0].fix, "there is no safe way to invent the chain it meant");
+
+  MODEL.chains = saved.chains;
+  MODEL.sets = saved.sets;
+});
+
 test("subsumption is about coverage, not text", () => {
   const broad = criteria("tcp dport { 80, 443 }");
   const narrow = criteria("ip saddr 10.10.0.0/24 tcp dport 443");

@@ -1,8 +1,9 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { boot, shutdown, newRuleset, importFixture, $, $$, click, settle } from "./harness.js";
-import { MODEL } from "../src/core/model.js";
+import { MODEL, ruleLine } from "../src/core/model.js";
 import { TEMPLATES } from "../src/core/vocabulary.js";
+import { lintRule } from "../src/core/lint.js";
 
 after(shutdown);
 
@@ -55,21 +56,63 @@ test("every draggable category actually produces something", async () => {
   for (const ph of $$(".obj.ph"))
     assert.equal(ph.getAttribute("draggable"), "false", "an empty-state row dragged like an object");
 
-  const sample = (kind) => {
-    const row = $(`.cat[data-kind="${kind}"] .obj:not(.ph)`);
-    if (!row) return null;
-    return [row.querySelector(".nm").textContent.trim(),
-            row.querySelector(".rf").textContent.trim()];
-  };
+  /* Every row, not the first of each category. Sampling one meant `counter`
+     stood in for the two entries beside it, and both of those dropped a plain
+     anonymous counter — a label that looks like a feature and is not. */
+  const rows = (kind) =>
+    $$(`.cat[data-kind="${kind}"] .obj:not(.ph)`).map((row) => [
+      row.querySelector(".nm").textContent.trim(),
+      row.querySelector(".rf").textContent.trim(),
+    ]);
 
   for (const kind of ["SV", "PR", "HL", "MP", "TP", "CT", "AC", "NT",
                       "CN", "ME", "MK", "SE", "IF", "NW"]) {
-    const s = sample(kind);
-    if (!s) continue;
-    const frag = fragment(kind, s[0], s[1], chain);
-    assert.ok(frag, `dragging ${kind} "${s[0]}" onto a rule does nothing`);
-    assert.ok(frag.expr || frag.verdict || frag.ctr || frag.rules,
-      `${kind} produced an empty contribution`);
+    for (const [name, ref] of rows(kind)) {
+      const frag = fragment(kind, name, ref, chain);
+      assert.ok(frag, `dragging ${kind} "${name}" onto a rule does nothing`);
+      assert.ok(frag.expr || frag.verdict || frag.ctr || frag.rules,
+        `${kind} "${name}" produced an empty contribution`);
+    }
+  }
+});
+
+/* A palette that offers a statement nftables will not take is worse than one
+   that does not offer it: the ruleset stops applying and the rule you dragged
+   is the last place anybody looks. */
+test("everything the palette drops is something nft would load", async () => {
+  await boot();
+  await importFixture();
+  const { fragment } = await import("../src/app.js");
+  const chain = MODEL.chains.find((c) => c.hook === "input");
+  const ctx = {
+    chains: MODEL.chains.filter((c) => c.table === chain.table).map((c) => c.id),
+    sets: MODEL.sets.filter((s) => !s.table || s.table === chain.table).map((s) => s.n),
+  };
+
+  /* dnat and snat arrive with the destination blank on purpose — better an
+     incomplete rule than somebody else's address written into your firewall.
+     The contract for those is not that they load; it is that the gap is
+     reported rather than left for nft to find. */
+  const blankOnPurpose = (kind, name) => kind === "NT" && /^[ds]nat to$/.test(name);
+
+  for (const kind of ["SV", "PR", "HL", "MP", "TP", "CT", "AC", "NT",
+                      "CN", "ME", "MK", "SE", "IF", "NW"]) {
+    for (const row of $$(`.cat[data-kind="${kind}"] .obj:not(.ph)`)) {
+      const name = row.querySelector(".nm").textContent.trim();
+      const frag = fragment(kind, name, row.querySelector(".rf").textContent.trim(), chain);
+      if (!frag) continue;
+      /* a fragment is half a rule, so it is linted as one that accepts */
+      const lines = frag.rules
+        ? frag.rules.map(ruleLine)
+        : [ruleLine({ ...frag, verdict: frag.verdict || "accept", on: true })];
+      for (const line of lines) {
+        const codes = lintRule(line, ctx).map((f) => f.code);
+        if (blankOnPurpose(kind, name))
+          assert.deepEqual(codes, ["no-target"], `${kind} "${name}" must say what it is missing`);
+        else
+          assert.deepEqual(codes, [], `${kind} "${name}" drops ${line}`);
+      }
+    }
   }
 });
 
@@ -80,9 +123,11 @@ test("nothing dropped carries an address or a chain the user does not have", asy
   const { fragment } = await import("../src/app.js");
   const chain = MODEL.chains.find((c) => c.hook === "input");
 
-  for (const name of ["dnat to", "snat to", "redirect to"]) {
+  /* `redirect` names no address at all, which is the strongest form of not
+     carrying one — dnat and snat need somewhere to go, and arrive blank. */
+  for (const name of ["dnat to", "snat to", "redirect"]) {
     const frag = fragment("NT", name, "", chain);
-    assert.equal(frag.to, "", `${name} arrived carrying somebody else's address`);
+    assert.ok(!frag.to, `${name} arrived carrying somebody else's address`);
   }
 
   const jump = fragment("AC", "jump", "", chain);
