@@ -1670,6 +1670,9 @@ function renderFindings(){
   $("#val-fixall-t").textContent = fixable
     ? t(`Fix ${fixable} automatically`,`Corregir ${fixable} automáticamente`)
     : t("Nothing to fix","Nada que corregir");
+  /* its label came only from paintApplyForm, so until the dialog had been
+     opened once the button on this screen read as an em dash */
+  $("#val-apply-t").textContent = t("Apply…","Aplicar…");
   $("#val-fixall").disabled = !fixable;
 
   const tabs = [["all",t("All","Todo"),FIND.length,null],

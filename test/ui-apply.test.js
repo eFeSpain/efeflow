@@ -19,6 +19,16 @@ const open = async () => {
   await settle(60);
 };
 
+/* Its label was only written by the dialog, so the button on the screen behind
+   read as an em dash until you had opened it once. */
+test("the button says what it does before it has ever been pressed", async () => {
+  await boot();
+  await importFixture();
+  click('.rb[data-go="validate"]');
+  await settle(80);
+  assert.match($("#val-apply-t").textContent, /Apply|Aplicar/);
+});
+
 test("the validation screen offers to apply, and the dialog opens", async () => {
   await boot();
   await importFixture();

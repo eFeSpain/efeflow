@@ -763,6 +763,11 @@
 .sim-legend {
   display: flex;
   align-items: center;
+  /* The three steps, their chevrons and the replay hint do not fit beside the
+     trace panel much under 1500px, and with nothing telling them so they drew
+     over each other. Wrap, and let the hint go first. */
+  flex-wrap: wrap;
+  row-gap: 4px;
   gap: 10px;
   flex: none;
   padding: 9px 22px;
@@ -797,6 +802,11 @@
   font-size: 11px;
   color: var(--t4);
   white-space: nowrap;
+}
+/* the three steps are the instruction; the replay hint is the first thing that
+   can go when there is not room for both */
+@media (max-width: 1560px) {
+  .sl-key { display: none; }
 }
 .sl-key kbd {
   margin: 0 2px;

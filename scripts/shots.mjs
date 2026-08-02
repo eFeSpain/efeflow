@@ -48,6 +48,12 @@ await page.evaluate((text) => {
 await page.waitForTimeout(400);
 
 async function shot(name, note) {
+  /* Park the pointer somewhere with nothing under it. Switching screens leaves
+     it on the rail button that was clicked, and its tooltip then opens over
+     whatever the shot was of — the set list spent a release with "Gestor de
+     sets Alt 4" across it. */
+  await page.mouse.move(W / 2, H - 4);
+  await page.waitForTimeout(200);
   await page.screenshot({ path: new URL(`${name}.png`, OUT).pathname.slice(1) });
   console.log(`  ${name.padEnd(12)} ${note}`);
 }
