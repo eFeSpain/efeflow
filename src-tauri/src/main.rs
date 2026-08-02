@@ -27,6 +27,10 @@ fn main() {
             nft::nft_list,
             nft::nft_check,
             nft::nft_apply,
+            nft::nft_arm,
+            nft::nft_disarm,
+            nft::nft_armed,
+            nft::nft_rollback,
         ])
         .setup(|app| {
             let win = app.get_webview_window("main").expect("main window");

@@ -86,6 +86,16 @@ fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
     }
 }
 
+/// Run a shell script on the target, handed over on stdin.
+///
+/// Passing a script as an argument means quoting it for our shell and then
+/// again for the login shell on the other end of ssh, and getting that wrong
+/// on a command that edits a firewall is not a class of bug worth inviting.
+/// `sh -s` reads the script from stdin, so there is no quoting at all.
+fn shell(target: &Target, script: &str) -> Outcome {
+    run(target, &["sh", "-s"], Some(script))
+}
+
 fn run(target: &Target, cmd: &[&str], stdin: Option<&str>) -> Outcome {
     let (program, args) = argv(target, cmd);
     let mut child = match Command::new(&program)
@@ -143,6 +153,62 @@ pub fn nft_list(target: Target) -> Outcome {
 #[tauri::command]
 pub fn nft_check(target: Target, ruleset: String) -> Outcome {
     run(&target, &["nft", "-c", "-f", "-"], Some(&ruleset))
+}
+
+/* ── the safety net ──────────────────────────────────────────────────────
+Applying a firewall ruleset can cut off the connection you applied it over,
+and a rollback driven from the editor cannot help with that: it would have
+to reach the machine it has just locked itself out of. So the net is armed
+on the host. Take a copy of the running ruleset, leave a sentinel file, and
+start a detached process that restores the copy when the timer runs out
+unless the sentinel has been removed first. Confirming removes it.
+
+Routers have called this commit-confirm for thirty years, and this is why. */
+
+const ROLLBACK: &str = "/tmp/efeflow-rollback.nft";
+const SENTINEL: &str = "/tmp/efeflow-armed";
+
+/// Copy the running ruleset aside and schedule its restoration in `seconds`.
+///
+/// Returns the copy it took, so the caller can show what it would go back to.
+#[tauri::command]
+pub fn nft_arm(target: Target, seconds: u32) -> Outcome {
+    // clamped here rather than trusted: this number is spliced into a script
+    let secs = seconds.clamp(10, 3600);
+    let script = format!(
+        "set -e\n\
+         umask 077\n\
+         nft list ruleset > {ROLLBACK}\n\
+         : > {SENTINEL}\n\
+         nohup sh -c 'sleep {secs}; \
+           if [ -f {SENTINEL} ]; then nft -f {ROLLBACK}; rm -f {SENTINEL}; fi' \
+           </dev/null >/dev/null 2>&1 &\n\
+         cat {ROLLBACK}\n"
+    );
+    shell(&target, &script)
+}
+
+/// Keep what is running. The scheduled restore finds no sentinel and does
+/// nothing; the copy is left behind on purpose, as the last known-good.
+#[tauri::command]
+pub fn nft_disarm(target: Target) -> Outcome {
+    shell(&target, &format!("rm -f {SENTINEL}\n"))
+}
+
+/// Is a rollback still pending on this host? Answers `armed` or `clear` so a
+/// window that was closed, or an editor that was restarted, can find out.
+#[tauri::command]
+pub fn nft_armed(target: Target) -> Outcome {
+    shell(
+        &target,
+        &format!("if [ -f {SENTINEL} ]; then echo armed; else echo clear; fi\n"),
+    )
+}
+
+/// Put the copy back now, without waiting for the timer.
+#[tauri::command]
+pub fn nft_rollback(target: Target) -> Outcome {
+    shell(&target, &format!("rm -f {SENTINEL}\nnft -f {ROLLBACK}\n"))
 }
 
 /// Apply atomically. Refuses unless the caller has confirmed, because this is

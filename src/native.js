@@ -82,6 +82,30 @@ export async function nftApply(ruleset, target = LOCAL, confirmed = false) {
   return invoke("nft_apply", { target, ruleset, confirmed });
 }
 
+/* ── commit-confirm ───────────────────────────────────────────────────
+   The net is armed on the host, not here. A rollback driven from the editor
+   would have to reach the machine it has just locked itself out of, which is
+   the one case it exists for. arm() copies the running ruleset aside and
+   schedules its restoration; disarm() is the confirmation that keeps what was
+   applied. Losing the window, the connection or the laptop restores. */
+
+export async function nftArm(seconds, target = LOCAL) {
+  if (!inTauri) return unavailable("Arming a rollback");
+  return invoke("nft_arm", { target, seconds });
+}
+export async function nftDisarm(target = LOCAL) {
+  if (!inTauri) return unavailable("Confirming a ruleset");
+  return invoke("nft_disarm", { target });
+}
+export async function nftArmed(target = LOCAL) {
+  if (!inTauri) return unavailable("Checking for a pending rollback");
+  return invoke("nft_armed", { target });
+}
+export async function nftRollback(target = LOCAL) {
+  if (!inTauri) return unavailable("Rolling back");
+  return invoke("nft_rollback", { target });
+}
+
 /* ── files ─────────────────────────────────────────────────────────────
    Native dialogs when we have them, a download and an <input type=file>
    when we do not. */
