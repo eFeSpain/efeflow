@@ -9,10 +9,17 @@
 #   output rule 3   logs without a rate limit
 #   @cdn_edges      declared, never referenced
 #
-# Every defect above is a design defect: this ruleset loads. nat_pre rule 2
-# used to reach for @admin_nets, which lives in `inet fw` — a set is scoped to
-# its table, so nft refused the whole file. The defects here are meant to be
-# the analyser's to find, not nft's to reject.
+# Every defect above is a design defect, not a syntax one: nat_pre rule 2 used
+# to reach for @admin_nets, which lives in `inet fw` — a set is scoped to its
+# table, so nft refused the whole file. The defects here are meant to be the
+# analyser's to find, not nft's to reject.
+#
+# One thing here is not loadable, and on purpose: two sets carry their element
+# lists as `{ /* 1 248 elements */ }`. That is shorthand for this file, so a
+# fixture does not have to be a megabyte, and real `nft list ruleset` output
+# never looks like it. nft refuses those two lines, so do not reach for this
+# file when you want something to hand to a kernel — the samples in
+# core/samples.js are the ones checked against a real nft.
 
 flush ruleset
 
