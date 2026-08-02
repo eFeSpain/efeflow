@@ -88,14 +88,21 @@ test("the settings file the catalogue lives in is reachable", () => {
 });
 
 /* $APPCONFIG is a Tauri variable; a typo in one is not an error, it is a scope
-   that matches nothing. The generated schema is the list of real ones. */
+   that matches nothing.
+   The list comes from the CLI package rather than src-tauri/gen/schemas, which
+   Tauri writes during a build and .gitignore excludes — so it is on this
+   machine and absent from every clean checkout, which is where CI runs. */
 test("every path variable in the scope is one Tauri defines", () => {
-  const schema = readFileSync(
-    new URL("../src-tauri/gen/schemas/desktop-schema.json", import.meta.url), "utf8");
+  const schema = JSON.parse(readFileSync(
+    new URL("../node_modules/@tauri-apps/cli/config.schema.json", import.meta.url), "utf8"));
+  const known = new Set(
+    [...schema.definitions.FsScope.description.matchAll(/\$[A-Z]+/g)].map((m) => m[0]));
+  assert.ok(known.has("$APPCONFIG"), "the list itself should be readable");
+
   const scope = caps.permissions.find((p) => p && p.identifier === "fs:scope");
   for (const { path } of scope.allow) {
     const v = path.match(/^\$[A-Z]+/)?.[0];
     if (!v) continue;
-    assert.ok(schema.includes(v), `${v} is not a path variable Tauri knows`);
+    assert.ok(known.has(v), `${v} is not a path variable Tauri knows`);
   }
 });
