@@ -48,10 +48,16 @@ export function criteria(expr){
   const e = readable(expr);
   const c = {};
   const read = [];
-  CRIT.forEach(([k,re])=>{
+  /* Which criteria this rule constrains, as one integer. Shadowing asks the
+     same question of every pair — does A constrain anything B leaves open —
+     and asking it ten string comparisons at a time is what made the analyser
+     quadratic in wall-clock as well as in pairs. See subsumes(). */
+  let bits = 0;
+  CRIT.forEach(([k,re],i)=>{
     const m = e.match(re);
-    if(m){ c[k] = m[1]; read.push([m.index, m.index + m[0].length]); }
+    if(m){ c[k] = m[1]; bits |= 1 << i; read.push([m.index, m.index + m[0].length]); }
   });
+  c._bits = bits;
   c._limit  = /limit rate/.test(e);         /* rate-limited ⇒ non-deterministic */
   c._log    = /\blog\b/.test(e);
   c._negate = /!=/.test(e);
@@ -70,12 +76,34 @@ export function criteria(expr){
 }
 const listOf = v => v.startsWith("{") ? v.slice(1,-1).split(",").map(s=>s.trim()) : [v];
 
+/* Is this token in that set? The same question, over and over.
+ *
+ * `ip saddr @blocked` against a set of 200 prefixes walks all 200, and
+ * shadowing asks it for every pair of rules that names the set — which on a
+ * real ruleset is most of them. The tokens repeat; the set does not change
+ * while the analysis runs. So the answers are remembered for exactly the
+ * length of one analyse() and thrown away at the end of it.
+ *
+ * Null outside a run, deliberately. subsumes() and overlaps() are exported and
+ * a caller may have edited a set since the last analysis, so away from the one
+ * place that controls the lifetime, the uncached path is the only honest one. */
+let SETMEMO = null;
+
+function memberOf(token, name){
+  if(!SETMEMO) return inSet(token, name);
+  let seen = SETMEMO.get(name);
+  if(!seen) SETMEMO.set(name, seen = new Map());
+  let hit = seen.get(token);
+  if(hit === undefined) seen.set(token, hit = inSet(token, name));
+  return hit;
+}
+
 /* does criterion value A cover value B? */
 function covers(a,b){
   if(a===b) return true;
   const A = listOf(a), B = listOf(b);
   if(B.every(x=>A.includes(x))) return true;
-  if(a.startsWith("@")) return B.every(x=>inSet(x, a.slice(1)));
+  if(a.startsWith("@")) return B.every(x=>memberOf(x, a.slice(1)));
   /* Addresses and prefixes, in either family. This was gated behind a regex
      only IPv4 could pass, so a v6 rule shadowed by a broader v6 rule went
      unreported — and it compared network addresses without their prefix
@@ -94,6 +122,12 @@ function covers(a,b){
 export function subsumes(a,b){
   if(a._limit || a._negate || b._negate) return false;   /* can't reason safely */
   if(a._opaque) return false;
+  /* One integer instead of up to ten string comparisons, and exactly the same
+     question the loop below used to ask first: if A constrains anything B
+     leaves open, B is the broader rule and A cannot cover it. Most pairs in a
+     real ruleset die here, which is the difference between an analyser that
+     runs while you type and one that does not. */
+  if((a._bits & ~b._bits) !== 0) return false;
   return CRIT.every(([k])=>{
     if(a[k]===undefined) return true;      /* a is wildcard here */
     if(b[k]===undefined) return false;     /* b is broader than a */
@@ -116,6 +150,9 @@ const F = (sev,kind,o) => Object.assign({sev,kind},o);
 
 export function analyse(){
   const out = [], live = ch => ch.rules.map((r,i)=>({r,i})).filter(x=>x.r.on);
+  /* set membership is fixed for the length of this call, and only for it */
+  SETMEMO = new Map();
+  try{
 
   MODEL.chains.forEach(ch=>{
     const rs = live(ch).map(x=>({...x, c:criteria(x.r.expr)}));
@@ -310,6 +347,7 @@ export function analyse(){
      parked table means none of the rules below are running at all. */
   const kindRank = k => k==="syntax" || k==="dormant" ? 0 : 1;
   return out.sort((a,b)=> rank[a.sev]-rank[b.sev] || kindRank(a.kind)-kindRank(b.kind));
+  } finally { SETMEMO = null; }
 }
 
 /* worst-case evaluations along the two real packet paths */

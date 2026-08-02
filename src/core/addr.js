@@ -68,7 +68,31 @@ export function v6(a) {
   return groups.reduce((n, g) => (n << 16n) | BigInt(g), 0n);
 }
 
-export const toBig = (a) => (family(a) === 6 ? v6(a) : v4(a));
+/* Parsing the same address over and over is where the analyser's time went.
+ *
+ * Shadowing asks whether one criterion covers another, and a criterion is
+ * often a set: `ip saddr @blocked` against a set of 200 prefixes re-parsed
+ * every one of them, for every pair of rules, from the dotted string up. On a
+ * thousand-rule ruleset that was almost the whole second an edit cost. A
+ * profile said so — v4(), looksLikeAddr() and inCidr() were the top four
+ * entries and the shadowing logic itself did not appear.
+ *
+ * These are pure functions of a string, so the answer never goes stale. The
+ * cap is there because a long editing session invents new strings as you type,
+ * and an unbounded cache in a program that stays open for a day is a leak with
+ * good manners. */
+const PARSED = new Map();
+const CAP = 20000;
+
+export function toBig(a) {
+  const s = String(a ?? "").trim();
+  const hit = PARSED.get(s);
+  if (hit !== undefined) return hit;
+  const val = family(s) === 6 ? v6(s) : v4(s);
+  if (PARSED.size >= CAP) PARSED.clear();
+  PARSED.set(s, val);
+  return val;
+}
 
 /* Is `ip` inside `spec`? `spec` is an address or a prefix, in either family.
    An address of one family is never inside a prefix of the other — which is
