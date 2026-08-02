@@ -58,3 +58,41 @@ test("unquoted iif/oif interface names are honoured", () => {
   assert.ok(matches(loOut, { oif: "lo", tracked: true }));
   assert.ok(!matches(loOut, { oif: "wan0", tracked: true }), "must not match every interface");
 });
+
+/* `iif "lo"` is what nft prints, so it is what every imported ruleset contains.
+   It used to match every packet: the bare form was special-cased for lo only,
+   and the quoted form was only recognised after `iifname`. A packet arriving on
+   wan0 walked into the loopback rule and was accepted there. */
+test("an interface constraint holds however it is spelled", () => {
+  const r = (expr) => ({ expr, verdict: "accept", on: true });
+  const on = (iif) => ({ iif, tracked: true });
+
+  for (const expr of ['iif "lo"', "iif lo", 'iifname "lo"', "iifname lo"]) {
+    assert.ok(matches(r(expr), on("lo")), `${expr} should match lo`);
+    assert.ok(!matches(r(expr), on("wan0")),
+      `${expr} matched a packet from wan0 — the constraint was dropped`);
+  }
+});
+
+test("interface names other than lo are honoured too", () => {
+  const r = { expr: 'iif "eth0"', verdict: "accept", on: true };
+  assert.ok(matches(r, { iif: "eth0", tracked: true }));
+  assert.ok(!matches(r, { iif: "eth1", tracked: true }));
+  assert.ok(!matches(r, { iif: "", tracked: true }), "no interface is not every interface");
+});
+
+test("a negated or listed interface behaves", () => {
+  const neg = { expr: 'iifname != "wan0"', verdict: "accept", on: true };
+  assert.ok(matches(neg, { iif: "br-lan", tracked: true }));
+  assert.ok(!matches(neg, { iif: "wan0", tracked: true }));
+
+  const list = { expr: 'iifname { "br-lan", "wg0" }', verdict: "accept", on: true };
+  assert.ok(matches(list, { iif: "wg0", tracked: true }));
+  assert.ok(!matches(list, { iif: "wan0", tracked: true }));
+});
+
+/* the exact report: the sample ruleset's third input rule is `iif "lo"` */
+test("a packet from wan0 does not stop at the loopback rule", () => {
+  const lo = { expr: 'iif "lo"', verdict: "accept", on: true };
+  assert.ok(!matches(lo, { ...PRESETS.ssh }), "ssh arrives on wan0, not on lo");
+});

@@ -20,6 +20,23 @@ export function matchVal(v, tok){
   return String(v)===tok;
 }
 
+/* An interface constraint has four spellings and they all mean the same thing
+   to a packet: `iif lo`, `iif "lo"`, `iifname "eth0"`, `iifname eth0`, each
+   optionally negated or given a set. nft writes the quoted form when it lists a
+   ruleset, so anything imported from a live host used the quoted one — and only
+   the bare `iif lo` and the quoted `iifname` were recognised. The other two
+   silently matched every packet, which is the worst way for a filter to fail.
+   (iif resolves to a device index at load time and iifname compares the name;
+   that changes what survives a device being recreated, not what matches.) */
+const IFACE_RE = dir => new RegExp(`\\b${dir}(?:name)?\\s+(!=\\s*)?("[^"]*"|\\{[^}]*\\}|@?\\S+)`);
+const unquote = s => s.replace(/^"([^"]*)"$/, "$1");
+function matchIface(v, tok){
+  if(tok.startsWith("@")) return inSet(v, tok.slice(1));
+  if(tok.startsWith("{"))
+    return tok.slice(1,-1).split(",").map(s=>unquote(s.trim())).filter(Boolean).includes(String(v));
+  return String(v ?? "") === unquote(tok);
+}
+
 export function matches(r,p){
   const e = r.expr;
   if(!e) return true;
@@ -41,10 +58,8 @@ export function matches(r,p){
       : want.every(has);
     if(m[1] ? hit : !hit) return false;
   }
-  if((m=e.match(/\biif lo\b/)) && p.iif!=="lo") return false;
-  if((m=e.match(/\boif lo\b/)) && p.oif!=="lo") return false;
-  if((m=e.match(/iifname "([^"]+)"/)) && m[1]!==p.iif) return false;
-  if((m=e.match(/oifname "([^"]+)"/)) && m[1]!==p.oif) return false;
+  if((m=e.match(IFACE_RE("iif")))){ const hit = matchIface(p.iif, m[2]); if(m[1]?hit:!hit) return false; }
+  if((m=e.match(IFACE_RE("oif")))){ const hit = matchIface(p.oif, m[2]); if(m[1]?hit:!hit) return false; }
   if((m=e.match(/ip saddr (!= )?(\S+)/))){ const hit = matchVal(p.saddr,m[2]); if(m[1]?hit:!hit) return false; }
   if((m=e.match(/ip daddr (!= )?(\S+)/))){ const hit = matchVal(p.daddr,m[2]); if(m[1]?hit:!hit) return false; }
   if((m=e.match(/meta l4proto \{([^}]*)\}/)) && !m[1].split(",").map(s=>s.trim()).includes(p.proto)) return false;
