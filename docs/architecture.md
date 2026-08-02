@@ -56,7 +56,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 461 assertions.
+`npm test` — 472 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across
@@ -75,6 +75,8 @@ running app:
 | `shadowing` | a parameter named after a shared helper |
 | `capabilities` | a window command with no Tauri capability |
 | `ui-layout` | layout deriving a card's height from a rule count |
+| `ui-panels` | a grid child with no column, which moves when a sibling hides |
+| `release` | three files carrying the version, disagreeing |
 
 The interface layer exists because a green core suite is not evidence that the
 product works. The packet simulator once shipped broken while all 18 core tests

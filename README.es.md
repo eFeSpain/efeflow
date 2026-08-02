@@ -52,6 +52,10 @@ la biblioteca. Arrastra reglas para reordenarlas, incluso entre cadenas. Cada
 regla lleva una franja de color con su verdict, así que entornar los ojos ante
 una cadena da el código de barras de la política.
 
+Los dos paneles laterales se pliegan —`[` y `]`, o los dos botones de la barra
+del lienzo— y el lienzo se queda con el sitio que dejan. En un portátil de
+1440px, eso es la diferencia entre medio ruleset en pantalla y todo él.
+
 ### Te dice qué está mal en tu ruleset
 
 <img src="docs/validate.png" width="880" alt="La pantalla de validación">
@@ -197,7 +201,7 @@ aproximadamente qué regla estás borrando es peor que no borrar ninguna.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 461 aserciones
+npm test             # 472 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 

@@ -1535,8 +1535,8 @@ $$("[data-preset]").forEach(b=>b.addEventListener("click",()=>{
 }));
 document.addEventListener("keydown",e=>{
   const onSim = $("#s-sim").classList.contains("on");
-  if(e.key==="Enter" && onSim && !e.target.closest("input")) runSim();
-  if(e.code==="Space" && onSim && STEP.waiting && !e.target.closest("input,textarea")){
+  if(e.key==="Enter" && onSim && !e.target?.closest?.("input")) runSim();
+  if(e.code==="Space" && onSim && STEP.waiting && !e.target?.closest?.("input,textarea")){
     e.preventDefault(); STEP.next();
   }
   if((e.ctrlKey||e.metaKey) && e.shiftKey && e.key.toLowerCase()==="r"){ e.preventDefault(); go("sim"); runSim(); }
@@ -1673,10 +1673,56 @@ $(".cv-tools").addEventListener("click", e=>{
   sc.addEventListener("pointercancel", end);
 })();
 document.addEventListener("keydown", e=>{
-  if(e.target.closest("input, textarea, select")) return;
+  /* the event target is not always an element — a key dispatched at the
+     document itself threw here, taking every later handler with it */
+  if(e.target?.closest?.("input, textarea, select")) return;
   if(e.key==="v" || e.key==="V") $('[data-tool="select"]')?.click();
   if(e.key==="h" || e.key==="H") $('[data-tool="pan"]')?.click();
 });
+
+/* ══ SIDE PANELS ════════════════════════════════════════════════════════
+   The library and the properties panel took 564px between them, fixed. On a
+   1440px laptop that left the canvas 828 — 57% of the window for the thing the
+   window is about — and a ruleset wide enough to need the space scrolled
+   sideways at every zoom where a rule was still readable. Fit to view already
+   apologised for it in a toast.
+
+   Either one can be put away now, and the grid track goes with it rather than
+   leaving a hole. Which is also what floating the properties panel should
+   always have done: it left the 320px column standing, empty, and dropped the
+   panel on top of the canvas — so it cost you the space twice. */
+const PKEY = "efeflow.panels";
+const PANELS = (()=>{
+  try{ return {lib:true, props:true, ...JSON.parse(localStorage.getItem(PKEY) || "{}")}; }
+  catch{ return {lib:true, props:true}; }   /* private mode, or a mangled value */
+})();
+
+function applyPanels(){
+  const ed = $("#s-editor"), floating = $(".props").classList.contains("floating");
+  ed.classList.toggle("lib-off", !PANELS.lib);
+  ed.classList.toggle("props-off", !PANELS.props || floating);
+  $("#cv-lib").classList.toggle("on", PANELS.lib);
+  $("#cv-props").classList.toggle("on", PANELS.props && !floating);
+  try{ localStorage.setItem(PKEY, JSON.stringify(PANELS)); }catch{ /* private mode */ }
+  /* the wires and the minimap viewport are drawn against the space the canvas
+     actually has, and it just changed */
+  requestAnimationFrame(()=>{ drawWires(); syncViewport(); });
+}
+
+$("#cv-lib").addEventListener("click", ()=>{ PANELS.lib = !PANELS.lib; applyPanels(); });
+$("#cv-props").addEventListener("click", ()=>{
+  /* a floating panel is neither shown nor hidden here — it is somewhere else,
+     so the first press brings it home */
+  if($(".props").classList.contains("floating")){ dockProps(); return; }
+  PANELS.props = !PANELS.props;
+  applyPanels();
+});
+document.addEventListener("keydown", e=>{
+  if(e.target?.closest?.("input, textarea, select")) return;
+  if(e.key === "[") $("#cv-lib").click();
+  if(e.key === "]") $("#cv-props").click();
+});
+applyPanels();
 
 /* ══ FLOATING PROPERTIES ═══════════════════════════════════════════════ */
 $("#props-float").addEventListener("click", ()=>{
@@ -1684,7 +1730,10 @@ $("#props-float").addEventListener("click", ()=>{
   if(aside.classList.contains("floating")){ dockProps(); return; }
   const r = aside.getBoundingClientRect();
   aside.classList.add("floating");
-  aside.style.cssText = `left:${Math.max(12, r.left-360)}px;top:${r.top+18}px;width:330px;height:min(560px,70vh)`;
+  /* where the column was, so nothing jumps — and the column closes behind it,
+     so the canvas is the one that gains the width */
+  aside.style.cssText = `left:${Math.max(12, r.left-10)}px;top:${r.top+18}px;width:330px;height:min(560px,70vh)`;
+  applyPanels();
   const bar = el("div","float-bar");
   bar.innerHTML = `<svg class="ico sm" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></svg>
     <span class="lbl" style="flex:1">${t("Properties","Propiedades")}</span>
@@ -1711,6 +1760,9 @@ function dockProps(){
   aside.classList.remove("floating");
   aside.style.cssText = "";
   $(".float-bar")?.remove();
+  /* coming home means being here: the column reopens whatever it was before */
+  PANELS.props = true;
+  applyPanels();
 }
 
 MODEL_HOOKS.push(paintDrawer);
@@ -2049,7 +2101,9 @@ document.addEventListener("contextmenu", e=>{
 
 /* ── keyboard ── */
 document.addEventListener("keydown", e=>{
-  const typing = e.target.closest("input, textarea, select");
+  /* not always an element, and this runs on every keystroke — an exception
+     here took every shortcut registered below it with it */
+  const typing = e.target?.closest?.("input, textarea, select");
   const mod = e.ctrlKey || e.metaKey;
 
   if(mod && e.key.toLowerCase()==="z" && !e.shiftKey){ e.preventDefault(); undo(); return; }

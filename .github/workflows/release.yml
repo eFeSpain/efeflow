@@ -88,5 +88,5 @@ jobs:
             Local `nft` integration is Linux-only; on Windows and macOS point
             eFeFlow at a firewall over SSH.
           releaseDraft: true
-          prerelease: false
+          prerelease: true
           args: ${{ matrix.target }}

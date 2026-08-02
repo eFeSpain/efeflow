@@ -52,6 +52,10 @@ library. Drag rules to reorder them, across chains if you like. Every rule
 carries a coloured stripe for its verdict, so squinting at a chain gives you a
 barcode of the policy.
 
+Both side panels fold away — `[` and `]`, or the two buttons in the canvas
+dock — and the canvas takes the space they leave. On a 1440px laptop that is
+the difference between half the ruleset on screen and all of it.
+
 ### It tells you what is wrong with your ruleset
 
 <img src="docs/validate.png" width="880" alt="The validation screen">
@@ -195,7 +199,7 @@ which rule you are deleting is worse than not deleting one.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 461 assertions
+npm test             # 472 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 ```
 

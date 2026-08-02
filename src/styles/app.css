@@ -368,9 +368,23 @@ select{appearance:none;cursor:pointer;padding-right:26px;
   *,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important}
 }
 
-#s-editor{grid-template-columns:244px 1fr 320px;height:100%}
+/* The two side panels take 564px of the window, so on a 1440px laptop the
+   canvas got 828 — 57% of the screen for the thing the screen is about, with
+   the ruleset scrolling sideways at every zoom that leaves a rule readable.
+   Either panel can be put away now, and the track goes with it. */
+#s-editor{--lib-w:244px;--props-w:320px;
+  grid-template-columns:var(--lib-w) 1fr var(--props-w);height:100%}
 #s-editor.on{display:grid}
-#s-editor > *{min-height:0}
+#s-editor > *{min-height:0;min-width:0}
+/* Placed explicitly, because hiding the library takes it out of the grid and
+   auto-placement then slides the canvas into the 0px track it left behind. */
+#s-editor > .lib{grid-column:1} #s-editor > .mid{grid-column:2} #s-editor > .props{grid-column:3}
+#s-editor.lib-off{--lib-w:0px}
+#s-editor.props-off{--props-w:0px}
+#s-editor.lib-off > .lib{display:none}
+/* a floating panel is out of flow, so its column has to close behind it —
+   otherwise floating cost you the panel and kept the 320px hole */
+#s-editor.props-off > .props:not(.floating){display:none}
 
 /* ── object library ── */
 .lib{display:flex;flex-direction:column;background:var(--base);border-right:1px solid var(--line)}
@@ -620,6 +634,8 @@ pre.code{margin:0;padding:10px 0 18px;font:450 11.5px/1.65 var(--mono);letter-sp
   background:rgba(21,27,33,.9);backdrop-filter:blur(22px) saturate(150%);
   animation:modalIn .22s var(--ease);
 }
+/* the float bar names the panel; the docked header named it a second time */
+.props.floating > .panel-hd{display:none}
 .float-bar{
   display:flex;align-items:center;gap:8px;padding:8px 8px 8px 11px;flex:none;
   border-bottom:1px solid var(--line);cursor:grab;color:var(--t3);
