@@ -1,6 +1,6 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { boot, shutdown, $, $$, click, settle } from "./harness.js";
+import { boot, shutdown, newRuleset, $, $$, click, settle } from "./harness.js";
 import { project } from "../src/core/project.js";
 
 after(shutdown);
@@ -17,6 +17,7 @@ function type(value, key = "Enter") {
 
 test("the project name can be renamed from the toolbar", async () => {
   await boot();
+  await newRuleset();          /* nothing open means nothing to name */
   assert.equal($("#proj-input").classList.contains("on"), false, "starts as a label");
 
   click("#proj-name");
@@ -57,6 +58,7 @@ test("an empty or whitespace name is refused rather than accepted", async () => 
 
 test("the table list is derived, not hard-coded", async () => {
   await boot();
+  await newRuleset();          /* an empty application has no tables to list */
   const shown = $("#proj-tables").textContent;
   assert.match(shown, /inet filter/, `expected the real tables, got "${shown}"`);
 

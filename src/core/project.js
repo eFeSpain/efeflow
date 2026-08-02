@@ -4,7 +4,10 @@
 import { MODEL } from "./model.js";
 
 export const project = {
-  name: "untitled",
+  /* Nothing is open at boot. Everything that names the project reads `open`
+     first, so an empty application says so rather than inventing a name. */
+  open: false,
+  name: "",
   path: null,          // filesystem path once saved or opened
   origin: null,        // { kind: 'file' | 'local' | 'ssh', detail }
   dirty: false,

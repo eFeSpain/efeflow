@@ -199,7 +199,41 @@
   <!-- ══ BODY ══ -->
   <div id="body">
     <nav id="rail"></nav>
-    <div id="screens"></div>
+    <div id="screens">
+      <!-- ══ NO PROJECT ══ over every screen, until one is opened. Not a
+           dialog: there is nothing behind it to dismiss it onto, which is the
+           whole point. It covers the dashboard too, which would otherwise
+           report the health of a ruleset that does not exist. ══ -->
+      <div id="empty-state">
+        <div class="es-in">
+          <svg class="es-mark" viewBox="20 4 236 192" aria-hidden="true">
+            <g fill="none" stroke-width="19" stroke-linecap="round" stroke="currentColor">
+              <path d="M90 20V180"/><path d="M90 20H228"/><path d="M38 100H228"/><path d="M90 180H228"/>
+            </g>
+            <circle cx="90" cy="100" r="17" fill="none" stroke="currentColor" stroke-width="10"/>
+          </svg>
+          <h2 data-t="No project open|Ningún proyecto abierto">No project open</h2>
+          <p data-t="eFeFlow designs nftables rulesets. It does not manage a firewall — nothing reaches a live host unless you ask. Start from nothing, or bring in what you already run.|eFeFlow diseña rulesets de nftables. No gestiona un firewall: nada llega a una máquina en producción salvo que lo pidas. Empieza de cero, o trae lo que ya tienes en marcha.">eFeFlow designs nftables rulesets.</p>
+
+          <div class="es-choices">
+            <button class="choice" id="es-new">
+              <span class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+              <span><span class="h" data-t="New ruleset|Ruleset nuevo">New ruleset</span>
+                <span class="d" data-t="A bare inet table with the three filter hooks and a drop policy, ready to build on.|Una tabla inet vacía con los tres hooks de filtrado y política drop, lista para construir.">A bare inet table.</span></span>
+              <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
+            <button class="choice" id="es-import">
+              <span class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 16V3"/><path d="m7 8 5-5 5 5"/><path d="M4 21h16"/></svg></span>
+              <span><span class="h" data-t="Open or import|Abrir o importar">Open or import</span>
+                <span class="d" data-t="A saved project, a .nft file, a paste of nft list ruleset, or a worked example. Every rule is verified before anything is replaced.|Un proyecto guardado, un fichero .nft, un pegado de nft list ruleset, o un ejemplo resuelto. Cada regla se verifica antes de reemplazar nada.">A project, a file, a paste, an example.</span></span>
+              <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+            </button>
+          </div>
+
+          <button class="tb" id="es-tour" style="margin-top:14px"><svg class="ico" viewBox="0 0 24 24"><path d="M5 3v18l15-9z"/></svg><span data-t="Or take the interactive tutorial|O haz el tutorial interactivo">Or take the interactive tutorial</span></button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ══ STATUS BAR ══ -->
@@ -947,52 +981,6 @@
       <span style="flex:1"></span>
       <button class="tb" id="cf-no" data-t="Cancel|Cancelar">Cancel</button>
       <button class="tb pri" id="cf-yes">—</button>
-    </div>
-  </div>
-</div>
-
-<div class="scrim" id="scrim-welcome">
-  <div class="modal glass" style="width:min(620px,92vw);margin-top:12vh">
-    <div class="welcome-hd">
-      <svg class="w-mark" viewBox="20 4 236 192" aria-hidden="true">
-        <defs>
-          <linearGradient id="w-trunk" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#39D5FF"/><stop offset="1" stop-color="#0078FF"/></linearGradient>
-          <linearGradient id="w-ok" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stop-color="#3AD5FF"/><stop offset="1" stop-color="#46FF75"/></linearGradient>
-          <linearGradient id="w-no" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stop-color="#4BBEFF"/><stop offset="1" stop-color="#FF5050"/></linearGradient>
-        </defs>
-        <g fill="none" stroke-width="19" stroke-linecap="round">
-          <path d="M90 20V180" stroke="url(#w-trunk)"/><path d="M90 20H228" stroke="url(#w-ok)"/>
-          <path d="M38 100H228" stroke="url(#w-trunk)"/><path d="M90 180H228" stroke="url(#w-no)"/>
-        </g>
-        <circle cx="90" cy="100" r="17" fill="none" stroke="#39D5FF" stroke-width="10"/>
-      </svg>
-      <div>
-        <h2 data-t="Where would you like to start?|¿Por dónde quieres empezar?">Where would you like to start?</h2>
-        <p data-t="eFeFlow designs nftables rulesets. It does not manage a firewall — nothing reaches a live host unless you ask.|eFeFlow diseña rulesets de nftables. No gestiona un firewall: nada llega a una máquina en producción salvo que lo pidas.">eFeFlow designs nftables rulesets.</p>
-      </div>
-    </div>
-    <div class="modal-body" style="gap:8px">
-      <button class="choice" data-start="import">
-        <span class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 16V3"/><path d="m7 8 5-5 5 5"/><path d="M4 21h16"/></svg></span>
-        <span><span class="h" data-t="Import a ruleset|Importar un ruleset">Import a ruleset</span>
-          <span class="d" data-t="Paste the output of nft list ruleset, or open a .nft file. eFeFlow verifies it can reproduce every rule before importing anything.|Pega la salida de nft list ruleset, o abre un fichero .nft. eFeFlow verifica que puede reproducir cada regla antes de importar nada.">Paste nft list ruleset.</span></span>
-        <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
-      </button>
-      <button class="choice" data-start="empty">
-        <span class="ci"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
-        <span><span class="h" data-t="Start empty|Empezar en blanco">Start empty</span>
-          <span class="d" data-t="A bare inet table with the three filter hooks and a drop policy, ready to build on.|Una tabla inet vacía con los tres hooks de filtrado y política drop, lista para construir.">A bare inet table.</span></span>
-        <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
-      </button>
-    </div>
-    <div class="modal-ft">
-      <button class="tb" data-start="sample" data-t="Read the guide first|Leer primero la guía" data-guide>Read the guide first</button>
-      <span style="flex:1"></span>
-      <span class="lbl" style="text-transform:none;letter-spacing:0;font-size:11px"
-            data-t="You can switch at any time from the toolbar.|Puedes cambiar cuando quieras desde la barra.">You can switch at any time.</span>
     </div>
   </div>
 </div>

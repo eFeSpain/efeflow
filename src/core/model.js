@@ -29,7 +29,12 @@ export function blankRuleset(){
   };
 }
 
-export const MODEL = blankRuleset();
+/* Nothing is open until someone opens something. The application used to boot
+   holding a ruleset called "untitled" that the user had not asked for, which
+   is a small lie about what state you are in — and the one state where it
+   matters, because every screen describes a ruleset. blankRuleset() is what
+   New produces; this is what no project looks like. */
+export const MODEL = { chains: [], sets: [] };
 
 export const VCOLOR = {accept:"--v-accept",drop:"--v-drop",reject:"--v-reject",jump:"--v-jump",dnat:"--v-dnat",snat:"--v-snat",log:"--v-log"};
 export const VNAME  = {accept:"ACCEPT",drop:"DROP",reject:"REJECT",jump:"JUMP",dnat:"DNAT",snat:"SNAT",log:"LOG"};

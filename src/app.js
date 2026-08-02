@@ -2016,6 +2016,7 @@ $("#imp-go").addEventListener("click", ()=>{
     }));
     MODEL.sets = p.sets.map(s=>({n:s.n, t:s.t, f:s.f, el:s.el, kind:s.kind, table:s.table}));
   });
+  openProject();
   $$(".scrim").forEach(s=>s.classList.remove("on"));
   go("editor");
   setZoom(.72);
@@ -2686,7 +2687,7 @@ filePick.addEventListener("change", ()=>{
         edit(t("open project","abrir proyecto"), ()=>{ MODEL.chains = o.chains; MODEL.sets = o.sets; });
         /* the name and the scratch lists are part of the project, not the
            ruleset, so they sit outside the undo snapshot */
-        setProject({name:o.name, scratch:o.scratch, origin:f.name, dirty:false});
+        setProject({open:true, name:o.name, scratch:o.scratch, origin:f.name, dirty:false});
         showProject();
         /* Import is a scrim, not a screen, so go() changes what is underneath
            and leaves the overlay standing — with its Import button disabled,
@@ -2814,7 +2815,7 @@ function startEmpty(){
      They stay outside the undo snapshot, as everywhere else: the palette edits
      them without going through edit(), and a snapshot that owned them would let
      an unrelated undo quietly revert one. */
-  setProject({name:"untitled", origin:null, path:null,
+  setProject({open:true, name:"untitled", origin:null, path:null,
               scratch:{ifaces:[], networks:[]}});
   edit(t("new ruleset","ruleset nuevo"), ()=>{
     const e = blankRuleset();
@@ -2826,10 +2827,13 @@ function startEmpty(){
 
 
 function showProject(){
+  /* With nothing open the name is empty, which left a folder icon over a gap
+     that read as something failing to load. It says what it is instead. */
+  const label = project.open ? project.name : t("no project","sin proyecto");
   const nm = $("#proj-name-t");
-  if(nm) nm.textContent = project.name;
+  if(nm){ nm.textContent = label; nm.classList.toggle("dimmer", !project.open); }
   const tb = $("#tb-proj");
-  if(tb) tb.textContent = project.name;
+  if(tb) tb.textContent = label;
   /* the table list was hard-coded to "inet fw", which stopped being true the
      moment anyone imported or started fresh */
   const tables = [...new Set(MODEL.chains.map(c=>c.table))];
@@ -2841,7 +2845,7 @@ function showProject(){
   /* Everywhere else the name or the origin was written out by hand. Each of
      those was a small lie the moment anything was imported or renamed. */
   const rules = MODEL.chains.reduce((a,c)=>a+c.rules.filter(r=>r.on).length,0);
-  const dn = $("#dash-name");   if(dn) dn.textContent = project.name;
+  const dn = $("#dash-name");   if(dn) dn.textContent = label;
   const ds = $("#dash-sub");
   if(ds) ds.textContent = [
     tables.join(" · ") || t("no tables yet","aún sin tablas"),
@@ -2853,7 +2857,7 @@ function showProject(){
   ].join(" · ");
   const cf = $("#code-filename");
   if(cf) cf.textContent = t("Generated · ","Generado · ") + project.name + ".nft";
-  const ap = $("#about-project"); if(ap) ap.textContent = project.name;
+  const ap = $("#about-project"); if(ap) ap.textContent = label;
   $$(".fname").forEach(n=> n.textContent = project.name + ".nft");
 }
 
@@ -2861,6 +2865,7 @@ function showProject(){
    The name is not decoration: it goes in the header comment of the generated
    ruleset and becomes the export filename. */
 function beginRename(){
+  if(!project.open) return;      /* there is nothing to name yet */
   const btn = $("#proj-name"), input = $("#proj-input");
   input.value = project.name;
   btn.style.display = "none";
@@ -2897,18 +2902,9 @@ document.addEventListener("keydown", e=>{
   if(e.key === "F2" && !e.target.closest("input, textarea")){ e.preventDefault(); beginRename(); }
 });
 
-const openWelcome = ()=> $("#scrim-welcome").classList.add("on");
-
-$("#scrim-welcome").addEventListener("click", e=>{
-  const b = e.target.closest("[data-start]");
-  if(!b) return;
-  $$(".scrim").forEach(s=>s.classList.remove("on"));
-  localStorage.setItem("efeflow.seen", "1");
-  if(b.dataset.start === "import") go("import");
-  else if(b.dataset.start === "empty") startEmpty();
-  else if(b.hasAttribute("data-guide")) go("help");
-  else go("editor");
-});
+/* The first-run dialog and its opener lived here. Both are gone: the empty
+   state offers the same choices, and it is what you are looking at rather
+   than something laid over what you were looking at. */
 
 /* The sample badge is the affordance, not just a label: it says what this is
    and clicking it offers the way out. A first-run dialog you can dismiss is
@@ -3375,8 +3371,9 @@ MODEL_HOOKS.push(showProject);
 RERENDER.push(showProject);
 showProject();
 
-if(!localStorage.getItem("efeflow.seen"))
-  setTimeout(()=>$("#scrim-welcome")?.classList.add("on"), 250);
+/* The first-run dialog used to open here, over a ruleset the user had not
+   asked for. The empty state says the same three things without anything
+   behind it to dismiss it onto. */
 
 /* ══ INTERACTIVE TUTORIAL ═══════════════════════════════════════════════
    A spotlight and a card over the real interface, rather than a slideshow
@@ -3477,3 +3474,24 @@ $("#tour-back").addEventListener("click", ()=>tourGo(TOURI - 1));
 $("#tour-x").addEventListener("click", endTour);
 $("#g-tour-go").addEventListener("click", startTour);
 document.addEventListener("keydown", e=>{ if(e.key === "Escape" && tourOn()) endTour(); });
+
+/* ══ NO PROJECT ═════════════════════════════════════════════════════════
+   Everything on every screen describes a ruleset, so booting with one nobody
+   asked for was a small lie about what state you were in. The empty state is
+   the entry point now — it replaced a first-run dialog that sat over a
+   project called "untitled", which you then had to notice and get rid of. */
+function paintEmpty(){
+  const es = $("#empty-state"); if(!es) return;
+  es.classList.toggle("on", !project.open);
+}
+function openProject(){
+  if(project.open) return;
+  setProject({open:true});
+  paintEmpty();
+}
+MODEL_HOOKS.push(paintEmpty);
+paintEmpty();
+
+$("#es-new").addEventListener("click", ()=>{ startEmpty(); });
+$("#es-import").addEventListener("click", ()=>go("import"));
+$("#es-tour").addEventListener("click", ()=>{ startEmpty(); startTour(); });

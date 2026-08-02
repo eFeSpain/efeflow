@@ -1,6 +1,6 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { boot, shutdown, importFixture, $, $$, click, setValue, settle } from "./harness.js";
+import { boot, shutdown, importFixture, newRuleset, $, $$, click, setValue, settle } from "./harness.js";
 import { MODEL } from "../src/core/model.js";
 
 after(shutdown);
@@ -47,6 +47,7 @@ test("priorities can be given by name", async () => {
 
 test("a duplicate chain name in the same table is refused", async () => {
   await boot();
+  await newRuleset();          /* nothing is open at boot, so there is nothing to clash with */
   click("#chain-new");
   setValue("#ch-name", "input", "input");
   setValue("#ch-table", "inet filter", "input");
