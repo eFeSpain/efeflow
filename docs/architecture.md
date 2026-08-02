@@ -135,11 +135,31 @@ Take rustfmt's output rather than configuring around it. It is the convention
 CI enforces, and there are under two hundred lines of Rust here to have an
 opinion about.
 
-## Screenshots
+## Screenshots and GIFs
 
-`npm run shots` regenerates `docs/*.png` from the real frontend in headless
-Chromium. Committed images go stale silently, so regenerate them when the
-interface changes.
+Both drive the real frontend in headless Chromium, and both import the flawed
+fixture the way a user would — through the import dialog. Committed media goes
+stale silently, so regenerate it when the interface changes.
+
+`npm run shots` produces the one still the README uses: the canvas, whose
+layout is the single idea here that prose struggles with. There were nine, and
+eight of them showed a window rather than a finding.
+
+`npm run gifs` records the three scenes that carry the argument — paste and see
+it proved, a packet walking to a verdict, a shadowed rule next to the button
+that deletes it. One browser context per scene, then ffmpeg trims the setup off
+the front and encodes with a per-scene palette; a shared one turns the aqua on
+near-black into mud. It needs **ffmpeg on PATH**, the only dependency in this
+repo that is not npm.
+
+Two things a recorder has to be told, because neither is automatic. A browser
+records the page and not the pointer, so a cursor is drawn into the page from
+real mouse events — it cannot claim a click that did not happen. And a demo is
+not a test: acted at test speed it is unreadable, so the pauses are deliberate.
+
+Everything is produced twice, `name.png` and `name.es.png`. An English page
+illustrated with a Spanish interface reads as nobody having looked, and
+`test/readme.test.js` holds each README to its own language.
 
 ## Platform notes
 

@@ -1,10 +1,15 @@
-/* Screenshots for the README.
+/* The one screenshot the README still uses.
  *
- * Runs the real frontend in a headless browser, loads the flawed fixture the
- * way a user would — through the import dialog — and captures each screen.
- * Committed images go stale silently, so this exists to regenerate them:
+ * There were nine. Eight of them showed a window rather than a finding, which
+ * is the difference between "look at my interface" and "look at what it found"
+ * — and anything that moves belongs to the recorder now (`npm run gifs`). What
+ * survives is the canvas, because its layout is the one idea here that prose
+ * struggles with: a chain sits at the hook it is attached to, left to right in
+ * the order a packet meets them, and at its priority, top to bottom.
  *
  *   npm run shots
+ *
+ * Committed images go stale silently, so this exists to regenerate it.
  */
 
 import { chromium } from "playwright";
@@ -12,70 +17,55 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { createServer } from "vite";
 
 const OUT = new URL("../docs/", import.meta.url);
-const W = 1440;
-const H = 900;
+const W = 1440, H = 900;
+/* one per README: an English page illustrated with a Spanish interface reads
+   as nobody having looked */
+const LANGS = [["en", ""], ["es", ".es"]];
+
+const path = (u) => decodeURIComponent(u.pathname).replace(/^\/([A-Za-z]:)/, "$1");
 
 mkdirSync(OUT, { recursive: true });
 
 const fixture = readFileSync(new URL("../test/fixtures/flawed.nft", import.meta.url), "utf8");
-
 const server = await createServer({ server: { port: 5199, strictPort: true } });
 await server.listen();
-
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 2 });
-page.on("pageerror", (e) => console.log("  page error:", e.message));
 
-await page.goto("http://localhost:5199/", { waitUntil: "networkidle" });
+for (const [lang, suffix] of LANGS) {
+  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 2 });
+  await ctx.addInitScript(`localStorage.setItem("efeflow.lang", ${JSON.stringify(lang)});`);
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => console.log("  page error:", e.message));
 
-/* the splash draws itself for ~2.1s; catch it mid-draw for the hero, then let
-   it finish rather than tearing it off early */
-await page.waitForTimeout(1200);
-await shot("boot", "the mark drawing itself");
-await page.waitForTimeout(1800);
+  await page.goto("http://localhost:5199/", { waitUntil: "networkidle" });
+  await page.waitForTimeout(3400);        /* the mark draws itself for ~2.1s */
 
-/* What a launch actually looks like now: nothing open. Captured before the
-   fixture goes in, because afterwards there is no way back to it. */
-await shot("empty", "no project open");
+  /* through the import dialog, the way a ruleset actually arrives */
+  await page.evaluate((text) => {
+    const area = document.querySelector("#imp-text");
+    area.value = text;
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector("#imp-go").click();
+  }, fixture);
+  await page.waitForTimeout(1200);
 
-/* load something worth looking at */
-await page.evaluate((text) => {
-  const area = document.querySelector("#imp-text");
-  area.value = text;
-  area.dispatchEvent(new Event("input", { bubbles: true }));
-  document.querySelector("#imp-go").click();
-}, fixture);
-await page.waitForTimeout(400);
-
-async function shot(name, note) {
-  /* Park the pointer somewhere with nothing under it. Switching screens leaves
-     it on the rail button that was clicked, and its tooltip then opens over
-     whatever the shot was of — the set list spent a release with "Gestor de
-     sets Alt 4" across it. */
-  await page.mouse.move(W / 2, H - 4);
-  await page.waitForTimeout(200);
-  await page.screenshot({ path: new URL(`${name}.png`, OUT).pathname.slice(1) });
-  console.log(`  ${name.padEnd(12)} ${note}`);
-}
-
-async function screen(id, name, note, before) {
-  await page.click(`.rb[data-go="${id}"]`);
-  if (before) await before();
-  await page.waitForTimeout(500);
-  await shot(name, note);
-}
-
-await screen("editor", "editor", "the hook rail canvas", async () => {
-  await page.waitForTimeout(400);
+  await page.click('.rb[data-go="editor"]');
+  await page.waitForTimeout(700);
   await page.click('.chain[data-chain="inet fw/input"] .rule:nth-child(6)').catch(() => {});
-});
+  await page.waitForTimeout(600);
 
-await screen("validate", "validate", "findings derived from the ruleset");
-await screen("sim", "simulator", "a packet walking the chains", () => page.waitForTimeout(3200));
-await screen("sets", "sets", "sets with their back-references");
-await screen("topo", "topology", "interfaces derived from the rules");
-await screen("code", "code", "generated source and the optimiser");
-await screen("dash", "dashboard", "the ruleset at a glance");
+  /* Park the pointer where nothing is under it. Switching screens leaves it on
+     the rail button that was clicked, and its tooltip then opens over whatever
+     the shot was of — the set list spent a release with "Gestor de sets Alt 4"
+     across it. */
+  await page.mouse.move(W / 2, H - 4);
+  await page.waitForTimeout(250);
+
+  const name = `editor${suffix}.png`;
+  await page.screenshot({ path: path(new URL(name, OUT)) });
+  console.log(`  ${name.padEnd(16)} the hook rail canvas, in ${lang}`);
+  await ctx.close();
+}
 
 await browser.close();
 await server.close();

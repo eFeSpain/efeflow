@@ -172,7 +172,7 @@ sobreviva al round-trip— son la vía más rápida hasta ahí.
    distinto del de hace un minuto.
 5. **Exporta**, o **aplica** con un rollback de 60 segundos armado en la máquina.
 
-<img src="docs/editor.png" width="880" alt="El lienzo: cadenas colocadas a lo largo de los hooks de netfilter, en orden de prioridad">
+<img src="docs/editor.es.png" width="880" alt="El lienzo: cadenas colocadas a lo largo de los hooks de netfilter, en orden de prioridad">
 
 El lienzo coloca cada cadena en el hook de netfilter al que está enganchada —de
 izquierda a derecha, en el orden en que un paquete los encuentra— y en su

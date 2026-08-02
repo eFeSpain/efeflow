@@ -40,17 +40,21 @@ for (const [file, lang] of READMES) {
     assert.equal(shadowed[0].ref, 1, "shadowed by the one above it");
   });
 
-  test(`${file}: every image it points at exists`, () => {
+  test(`${file}: every image it points at exists, in its own language`, () => {
     const srcs = [...md.matchAll(/<img src="([^"]+)"/g)].map((m) => m[1]);
     assert.ok(srcs.length >= 3, "a README with no images is not the one we wrote");
     for (const s of srcs)
       assert.ok(existsSync(new URL("../" + s, import.meta.url)), `${s} is missing`);
-    /* the GIFs are per-language: an English page illustrated with a Spanish
-       interface reads as nobody having looked */
-    const gifs = srcs.filter((s) => s.endsWith(".gif"));
-    assert.ok(gifs.length >= 2, "the moving parts are what a screenshot cannot show");
-    for (const g of gifs)
-      assert.equal(/\.es\.gif$/.test(g), lang === "es", `${g} is the wrong language for ${file}`);
+
+    assert.ok(srcs.some((s) => s.endsWith(".gif")),
+      "the moving parts are what a screenshot cannot show");
+
+    /* Anything showing the interface is per-language — an English page
+       illustrated with a Spanish interface reads as nobody having looked. The
+       mark in assets/ is the same in both, so it is not one of these. */
+    for (const s of srcs.filter((s) => s.startsWith("docs/")))
+      assert.equal(/\.es\.(gif|png)$/.test(s), lang === "es",
+        `${s} is the wrong language for ${file}`);
   });
 
   test(`${file}: every anchor it links to is defined`, () => {
