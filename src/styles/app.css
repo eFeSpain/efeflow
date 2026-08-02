@@ -1045,3 +1045,47 @@ pre.code{margin:0;padding:10px 0 18px;font:450 11.5px/1.65 var(--mono);letter-sp
 .rt-diff{font:450 10.5px/1.6 var(--mono);padding:7px 9px;border-radius:var(--r-sm);
   background:var(--sunken);border:1px solid var(--line);margin-top:6px;overflow-x:auto}
 .rt-diff .a{color:var(--v-drop)} .rt-diff .b{color:var(--v-accept)}
+
+/* ══ INTERACTIVE TUTORIAL ═══════════════════════════════════════════════
+   The dimming is one enormous box-shadow spreading outwards from a hole, so
+   the cut-out is a real hole rather than four rectangles that have to be kept
+   in step. The hole takes no pointer events: the whole point is that the
+   thing being pointed at stays usable. */
+#tour{position:fixed;inset:0;z-index:400;display:none;pointer-events:none}
+#tour.on{display:block}
+
+#tour-hole{
+  position:absolute;border-radius:10px;pointer-events:none;
+  box-shadow:0 0 0 9999px rgba(2,6,9,.62), 0 0 0 1.5px var(--aqua), 0 0 22px rgba(57,213,255,.5);
+  transition:top .28s var(--ease),left .28s var(--ease),width .28s var(--ease),height .28s var(--ease);
+}
+/* Nothing to point at — the step is something to read, so dim everything. */
+#tour-hole.blind{box-shadow:0 0 0 9999px rgba(2,6,9,.62);border-radius:0}
+
+#tour-card{
+  position:absolute;width:352px;max-width:calc(100vw - 28px);padding:14px 15px 12px;
+  background:var(--raised);border:1px solid var(--aqua-line);border-radius:var(--r-lg);
+  box-shadow:var(--lift),0 0 30px rgba(57,213,255,.14);
+  pointer-events:auto;transition:top .28s var(--ease),left .28s var(--ease);
+}
+.tour-hd{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+.tour-hd h3{flex:1;font:600 13.5px var(--sans);color:var(--t1);letter-spacing:-.01em}
+.tour-n{
+  flex:none;height:19px;min-width:38px;padding:0 6px;border-radius:99px;
+  display:grid;place-items:center;background:var(--aqua-wash);border:1px solid var(--aqua-line);
+  color:var(--aqua);font:600 10px var(--mono);letter-spacing:.04em;
+}
+#tour-body{font:450 12.5px/1.6 var(--sans);color:var(--t2);margin-bottom:11px}
+.tour-ft{display:flex;align-items:center;gap:7px}
+.tour-wait{
+  flex:1;font:500 10.5px var(--mono);color:var(--aqua);letter-spacing:.03em;
+  opacity:0;transition:opacity .2s var(--ease);
+}
+.tour-wait.on{opacity:1;animation:tour-pulse 1.9s var(--ease) infinite}
+@keyframes tour-pulse{0%,100%{opacity:.5}50%{opacity:1}}
+#tour-next[disabled]{opacity:.4;pointer-events:none}
+
+@media (prefers-reduced-motion:reduce){
+  #tour-hole,#tour-card{transition:none}
+  .tour-wait.on{animation:none}
+}

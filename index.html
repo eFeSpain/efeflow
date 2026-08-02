@@ -259,7 +259,7 @@
 
       <div class="cv-tools glass">
         <button data-tool="select" data-tt="Select — V|Seleccionar — V" class="on"><svg class="ico" viewBox="0 0 24 24"><path d="m4 3 7 17 2.5-6.5L20 11z"/></svg></button>
-        <button data-tool="pan" data-tt="Pan — Space|Desplazar — Espacio"><svg class="ico" viewBox="0 0 24 24"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5a1.5 1.5 0 0 1 3 0V12m0-1a1.5 1.5 0 0 1 3 0v5a5 5 0 0 1-5 5h-2a5 5 0 0 1-4.2-2.3L6 15a1.5 1.5 0 0 1 2.5-1.6L9 14"/></svg></button>
+        <button data-tool="pan" data-tt="Pan — H, or drag the background|Desplazar — H, o arrastra el fondo"><svg class="ico" viewBox="0 0 24 24"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5a1.5 1.5 0 0 1 3 0V12m0-1a1.5 1.5 0 0 1 3 0v5a5 5 0 0 1-5 5h-2a5 5 0 0 1-4.2-2.3L6 15a1.5 1.5 0 0 1 2.5-1.6L9 14"/></svg></button>
         <div class="div"></div>
         <button id="zo" data-tt="Zoom out|Alejar"><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-3.5-3.5"/></svg></button>
         <span class="zl" id="zl">100%</span>
@@ -582,6 +582,13 @@
         <li data-t="Keep console access to any machine you apply a ruleset to. A firewall you lock yourself out of is a long afternoon.|Mantén acceso por consola a cualquier máquina donde apliques un ruleset. Un firewall que te deja fuera es una tarde larga.">Keep console access.</li>
         <li data-t="Report anything that looks wrong. A rule that survives the round-trip check badly is a bug worth knowing about.|Reporta lo que veas raro. Una regla que no sobrevive bien la verificación de ida y vuelta es un bug que conviene conocer.">Report what looks wrong.</li>
       </ul>
+    </article>
+
+    <article class="gcard" id="g-tour">
+      <div class="gh"><span class="gi" style="color:var(--aqua)"><svg class="ico" viewBox="0 0 24 24"><path d="M5 3v18l15-9z"/></svg></span>
+        <h2 data-t="Interactive tutorial|Tutorial interactivo">Interactive tutorial</h2></div>
+      <p data-t="Ten steps that build one real rule on the canvas — SSH reachable from one network and nowhere else — and then show you the same rule as nft source, as a finding, and as a packet walking the chains. It runs on the interface itself, not beside it, so what you press is the product.|Diez pasos que montan una regla real en el lienzo — SSH accesible desde una red y desde ninguna otra — y luego te la enseñan como código nft, como hallazgo y como paquete recorriendo las cadenas. Corre sobre la propia interfaz, no al lado, así que lo que pulsas es el producto.">Ten steps on the real canvas.</p>
+      <button class="tb pri" id="g-tour-go" style="margin-top:10px"><svg class="ico" viewBox="0 0 24 24"><path d="M5 3v18l15-9z"/></svg><span data-t="Start the tutorial|Empezar el tutorial">Start the tutorial</span></button>
     </article>
 
     <article class="gcard">
@@ -982,6 +989,25 @@
       <span style="flex:1"></span>
       <span class="lbl" style="text-transform:none;letter-spacing:0;font-size:11px"
             data-t="You can switch at any time from the toolbar.|Puedes cambiar cuando quieras desde la barra.">You can switch at any time.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ INTERACTIVE TUTORIAL ══ a spotlight and a card, over the real interface,
+     because a tutorial that runs beside the product teaches the product ══ -->
+<div id="tour" aria-live="polite">
+  <div id="tour-hole"></div>
+  <div id="tour-card" role="dialog" aria-labelledby="tour-title">
+    <div class="tour-hd">
+      <span class="tour-n" id="tour-n"></span>
+      <h3 id="tour-title"></h3>
+      <button class="tb icon" id="tour-x" data-tt="End the tutorial|Terminar el tutorial"><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <p id="tour-body"></p>
+    <div class="tour-ft">
+      <span class="tour-wait" id="tour-wait"></span>
+      <button class="tb" id="tour-back" data-t="Back|Atrás">Back</button>
+      <button class="tb pri" id="tour-next"></button>
     </div>
   </div>
 </div>

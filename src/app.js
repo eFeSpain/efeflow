@@ -16,6 +16,7 @@ import { diffLines } from "./core/diff.js";
 import { PRIO_NAME, NAME_PRIO } from "./core/priority.js";
 import { PROJECT, project, setProject, serialise, deserialise } from "./core/project.js";
 import { SAMPLES, sampleById } from "./core/samples.js";
+import { TOUR, tourStep } from "./core/tour.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
 import { target, loadTarget, saveTarget, asTauriTarget, describe, probe } from "./target.js";
@@ -33,7 +34,7 @@ document.addEventListener("click", (e) => {
 });
 
 /* hoisted: the prototype relied on <script> ordering for these */
-let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI;
+let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI, TOURI;
 
 FIND = [];
 const $  = (s,r=document)=>r.querySelector(s);
@@ -554,18 +555,47 @@ function resetChainLayout(){
   renderChains(); drawWires();
 }
 
-/* zoom */
-function setZoom(z){
+/* zoom
+   The second argument is the point to keep still. Scaling from the corner is
+   what a transform does on its own, and it throws whatever you were looking at
+   off the screen — the further you are from the origin, the further it goes.
+   Zooming towards the pointer is the whole difference between a canvas that
+   feels steered and one that feels thrown. */
+function setZoom(z, anchor){
+  const sc = $("#cscroll");
+  const prev = zoom;
   zoom = Math.min(1.6,Math.max(.4,z));
   $("#canvas").style.transform = `scale(${zoom})`;
   $("#canvas").style.transformOrigin = "0 0";
   $("#zl").textContent = Math.round(zoom*100)+"%";
+  if(anchor && sc && prev){
+    const r = sc.getBoundingClientRect();
+    /* where the anchor sits on the canvas, in unscaled coordinates */
+    const cx = (sc.scrollLeft + anchor.x - r.left) / prev;
+    const cy = (sc.scrollTop  + anchor.y - r.top)  / prev;
+    sc.scrollLeft = cx * zoom - (anchor.x - r.left);
+    sc.scrollTop  = cy * zoom - (anchor.y - r.top);
+  }
   syncViewport();
 }
-$("#zi").onclick = ()=>setZoom(zoom+.1);
-$("#zo").onclick = ()=>setZoom(zoom-.1);
+const zoomCentre = ()=>{
+  const sc = $("#cscroll"); if(!sc) return undefined;
+  const r = sc.getBoundingClientRect();
+  return {x:r.left + sc.clientWidth/2, y:r.top + sc.clientHeight/2};
+};
+$("#zi").onclick = ()=>setZoom(zoom+.1, zoomCentre());
+$("#zo").onclick = ()=>setZoom(zoom-.1, zoomCentre());
 $("#zf").onclick = ()=>setZoom(.72);
-$("#cscroll").addEventListener("wheel",e=>{ if(e.ctrlKey){ e.preventDefault(); setZoom(zoom - e.deltaY*.0015); } },{passive:false});
+/* The wheel zooms. It used to scroll, and zoom only with Ctrl held — but this
+   is a canvas laid out in two dimensions, where scrolling by wheel reaches
+   almost nothing and the thing you actually want is to get closer. Ctrl still
+   works, for the hands that learned it. Shift scrolls sideways. */
+$("#cscroll").addEventListener("wheel", e=>{
+  if(e.shiftKey && !e.ctrlKey) return;              /* leave horizontal scroll alone */
+  e.preventDefault();
+  const step = e.deltaMode === 1 ? e.deltaY * 0.02 : e.deltaY * 0.0015;
+  setZoom(zoom - step, {x:e.clientX, y:e.clientY});
+}, {passive:false});
 
 /* ══ CODE GENERATION ════════════════════════════════════════════════════ */
 /* Tables are discovered from the model, never assumed. Hard-coding them
@@ -1214,19 +1244,32 @@ $(".cv-tools").addEventListener("click", e=>{
 (function panning(){
   const sc = $("#cscroll");
   let drag = null;
+
+  /* Empty canvas. Everything listed here has its own answer to being dragged:
+     a card moves, a rule reorders, a control is pressed. What is left is the
+     background, and dragging the background is how every canvas moves. */
+  const onBackground = node =>
+    !node.closest(".chain, .rule, .addrule, button, input, select, textarea, .cv-tools, .minimap, .legend, .hop, .ev");
+
   sc.addEventListener("pointerdown", e=>{
-    const spacePan = e.button===1;                      /* middle-drag always pans */
-    if(TOOL!=="pan" && !spacePan) return;
+    const middle = e.button===1;                        /* middle-drag always pans */
+    const bg = e.button===0 && onBackground(e.target);
+    if(!(TOOL==="pan" || middle || bg)) return;
     if(e.target.closest(".rule, .addrule, button")) return;
-    drag = {x:e.clientX, y:e.clientY, l:sc.scrollLeft, t:sc.scrollTop};
+    drag = {x:e.clientX, y:e.clientY, l:sc.scrollLeft, t:sc.scrollTop, moved:false};
     sc.setPointerCapture(e.pointerId);
-    sc.style.cursor = "grabbing"; sc.style.scrollBehavior = "auto";
-    e.preventDefault();
+    sc.style.scrollBehavior = "auto";
+    /* Not on a plain left press: the click that follows still has to reach the
+       canvas, and there is nothing on the background to select by dragging. */
+    if(!bg){ sc.style.cursor = "grabbing"; e.preventDefault(); }
   });
   sc.addEventListener("pointermove", e=>{
     if(!drag) return;
-    sc.scrollLeft = drag.l - (e.clientX - drag.x);
-    sc.scrollTop  = drag.t - (e.clientY - drag.y);
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if(!drag.moved && Math.abs(dx) + Math.abs(dy) < 3) return;   /* a press is not a drag */
+    if(!drag.moved){ drag.moved = true; sc.style.cursor = "grabbing"; }
+    sc.scrollLeft = drag.l - dx;
+    sc.scrollTop  = drag.t - dy;
   });
   const end = ()=>{ if(!drag) return; drag = null;
     sc.style.cursor = TOOL==="pan" ? "grab" : ""; sc.style.scrollBehavior = ""; };
@@ -3334,3 +3377,103 @@ showProject();
 
 if(!localStorage.getItem("efeflow.seen"))
   setTimeout(()=>$("#scrim-welcome")?.classList.add("on"), 250);
+
+/* ══ INTERACTIVE TUTORIAL ═══════════════════════════════════════════════
+   A spotlight and a card over the real interface, rather than a slideshow
+   beside it. The hole takes no pointer events, so the control being pointed
+   at stays usable — the user does the thing, and the step notices.
+
+   A step that waits still offers Skip. A tutorial you cannot get out of is a
+   trap, and someone who cannot find a control has already learned the worst
+   possible lesson about the product. */
+TOURI = -1;
+let TOURBASE = null;
+
+const tourOn = () => TOURI >= 0;
+
+function startTour(){
+  $$(".scrim").forEach(s=>s.classList.remove("on"));
+  TOURI = 0;
+  $("#tour").classList.add("on");
+  paintTour();
+}
+
+function endTour(){
+  TOURI = -1; TOURBASE = null;
+  $("#tour").classList.remove("on");
+  try{ localStorage.setItem("efeflow.tour","1"); }catch{ /* private mode */ }
+}
+
+function tourGo(n){
+  if(n < 0) return;
+  if(n >= TOUR.length) return endTour();
+  TOURI = n;
+  paintTour();
+}
+
+function paintTour(){
+  const s = tourStep(TOURI); if(!s) return endTour();
+  if(s.screen) go(s.screen);
+  TOURBASE = s.baseline ? s.baseline(MODEL) : null;
+
+  $("#tour-n").textContent = `${TOURI+1}/${TOUR.length}`;
+  $("#tour-title").textContent = t(s.title.en, s.title.es);
+  $("#tour-body").textContent  = t(s.body.en,  s.body.es);
+  $("#tour-back").style.visibility = TOURI === 0 ? "hidden" : "";
+
+  const last = TOURI === TOUR.length - 1;
+  $("#tour-next").textContent = last ? t("Done","Listo")
+                              : s.done ? t("Skip","Saltar")
+                                       : t("Next","Siguiente");
+  $("#tour-wait").textContent = s.done ? t("your turn","te toca") : "";
+  $("#tour-wait").classList.toggle("on", !!s.done);
+
+  requestAnimationFrame(placeTour);
+}
+
+/* The hole follows the target; the card avoids covering it. */
+function placeTour(){
+  const s = tourStep(TOURI); if(!s) return;
+  const hole = $("#tour-hole"), card = $("#tour-card");
+  if(!hole || !card) return;
+  const el = s.target ? $(s.target) : null;
+
+  if(!el){
+    /* nothing to point at: dim everything and centre the card */
+    hole.classList.add("blind");
+    hole.style.left = "50%"; hole.style.top = "50%";
+    hole.style.width = "0"; hole.style.height = "0";
+    card.style.left = Math.max(12, (innerWidth - 352)/2) + "px";
+    card.style.top  = Math.max(12, (innerHeight - (card.offsetHeight||190))/2) + "px";
+    return;
+  }
+
+  hole.classList.remove("blind");
+  el.scrollIntoView({block:"nearest", inline:"nearest"});
+  const r = el.getBoundingClientRect(), pad = 6;
+  hole.style.left   = (r.left - pad) + "px";
+  hole.style.top    = (r.top  - pad) + "px";
+  hole.style.width  = (r.width  + pad*2) + "px";
+  hole.style.height = (r.height + pad*2) + "px";
+
+  const cw = 352, ch = card.offsetHeight || 190;
+  card.style.left = Math.min(Math.max(12, r.left + r.width/2 - cw/2), innerWidth - cw - 12) + "px";
+  const below = r.bottom + 14;
+  card.style.top = (below + ch > innerHeight - 12 ? Math.max(12, r.top - ch - 14) : below) + "px";
+}
+
+/* The step decides when it is finished, by looking at the ruleset. */
+function tourCheck(){
+  const s = tourStep(TOURI);
+  if(!s || !s.done) return;
+  if(s.done(MODEL, TOURBASE)) tourGo(TOURI + 1);
+}
+MODEL_HOOKS.push(tourCheck);
+RERENDER.push(()=>{ if(tourOn()) requestAnimationFrame(placeTour); });
+window.addEventListener("resize", ()=>{ if(tourOn()) placeTour(); });
+
+$("#tour-next").addEventListener("click", ()=>tourGo(TOURI + 1));
+$("#tour-back").addEventListener("click", ()=>tourGo(TOURI - 1));
+$("#tour-x").addEventListener("click", endTour);
+$("#g-tour-go").addEventListener("click", startTour);
+document.addEventListener("keydown", e=>{ if(e.key === "Escape" && tourOn()) endTour(); });
