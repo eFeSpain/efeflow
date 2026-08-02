@@ -164,7 +164,14 @@ function go(id){
   /* The simulator arrives already run. An empty stage reads as "broken", and
      the result is cheap and deterministic — there is no reason to make the
      user press a button to find out what their own ruleset does. */
-  if(id==="sim")    requestAnimationFrame(()=>{ readForm(); runSim(); });
+  /* A frame is long enough to leave again. Without the check, arriving and
+     going straight back out starts a run on a screen that is no longer there,
+     and it plays on into whatever comes next — the boot path has always
+     guarded this; this one did not. */
+  if(id==="sim")    requestAnimationFrame(()=>{
+    if(!$("#s-sim")?.classList.contains("on")) return;
+    readForm(); runSim();
+  });
   else              stopSim();
 }
 document.addEventListener("click",e=>{
@@ -1012,7 +1019,12 @@ function fillInterfaces(){
   const dl = $("#dl-ifaces");
   if(dl) dl.innerHTML = names.map(n=>`<option value="${esc(n)}">`).join("");
 
-  const opts = [`<option value=""></option>`,
+  /* The empty choice has to stay — a locally generated packet has no input
+     interface, which is what the egress preset selects — but unlabelled it
+     read as a blank line you could pick by accident. It is not "any": an
+     absent interface matches no `iif` rule at all, where a rule without an
+     iif clause matches every interface. Different things, so different words. */
+  const opts = [`<option value="">${esc(t("(no interface)","(sin interfaz)"))}</option>`,
     ...names.map(n=>`<option>${esc(n)}</option>`)].join("");
   const iif = $("#sim-iif"), oif = $("#sim-oif");
   /* keep whatever the packet names even if no rule mentions it yet */

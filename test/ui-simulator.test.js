@@ -89,3 +89,27 @@ test("leaving the screen stops the animation", async () => {
   await new Promise((r) => setTimeout(r, 400));
   assert.equal(traceRows().length, frozen, "the trace kept filling after navigating away");
 });
+
+/* The interface picker carried an unlabelled empty option, which read as a
+   blank line you could select without knowing what it did. It has to stay —
+   a locally generated packet has no input interface — so it has to say so. */
+test("every choice in the interface picker says what it is", async () => {
+  await boot();
+  await importFixture();
+  enterSim();
+  await until(() => $$("#sim-iif option").length > 1);
+
+  for (const o of $$("#sim-iif option"))
+    assert.notEqual(o.textContent.trim(), "",
+      "a choice with no label is one the user cannot judge");
+
+  const blank = $$("#sim-iif option").find((o) => o.value === "");
+  assert.ok(blank, "the empty choice must remain: an egress packet has no input interface");
+  assert.doesNotMatch(blank.textContent, /any|cualquiera/i,
+    "an absent interface matches no iif rule; it is not a wildcard");
+
+  /* entering the simulator starts it; whichever test runs last has to leave
+     the screen, or its timers fire against the document teardown is closing */
+  click('.rb[data-go="dash"]');
+  await until(() => !$("#s-sim").classList.contains("on"));
+});
