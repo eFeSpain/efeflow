@@ -406,6 +406,12 @@ function hookColumns(){
           ...(used.has("egress")  ? ["egress"]  : [])];
 }
 
+/* The canvas is as wide as the hooks in use, so nothing may assume the 1680 it
+   used to be — the wires, the minimap and its viewport all did, and every one
+   of them was drawn against the wrong scale the moment a netdev column
+   appeared. */
+const canvasW = () => parseInt($("#canvas").style.width) || 1680;
+
 function renderHookRail(){
   const cols = hookColumns();
   HOOK_X = Object.fromEntries(cols.map((h,i)=>[h, GUT + i*COL + 24]));
@@ -606,8 +612,9 @@ function links(){
 function drawWires(){
   const svg = $("#wires");
   const h = parseInt($("#canvas").style.height) || 920;
-  svg.setAttribute("viewBox",`0 0 1680 ${h}`);
-  svg.setAttribute("width","1680"); svg.setAttribute("height",String(h));
+  const w = canvasW();
+  svg.setAttribute("viewBox",`0 0 ${w} ${h}`);
+  svg.setAttribute("width",String(w)); svg.setAttribute("height",String(h));
   let out = "";
   /* straight from the DOM, so a card being dragged pulls its wires with it */
   links().forEach(([a,b,jump])=>{
@@ -632,7 +639,7 @@ window.addEventListener("resize",()=>{ drawWires();
 function renderMinimap(){
   const mm = $("#mm"), sc = $("#cscroll");
   const H = parseInt($("#canvas").style.height) || 920;
-  const SX = 176/1680, SY = 104/H;
+  const SX = 176/canvasW(), SY = 104/H;
   mm.innerHTML = MODEL.chains.map(ch=>{
     const node = $(`.chain[data-chain="${cssEsc(UID(ch))}"]`);
     if(!node) return "";
@@ -646,8 +653,8 @@ function syncViewport(){
   const sc = $("#cscroll"), vp = $("#mm-vp");
   if(!vp) return;
   const H = parseInt($("#canvas").style.height) || 920;
-  vp.style.cssText = `left:${sc.scrollLeft/zoom/1680*176}px;top:${sc.scrollTop/zoom/H*104}px;
-    width:${Math.min(176, sc.clientWidth/zoom/1680*176)}px;
+  vp.style.cssText = `left:${sc.scrollLeft/zoom/canvasW()*176}px;top:${sc.scrollTop/zoom/H*104}px;
+    width:${Math.min(176, sc.clientWidth/zoom/canvasW()*176)}px;
     height:${Math.min(104, sc.clientHeight/zoom/H*104)}px`;
 }
 $("#cscroll").addEventListener("scroll", syncViewport, {passive:true});
@@ -656,7 +663,7 @@ $("#mm").addEventListener("pointerdown", e=>{
   const b = $("#mm").getBoundingClientRect();
   const H = parseInt($("#canvas").style.height) || 920;
   const sc = $("#cscroll");
-  sc.scrollTo({left:(e.clientX-b.left)/176*1680*zoom - sc.clientWidth/2,
+  sc.scrollTo({left:(e.clientX-b.left)/176*canvasW()*zoom - sc.clientWidth/2,
                top:(e.clientY-b.top)/104*H*zoom - sc.clientHeight/2, behavior:"smooth"});
 });
 
@@ -738,9 +745,71 @@ const zoomCentre = ()=>{
   const r = sc.getBoundingClientRect();
   return {x:r.left + sc.clientWidth/2, y:r.top + sc.clientHeight/2};
 };
+/* Fit, meaning fit.
+ *
+ * This button set the zoom to 72% and called that "fit to view", which is a
+ * fixed number wearing the name of a measurement: on a wide ruleset it left
+ * two chains off the right-hand edge, and on a narrow one it shrank three
+ * cards for no reason. Measure what is placed and pick the zoom that shows it.
+ *
+ * From the origin rather than from the leftmost card, so the priority ruler
+ * and the hook rail stay in frame — they are how the canvas is read. */
+function fitToView(){
+  const sc = $("#cscroll");
+  const cards = $$(".chain", chainsEl);
+  if(!sc || !sc.clientWidth || !cards.length) return setZoom(.72);
+
+  const PAD = 28;
+  let right = 0, bottom = 0;
+  for(const n of cards){
+    right  = Math.max(right,  (parseFloat(n.style.left) || 0) + n.offsetWidth);
+    bottom = Math.max(bottom, (parseFloat(n.style.top)  || 0) + n.offsetHeight);
+  }
+  if(!right || !bottom) return setZoom(.72);          /* nothing measurable yet */
+
+  /* never magnify: a two-chain ruleset at 160% is not a view of anything */
+  const want = Math.min(sc.clientWidth / (right + PAD), sc.clientHeight / (bottom + PAD), 1);
+  setZoom(want);
+  sc.scrollLeft = 0;
+  sc.scrollTop = 0;
+  syncViewport();
+
+  /* setZoom will not go below 40%, past which nothing on a card can be read.
+     A ruleset too big for the space left beside the panels therefore does not
+     all fit, and a button called Fit owes you that rather than leaving you to
+     spot the chain missing off the edge. */
+  if(want < zoom - 0.001)
+    toast(t("As far out as it goes — this ruleset does not fit beside the panels at a readable size",
+            "Hasta aquí llega — este ruleset no cabe junto a los paneles a un tamaño legible"));
+}
+
+/* Where a ruleset opens: readable, at the beginning of the packet's path.
+ *
+ * Not fitToView. Fitting a real ruleset into the space left between the
+ * library and the properties panel lands around 40%, where the whole layout is
+ * visible and not one rule is legible — an overview is a thing you ask for,
+ * not a thing to be dropped into. */
+function resetView(){
+  setZoom(.72);
+  const sc = $("#cscroll");
+  if(sc){ sc.scrollLeft = 0; sc.scrollTop = 0; }
+  syncViewport();
+}
+
 $("#zi").onclick = ()=>setZoom(zoom+.1, zoomCentre());
 $("#zo").onclick = ()=>setZoom(zoom-.1, zoomCentre());
-$("#zf").onclick = ()=>setZoom(.72);
+$("#zf").onclick = fitToView;
+/* the tooltip has promised this shortcut for as long as the button has existed */
+document.addEventListener("keydown", e=>{
+  if(e.key === "!" || (e.shiftKey && e.key === "1")){
+    /* `?.` because a keydown can arrive with the document as its target, and
+       a document has no closest() to ask */
+    if(e.target?.closest?.("input, textarea, select, [contenteditable]")) return;
+    if(!$("#s-editor").classList.contains("on")) return;
+    e.preventDefault();
+    fitToView();
+  }
+});
 /* The wheel zooms. It used to scroll, and zoom only with Ctrl held — but this
    is a canvas laid out in two dimensions, where scrolling by wheel reaches
    almost nothing and the thing you actually want is to get closer. Ctrl still
@@ -2367,7 +2436,7 @@ $("#imp-go").addEventListener("click", ()=>{
   openProject();
   $$(".scrim").forEach(s=>s.classList.remove("on"));
   go("editor");
-  setZoom(.72);
+  requestAnimationFrame(()=>requestAnimationFrame(resetView));
   toast(rt.diffs.length
     ? t(`Imported · ${rt.ok}/${rt.total} lines verified`, `Importado · ${rt.ok}/${rt.total} líneas verificadas`)
     : t(`Imported · all ${rt.total} lines verified`, `Importado · las ${rt.total} líneas verificadas`));
@@ -3154,7 +3223,7 @@ filePick.addEventListener("change", ()=>{
            because the textarea it watches is still empty. The only way out was
            the close cross. Same two lines the Import button itself runs. */
         $$(".scrim").forEach(s=>s.classList.remove("on"));
-        go("editor"); setZoom(.72);
+        go("editor"); requestAnimationFrame(()=>requestAnimationFrame(resetView));
         toast(t("Opened ","Abierto ")+f.name);
       }catch(err){ toast(t("Could not read that project file","No se pudo leer ese fichero de proyecto")); }
     } else {
