@@ -89,6 +89,28 @@ test("opening a project restores its name, not just its rules", async () => {
   assert.equal(MODEL.chains[0].rules[0].expr, "tcp dport 5060");
 });
 
+/* Import is a scrim over the screens. Opening a project switched the screen
+   underneath and left the overlay up, with every button in it disabled — the
+   close cross was the only way out, on top of a project that had loaded fine. */
+test("opening a project leaves no dialog standing", async () => {
+  await boot();
+  await newRuleset();
+
+  click('[data-go="import"]');
+  await settle(60);
+  assert.ok($("#scrim-import").classList.contains("on"), "the import dialog should be up");
+
+  await openPayload(JSON.stringify({
+    app: "eFeFlow", v: 1, name: "PBX", scratch: { ifaces: [], networks: [] },
+    chains: [{ id: "input", table: "inet filter", hook: "input", prio: 0,
+               type: "filter", policy: "drop", rules: [] }],
+    sets: [],
+  }));
+
+  assert.equal($$(".scrim.on").length, 0, "the project loaded behind a dialog nobody could dismiss");
+  assert.ok($("#s-editor").classList.contains("on"), "and it should land on the editor");
+});
+
 test("what save writes is what open accepts", async () => {
   await boot();
   await newRuleset();

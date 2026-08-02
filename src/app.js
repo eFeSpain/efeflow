@@ -2603,7 +2603,13 @@ filePick.addEventListener("change", ()=>{
            ruleset, so they sit outside the undo snapshot */
         setProject({name:o.name, scratch:o.scratch, origin:f.name, dirty:false});
         showProject();
-        go("editor"); toast(t("Opened ","Abierto ")+f.name);
+        /* Import is a scrim, not a screen, so go() changes what is underneath
+           and leaves the overlay standing — with its Import button disabled,
+           because the textarea it watches is still empty. The only way out was
+           the close cross. Same two lines the Import button itself runs. */
+        $$(".scrim").forEach(s=>s.classList.remove("on"));
+        go("editor"); setZoom(.72);
+        toast(t("Opened ","Abierto ")+f.name);
       }catch(err){ toast(t("Could not read that project file","No se pudo leer ese fichero de proyecto")); }
     } else {
       $("#imp-text").value = text; go("import"); reviewImport();
