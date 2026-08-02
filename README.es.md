@@ -98,7 +98,7 @@ camino, y si una línea no se puede reproducir te dice cuál.
 <td width="50%"><img src="docs/topology.png" alt="Topología"><br><b>Topología desde las reglas</b><br>Interfaces y zonas derivadas de lo que tus reglas nombran. Nada declarado.</td>
 </tr>
 <tr>
-<td><img src="docs/code.png" alt="Código generado"><br><b>Código en vivo</b><br>Editas un campo y el nft se reemite. Pulsas una línea y selecciona la regla. Cuatro formatos de exportación.</td>
+<td><img src="docs/code.png" alt="Código generado"><br><b>Código en vivo</b><br>Editas un campo y el nft se reemite. Pulsas una línea y selecciona la regla. Cinco formatos de exportación.</td>
 <td><img src="docs/dashboard.png" alt="Panel"><br><b>El ruleset de un vistazo</b><br>Ruta del paquete, salud, evaluaciones en el peor caso por paquete.</td>
 </tr>
 </table>
@@ -129,8 +129,26 @@ tienes el editor abierto. Pulsa el chip de arriba a la derecha para apuntar
 eFeFlow a un host. Delega en el `ssh` del sistema, así que tus claves, tu agente
 y tu `~/.ssh/config` ya se aplican, y eFeFlow no guarda credenciales.
 
-Aplicar un ruleset valida primero y se niega sin confirmación explícita. Es la
-única operación que puede dejarte fuera de una máquina.
+### Aplicar, y poder cambiar de opinión
+
+Aplicar es la única operación que puede dejarte fuera de una máquina, y el
+fallo tiene una forma desagradable: la regla que te corta el acceso es la que
+te impide deshacerla. Un botón de rollback en el editor no sirve, porque el
+editor está al otro lado del firewall que acaba de romper.
+
+Por eso la red se arma **en la máquina**. Antes de escribir nada, eFeFlow copia
+allí el ruleset en marcha y lanza un temporizador desacoplado que lo restaura
+salvo que se le diga que no. Conservar lo aplicado es un acto deliberado;
+perder la conexión, la ventana o el portátil lo restaura. Los routers llevan
+treinta años llamándolo commit-confirm.
+
+Además reemplaza **solo las tablas de tu proyecto** por defecto. `flush ruleset`
+vacía el kernel, y en una máquina que también corre Docker, libvirt, kubernetes
+o fail2ban eso borra sus tablas — y ninguno se dará cuenta ni las repondrá. Las
+dos opciones vuelven a la segura cada vez que se abre el diálogo.
+
+`nft -c` se ejecuta en la máquina antes de escribir un solo byte, y se niega
+por ti.
 
 ---
 
@@ -140,7 +158,7 @@ Aplicar un ruleset valida primero y se niega sin confirmación explícita. Es la
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 275 aserciones
+npm test             # 295 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 

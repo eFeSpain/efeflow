@@ -98,7 +98,7 @@ and if a line cannot be reproduced it shows you which one.
 <td width="50%"><img src="docs/topology.png" alt="Topology"><br><b>Topology from the rules</b><br>Interfaces and zones derived from what your rules actually name. Nothing declared.</td>
 </tr>
 <tr>
-<td><img src="docs/code.png" alt="Generated code"><br><b>Live source</b><br>Edit a field and the nft re-emits. Click a line and it selects the rule. Four export formats.</td>
+<td><img src="docs/code.png" alt="Generated code"><br><b>Live source</b><br>Edit a field and the nft re-emits. Click a line and it selects the rule. Five export formats.</td>
 <td><img src="docs/dashboard.png" alt="Dashboard"><br><b>The ruleset at a glance</b><br>Packet path, health, worst-case evaluations per packet.</td>
 </tr>
 </table>
@@ -129,8 +129,26 @@ with your editor open. Click the chip in the top right to point eFeFlow at a
 host. It shells out to the system `ssh`, so your keys, your agent and
 `~/.ssh/config` already apply, and eFeFlow stores no credentials.
 
-Applying a ruleset validates first and refuses without explicit confirmation.
-It is the one operation that can lock you out of a machine.
+### Applying, and being able to change your mind
+
+Applying is the one operation that can lock you out of a machine, and the
+failure has a nasty shape: the rule that cuts you off is the rule that stops
+you undoing it. A rollback button in the editor is no use, because the editor
+is on the wrong side of the firewall it just broke.
+
+So the net is armed **on the host**. Before anything is written, eFeFlow copies
+the running ruleset aside there and starts a detached timer that puts it back
+unless it is told not to. Keeping what you applied is a deliberate act; losing
+the connection, the window or the laptop restores. Routers have called this
+commit-confirm for thirty years.
+
+It also replaces **only the tables your project owns** by default. `flush
+ruleset` empties the kernel, and on a machine that also runs Docker, libvirt,
+kubernetes or fail2ban that deletes their tables too — none of which will
+notice or put them back. Both choices reset to the safe one every time the
+dialog opens.
+
+`nft -c` runs on the host before a byte is written, and refuses for you.
 
 ---
 
@@ -140,7 +158,7 @@ It is the one operation that can lock you out of a machine.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 275 assertions
+npm test             # 295 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 ```
 

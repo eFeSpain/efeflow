@@ -24,6 +24,7 @@ import { lintRule } from "./core/lint.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
 import { target, loadTarget, saveTarget, asTauriTarget, describe, probe } from "./target.js";
+import { applyWithNet, keep, rollBackNow, pendingRollback } from "./apply.js";
 import * as native from "./native.js";
 
 const MODEL_HOOKS = { push: onModelChange };
@@ -38,7 +39,7 @@ document.addEventListener("click", (e) => {
 });
 
 /* hoisted: the prototype relied on <script> ordering for these */
-let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI, TOURI;
+let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI, TOURI, APPLY, REACH;
 
 FIND = [];
 const $  = (s,r=document)=>r.querySelector(s);
@@ -1360,11 +1361,14 @@ fillInterfaces(); syncForm();
 MODEL_HOOKS.push(fillInterfaces);
 
 /* ══ CODE VARIANTS ═════════════════════════════════════════════════════
-   Full is the ruleset. Delta is what you would send to a running box.
-   Atomic is the same ruleset wrapped so a syntax error changes nothing. */
+   Full is the ruleset, and it starts by emptying the kernel. Tables replaces
+   only the ones this project owns, which is what you want on a host that also
+   runs Docker or libvirt — and what the apply dialog sends by default. Delta
+   is what you would send to a running box. Atomic is the same ruleset wrapped
+   so a syntax error changes nothing. */
 CODE_VARIANT = "full";
 function codeLines(mode){
-  const base = generate();
+  const base = generate(MODEL, mode==="tables" ? {scope:"tables"} : undefined);
   if(mode==="delta"){
     const L = ["# incremental delta — apply with: nft -f -", ""];
     MODEL.chains.forEach(ch=>{
@@ -3633,8 +3637,20 @@ function paintTargetChip(state){
   }
 }
 
+/* The last answer from probe(), so the apply dialog can say why it cannot
+   reach a host instead of offering a button that fails on the far side. */
+REACH = null;
 async function refreshTarget(){
-  paintTargetChip(await probe());
+  REACH = await probe();
+  paintTargetChip(REACH);
+  if($("#scrim-apply")?.classList.contains("on")) paintApplyForm();
+
+  /* A window closed mid-countdown leaves a host counting down alone. Nothing
+     is broken by that — it restores, which is the point — but arriving to a
+     firewall that is about to change under you deserves to be said out loud. */
+  if(REACH.ok && !APPLY.timer && await pendingRollback({target: asTauriTarget()}))
+    toast(t(`${describe()} has a rollback pending — it will restore its previous ruleset`,
+            `${describe()} tiene un rollback pendiente — restaurará su ruleset anterior`));
 }
 
 function syncTargetForm(){
@@ -3713,6 +3729,177 @@ $("#val-nft")?.addEventListener("click", async ()=>{
     ? t(`nft -c accepted the ruleset on ${describe()}.`,
         `nft -c aceptó el ruleset en ${describe()}.`)
     : (r.stderr || r.stdout).trim();
+});
+
+/* ══ APPLY ══════════════════════════════════════════════════════════════
+   The only thing eFeFlow does that changes a machine, and the only thing it
+   does that can lock you out of one. src/apply.js owns the ordering; this
+   owns the dialog, and the countdown you have to answer to keep what you
+   applied. Doing nothing rolls the host back — which is the right way round,
+   because the failure this protects against is the one where you cannot
+   reach the host to press anything at all. */
+APPLY = { scope:"tables", secs:60, timer:null, left:0 };
+
+const applyTables = () => [...new Set(MODEL.chains.map(c=>c.table))];
+
+function paintApplyForm(){
+  const tables = applyTables();
+  $("#ap-target").textContent = describe();
+  $("#ap-go").textContent = t(`Apply to ${describe()}`, `Aplicar en ${describe()}`);
+  $("#val-apply-t").textContent = t("Apply…","Aplicar…");
+
+  $$("#ap-scope [data-scope]").forEach(b=>b.classList.toggle("on", b.dataset.scope===APPLY.scope));
+  $$("#ap-window [data-secs]").forEach(b=>b.classList.toggle("on", +b.dataset.secs===APPLY.secs));
+
+  $("#ap-scope-note").textContent = APPLY.scope==="tables"
+    ? t(`Replaces ${tables.join(", ")} and leaves every other table on the host — Docker, libvirt, fail2ban — standing.`,
+        `Reemplaza ${tables.join(", ")} y deja en pie cualquier otra tabla de la máquina — Docker, libvirt, fail2ban.`)
+    : t("flush ruleset: empties the kernel first. Anything on the host that eFeFlow did not write is deleted with it.",
+        "flush ruleset: vacía el kernel primero. Todo lo que haya en la máquina y no lo haya escrito eFeFlow se borra con ello.");
+
+  $("#ap-window-note").textContent = APPLY.secs
+    ? t(`The host copies its ruleset aside and puts it back after ${APPLY.secs}s unless you confirm. Lose the connection and it restores itself.`,
+        `La máquina copia su ruleset y lo restaura a los ${APPLY.secs}s salvo que confirmes. Si pierdes la conexión, se restaura sola.`)
+    : t("Nothing is armed. If this ruleset cuts off your access, you will need console access to the machine.",
+        "No se arma nada. Si este ruleset te corta el acceso, necesitarás consola física en la máquina.");
+
+  /* An unreachable target says so here rather than at the end of an apply that
+     was never going to happen. */
+  const warn = $("#ap-warn");
+  const errs = FIND.filter(f=>f.sev==="error").length;
+  const unreachable = REACH && !REACH.ok ? REACH.why : null;
+  $("#ap-go").disabled = !!unreachable;
+
+  warn.style.display = unreachable || errs ? "" : "none";
+  warn.textContent = unreachable
+    ? t(`Nothing to apply to: ${unreachable}. Point eFeFlow at a host with the chip in the title bar.`,
+        `No hay dónde aplicar: ${unreachable}. Apunta eFeFlow a una máquina con el chip de la barra de título.`)
+    : errs ? t(
+      `The validation screen reports ${errs} error${errs===1?"":"s"}. nft -c runs on the host before anything is written, and will refuse.`,
+      `La pantalla de validación reporta ${errs} error${errs===1?"":"es"}. nft -c se ejecuta en la máquina antes de escribir nada, y lo rechazará.`)
+    : "";
+}
+
+function showApplyStage(after){
+  $("#ap-before").style.display    = after ? "none" : "";
+  $("#ap-ft-before").style.display = after ? "none" : "";
+  $("#ap-after").style.display     = after ? "" : "none";
+  $("#ap-ft-after").style.display  = after ? "" : "none";
+}
+
+function stopCountdown(){
+  if(APPLY.timer) clearInterval(APPLY.timer);
+  APPLY.timer = null;
+}
+function tickCountdown(){
+  const m = Math.floor(APPLY.left/60), s = APPLY.left%60;
+  $("#ap-clock").textContent = `${m}:${String(s).padStart(2,"0")}`;
+  if(APPLY.left <= 0){
+    stopCountdown();
+    $("#ap-clock").style.color = "var(--t3)";
+    $("#ap-count-t").textContent = t(
+      `The window has passed, so ${describe()} has put its previous ruleset back.`,
+      `La ventana ha pasado, así que ${describe()} ha restaurado su ruleset anterior.`);
+    $("#ap-keep").disabled = true;
+    refreshTarget();
+    return;
+  }
+  APPLY.left--;
+}
+
+function openApply(){
+  stopCountdown();
+  /* Both choices go back to the safe one every time. A scope of "the whole
+     ruleset" or a net of "none", remembered from an apply ten minutes ago and
+     applied to a different host, is exactly the shape of thing that empties
+     somebody's Docker tables at two in the morning. Two clicks is nothing
+     against that; a sticky setting here is not a convenience. */
+  APPLY.scope = "tables";
+  APPLY.secs = 60;
+  showApplyStage(false);
+  paintApplyForm();
+  $("#scrim-apply").classList.add("on");
+}
+
+$("#val-apply")?.addEventListener("click", openApply);
+$$("#ap-scope [data-scope]").forEach(b=>b.addEventListener("click", ()=>{
+  APPLY.scope = b.dataset.scope; paintApplyForm();
+}));
+$$("#ap-window [data-secs]").forEach(b=>b.addEventListener("click", ()=>{
+  APPLY.secs = +b.dataset.secs; paintApplyForm();
+}));
+
+$("#ap-go")?.addEventListener("click", async ()=>{
+  const btn = $("#ap-go"), was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t("Applying…","Aplicando…");
+  const r = await applyWithNet({
+    ruleset: generate(MODEL, {scope: APPLY.scope}).join("\n"),
+    target: asTauriTarget(),
+    seconds: APPLY.secs,
+  });
+  btn.disabled = false;
+  btn.textContent = was;
+
+  if(!r.ok){
+    const warn = $("#ap-warn");
+    warn.style.display = "";
+    warn.textContent = (r.stage==="arm"
+      ? t("Nothing was applied — the rollback could not be armed, so the host was left alone. ",
+          "No se ha aplicado nada — no se pudo armar el rollback, así que la máquina se quedó como estaba. ")
+      : t("Nothing was applied. ","No se ha aplicado nada. ")) + (r.error || "");
+    return;
+  }
+
+  setBaseline();
+  showApplyStage(true);
+  $("#ap-clock").style.color = "var(--v-reject)";
+  $("#ap-keep").disabled = false;
+  if(r.armed){
+    APPLY.left = r.seconds;
+    $("#ap-count-t").textContent = t(
+      `Applied to ${describe()}. It rolls back to what it was running unless you keep it.`,
+      `Aplicado en ${describe()}. Volverá a lo que tenía salvo que lo conserves.`);
+    tickCountdown();
+    APPLY.timer = setInterval(tickCountdown, 1000);
+  } else {
+    $("#ap-clock").textContent = "—";
+    $("#ap-clock").style.color = "var(--v-accept)";
+    $("#ap-count-t").textContent = t(
+      `Applied to ${describe()}. Nothing was armed, so nothing will undo it.`,
+      `Aplicado en ${describe()}. No se armó nada, así que nada lo deshará.`);
+    $("#ap-rollback").style.display = "none";
+  }
+  refreshTarget();
+});
+
+$("#ap-keep")?.addEventListener("click", async ()=>{
+  stopCountdown();
+  const r = await keep({target: asTauriTarget()});
+  $("#scrim-apply").classList.remove("on");
+  toast(r.ok ? t(`Kept on ${describe()}`, `Conservado en ${describe()}`)
+             : t(`Could not confirm — ${r.error}`, `No se pudo confirmar — ${r.error}`));
+});
+
+$("#ap-rollback")?.addEventListener("click", async ()=>{
+  stopCountdown();
+  const r = await rollBackNow({target: asTauriTarget()});
+  $("#scrim-apply").classList.remove("on");
+  toast(r.ok ? t(`${describe()} is back on its previous ruleset`,
+                 `${describe()} ha vuelto a su ruleset anterior`)
+             : t(`Rollback failed — ${r.error}`, `El rollback falló — ${r.error}`));
+  refreshTarget();
+});
+
+/* Closing the dialog is not confirming. The host keeps counting, and it will
+   restore — which is what a net is for, but not something to be surprised by. */
+$("#scrim-apply")?.addEventListener("click", e=>{
+  if(e.target !== e.currentTarget && !e.target.closest("[data-close]")) return;
+  if(APPLY.timer){
+    stopCountdown();
+    toast(t(`Still counting on ${describe()} — it will roll back unless you keep it`,
+            `${describe()} sigue contando — revertirá salvo que lo conserves`));
+  }
 });
 
 loadTarget();

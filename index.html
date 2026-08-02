@@ -565,7 +565,7 @@
     <div class="panel-hd">
       <span class="lbl" id="code-filename">—</span>
       <span class="chip" data-t="142 lines|142 líneas">142 lines</span>
-      <div class="seg" style="height:24px" id="code-variant"><button class="on" data-cv="full" data-t="Full|Completo">Full</button><button data-cv="delta">Delta</button><button data-cv="atomic" data-t="Atomic|Atómico">Atomic</button></div>
+      <div class="seg" style="height:24px" id="code-variant"><button class="on" data-cv="full" data-t="Full|Completo" data-tt="Empties the kernel first with flush ruleset|Vacía el kernel primero con flush ruleset">Full</button><button data-cv="tables" data-t="Tables|Tablas" data-tt="Replaces only the tables this project owns|Reemplaza solo las tablas de este proyecto">Tables</button><button data-cv="delta">Delta</button><button data-cv="atomic" data-t="Atomic|Atómico">Atomic</button></div>
       <button class="tb icon" data-tt="Wrap|Ajustar líneas"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h13a3 3 0 0 1 0 6h-3m0 0 2-2m-2 2 2 2M4 18h5"/></svg></button>
     </div>
     <div class="body"><pre class="code" id="codeout2"></pre></div>
@@ -594,6 +594,7 @@
       <button class="tb" id="val-rerun"><svg class="ico" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span data-t="Re-run|Re-ejecutar">Re-run</span></button>
       <button class="tb" id="val-nft" style="border:1px solid var(--aqua-line);color:var(--aqua)"><svg class="ico" viewBox="0 0 24 24"><path d="M4 17V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 10l3 2-3 2M13 14h4"/></svg><span data-t="Check with nft -c|Comprobar con nft -c">Check with nft -c</span></button>
       <button class="tb accent" id="val-fixall"><svg class="ico" viewBox="0 0 24 24"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg><span id="val-fixall-t">—</span></button>
+      <button class="tb" id="val-apply" style="border:1px solid rgba(240,160,60,.35);color:var(--v-reject)"><svg class="ico" viewBox="0 0 24 24"><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg><span id="val-apply-t">—</span></button>
     </div>
 
     <pre id="val-nft-out" class="nft-out" style="display:none"></pre>
@@ -966,6 +967,71 @@
       <span style="flex:1"></span>
       <button class="tb" data-close data-t="Cancel|Cancelar">Cancel</button>
       <button class="tb pri" id="tg-save" data-t="Use this target|Usar este destino">Use this target</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ APPLY ══ the one operation that reaches a live machine, and the one
+     that can lock you out of it. Two states in one dialog: what is about to
+     happen, and then the countdown you have to answer to keep it. ══ -->
+<div class="scrim" id="scrim-apply">
+  <div class="modal glass" style="width:min(560px,94vw)">
+    <div class="modal-hd">
+      <div style="width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:none;
+                  background:rgba(240,160,60,.12);border:1px solid rgba(240,160,60,.3);color:var(--v-reject)">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/><path d="M4 21h16"/></svg></div>
+      <h2 id="ap-title" data-t="Apply to a live host|Aplicar en una máquina en producción">Apply to a live host</h2>
+      <button class="tb icon" data-close><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+
+    <!-- ── before ── -->
+    <div class="modal-body" id="ap-before">
+      <div class="fld"><span class="lbl" data-t="Target|Destino">Target</span>
+        <div class="mono" id="ap-target" style="font-size:12px;color:var(--t1)">—</div></div>
+
+      <div class="fld"><span class="lbl" data-t="What this replaces|Qué reemplaza">What this replaces</span>
+        <div class="seg" id="ap-scope">
+          <button class="on" data-scope="tables" data-t="Only my tables|Solo mis tablas">Only my tables</button>
+          <button data-scope="ruleset" data-t="The whole ruleset|El ruleset entero">The whole ruleset</button>
+        </div>
+        <span class="lbl" id="ap-scope-note"
+          style="text-transform:none;letter-spacing:0;font-size:10.5px;color:var(--t4)">—</span></div>
+
+      <div class="fld"><span class="lbl" data-t="Roll back automatically after|Revertir automáticamente tras">Roll back automatically after</span>
+        <div class="seg" id="ap-window">
+          <button data-secs="30">30s</button>
+          <button class="on" data-secs="60">60s</button>
+          <button data-secs="120">2m</button>
+          <button data-secs="300">5m</button>
+          <button data-secs="0" data-t="No net|Sin red">No net</button>
+        </div>
+        <span class="lbl" id="ap-window-note"
+          style="text-transform:none;letter-spacing:0;font-size:10.5px;color:var(--t4)">—</span></div>
+
+      <div id="ap-warn" class="tg-result bad" style="display:none"></div>
+    </div>
+
+    <!-- ── after: the countdown you have to answer ── -->
+    <div class="modal-body" id="ap-after" style="display:none">
+      <div id="ap-count" style="text-align:center;padding:6px 0 2px">
+        <div class="mono" id="ap-clock"
+          style="font:600 30px var(--mono);color:var(--v-reject);letter-spacing:-1px">—</div>
+        <div id="ap-count-t" style="font-size:12.5px;color:var(--t2);line-height:1.6;margin-top:6px">—</div>
+      </div>
+      <pre id="ap-out" class="nft-out" style="display:none;margin-top:12px"></pre>
+    </div>
+
+    <div class="modal-ft" id="ap-ft-before">
+      <span class="lbl" style="flex:1;text-transform:none;letter-spacing:0;font-size:11px;color:var(--t4)"
+        data-t="Validated with nft -c on the host before anything is written.|Se valida con nft -c en la máquina antes de escribir nada.">…</span>
+      <button class="tb" data-close data-t="Cancel|Cancelar">Cancel</button>
+      <button class="tb pri" id="ap-go">—</button>
+    </div>
+    <div class="modal-ft" id="ap-ft-after" style="display:none">
+      <button class="tb" id="ap-rollback" style="color:var(--v-drop)"
+        data-t="Roll back now|Revertir ahora">Roll back now</button>
+      <span style="flex:1"></span>
+      <button class="tb pri" id="ap-keep" data-t="Keep this ruleset|Conservar este ruleset">Keep this ruleset</button>
     </div>
   </div>
 </div>
