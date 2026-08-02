@@ -77,7 +77,8 @@ Describe un paquete y míralo recorrer las cadenas, regla a regla, hasta un
 veredicto — y es el veredicto que produce tu ruleset exportado, porque el
 simulador evalúa el mismo modelo del que se emite el código.
 
-Modela nftables de verdad. `accept` termina la cadena, no el paquete. Desactivar
+Modela nftables de verdad, en ambas familias. `accept` termina la cadena, no el
+paquete. `ip6 saddr` restringe IPv6 y nada más. Desactivar
 conntrack marca el paquete como `untracked`, así que las reglas `ct state` dejan
 de casar. `tcp flags syn` casa con `syn|ack`; `tcp flags & (syn|ack) == syn` no.
 
@@ -158,7 +159,7 @@ por ti.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 301 aserciones
+npm test             # 318 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 

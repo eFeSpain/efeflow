@@ -77,7 +77,8 @@ Describe a packet and watch it walk the chains, rule by rule, to a verdict — a
 it is the verdict your exported ruleset produces, because the simulator
 evaluates the same model the code is emitted from.
 
-It models nftables properly. `accept` ends the chain, not the packet. Turning
+It models nftables properly, in both families. `accept` ends the chain, not the
+packet. `ip6 saddr` constrains IPv6 and nothing else. Turning
 conntrack off marks the packet `untracked`, so `ct state` rules stop matching
 it. `tcp flags syn` matches `syn|ack`; `tcp flags & (syn|ack) == syn` does not.
 
@@ -158,7 +159,7 @@ dialog opens.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 301 assertions
+npm test             # 318 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 ```
 
