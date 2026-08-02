@@ -60,9 +60,11 @@ export const ssh = (host, { user, port, sudo = true } = {}) => ({
   sudo,
 });
 
-export async function nftVersion(target = LOCAL) {
+/* nft's version and the kernel it is talking to, in one round trip — the two
+   are wanted at the same moment and one of them is over a network. */
+export async function hostProbe(target = LOCAL) {
   if (!inTauri) return unavailable("Detecting nft");
-  return invoke("nft_version", { target });
+  return invoke("host_probe", { target });
 }
 
 export async function nftList(target = LOCAL) {

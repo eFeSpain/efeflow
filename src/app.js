@@ -739,10 +739,20 @@ function paintCode(){
          + `<span class="tx">${highlight(l)}</span></div>`;
   }).join("");
   $("#codeout").innerHTML = html;
-  $("#codeout2").innerHTML = html;
+
+  /* The code screen shows whichever variant is chosen there, and repainting
+     after an edit used to put the full ruleset back under a Delta tab that
+     still said Delta. */
+  const v = CODE_VARIANT || "full";
+  const shown = v === "full" ? lines : codeLines(v);
+  $("#codeout2").innerHTML = v === "full" ? html : shown.map((l,i)=>
+    `<div class="ln"><span class="no">${i+1}</span><span class="tx">${highlight(l)}</span></div>`).join("");
+  $("#code-lines").textContent = t(`${shown.length} lines`, `${shown.length} líneas`);
   $$(".dw-tab")[0].querySelector(".n").textContent = lines.length;
 }
 paintCode();
+/* the line count is a sentence, so it has to be re-said in the other language */
+RERENDER.push(paintCode);
 
 /* click a code line → select the matching rule (round-trip both ways) */
 document.addEventListener("click",e=>{
@@ -1441,10 +1451,8 @@ $(".dw-hd").addEventListener("click", e=>{
 $("#code-variant").addEventListener("click", e=>{
   const b = e.target.closest("[data-cv]"); if(!b) return;
   CODE_VARIANT = b.dataset.cv;
-  const lines = codeLines(CODE_VARIANT);
-  $("#codeout2").innerHTML = lines.map((l,i)=>
-    `<div class="ln"><span class="no">${i+1}</span><span class="tx">${highlight(l)}</span></div>`).join("");
-  $$("#s-code .panel-hd .chip")[0].textContent = t(`${lines.length} lines`,`${lines.length} líneas`);
+  $$("#code-variant [data-cv]").forEach(x=>x.classList.toggle("on", x===b));
+  paintCode();
 });
 
 /* ══ CANVAS TOOLS ══════════════════════════════════════════════════════ */
@@ -2844,7 +2852,7 @@ function download(name, text, mime){
 function exportPayload(){
   const fmt = $$("#scrim-export .choice").findIndex(c=>c.classList.contains("on"));
   const opt = $$("#scrim-export .sw-toggle").map(sw=>sw.classList.contains("on"));
-  const [flush, comments, optimise] = opt;
+  const [flush, comments] = opt;
   let lines = generate().slice();
   if(!flush) lines = lines.filter(l=>l!=="flush ruleset");
   if(!comments) lines = lines.map(l=>l.replace(/\s*comment "(?:[^"\\]|\\.)*"/,""));
@@ -2914,12 +2922,35 @@ function refreshExportStats(){
     cards[3].textContent = worstCase();
   }
 }
+/* The last toggle was read by nothing at all. `nft -c` is the authority on
+   whether a ruleset loads, and running it before writing the file is the whole
+   point of having a host configured — so when one is reachable and the toggle
+   is on, the export waits for its answer. */
+async function exportChecked(){
+  const p = exportPayload();
+  const wanted = $$("#scrim-export .sw-toggle")[2]?.classList.contains("on");
+  /* only the nft formats are something nft can be asked about */
+  const nftSource = /\.nft$/.test(p.name);
+  if(wanted && nftSource && REACH?.ok){
+    const r = await native.nftCheck(p.text, asTauriTarget());
+    if(!r.ok){
+      toast(t(`nft -c refused it on ${describe()} — nothing was written`,
+              `nft -c lo rechazó en ${describe()} — no se ha escrito nada`));
+      const box = $("#val-nft-out");
+      if(box){ box.style.display = ""; box.className = "nft-out bad"; box.textContent = (r.stderr||r.stdout).trim(); }
+      go("validate");
+      return;
+    }
+  }
+  download(p.name, p.text, p.mime);
+  toast(t("Exported ","Exportado ")+p.name);
+}
+
 $("#scrim-export").addEventListener("click", e=>{
   if(e.target.closest(".choice, .sw-toggle")) setTimeout(refreshExportStats, 0);
   const btns = $$("#scrim-export .modal-ft .tb");
   if(e.target.closest(".modal-ft .tb.pri")){
-    const p = exportPayload(); download(p.name, p.text, p.mime);
-    toast(t("Exported ","Exportado ")+p.name);
+    exportChecked();
   } else if(e.target===btns[1] || (btns[1] && btns[1].contains(e.target))){
     const p = exportPayload();
     navigator.clipboard?.writeText(p.text);
@@ -3640,9 +3671,38 @@ function paintTargetChip(state){
 /* The last answer from probe(), so the apply dialog can say why it cannot
    reach a host instead of offering a button that fails on the far side. */
 REACH = null;
+/* The status bar reports the host, not a build-time guess about it. Unknown is
+   a real answer and gets said as one: an em dash with the reason behind it,
+   and a click that goes where the reason can be fixed. */
+function paintHostStatus(state){
+  const el = $("#st-host");
+  if(!el) return;
+  if(state?.ok){
+    el.innerHTML = `nft <span class="num">${esc(state.version)}</span>`
+      + (state.kernel ? ` · ${t("kernel","kernel")} <span class="num">${esc(state.kernel)}</span>` : "");
+    el.title = [state.banner, state.uname].filter(Boolean).join(" · ");
+  } else {
+    el.innerHTML = `<span class="dimmer">nft — · ${t("kernel","kernel")} —</span>`;
+    el.title = (state?.why ? state.why + " · " : "")
+      + t("click to choose where nft runs", "pulsa para elegir dónde se ejecuta nft");
+  }
+
+  /* the same answer, wherever it is asked for */
+  const said = state?.ok
+    ? t(`${describe()} · nft ${state.version}${state.kernel ? ` · kernel ${state.kernel}` : ""}`,
+        `${describe()} · nft ${state.version}${state.kernel ? ` · kernel ${state.kernel}` : ""}`)
+    : t(`No host answering — ${state?.why || "not reached"}`,
+        `Ninguna máquina responde — ${state?.why || "sin contactar"}`);
+  const ex = $("#ex-target");
+  if(ex) ex.textContent = said;
+  const ab = $("#about-target");
+  if(ab) ab.textContent = said;
+}
+
 async function refreshTarget(){
   REACH = await probe();
   paintTargetChip(REACH);
+  paintHostStatus(REACH);
   if($("#scrim-apply")?.classList.contains("on")) paintApplyForm();
 
   /* A window closed mid-countdown leaves a host counting down alone. Nothing
@@ -3677,6 +3737,8 @@ function openTarget(){
 }
 
 $("#tb-target").addEventListener("click", openTarget);
+/* both say the same thing about the same host, so both lead to the same place */
+$("#st-host")?.addEventListener("click", openTarget);
 $("#scrim-target").addEventListener("click", e=>{
   const c = e.target.closest("[data-target]");
   if(c){ tgDraft.kind = c.dataset.target; syncTargetForm(); }

@@ -23,7 +23,7 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             platform,
-            nft::nft_version,
+            nft::host_probe,
             nft::nft_list,
             nft::nft_check,
             nft::nft_apply,

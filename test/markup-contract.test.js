@@ -54,6 +54,18 @@ test("every screen the rail can reach has a section", () => {
 /* The status bar carried `main ↑2` — a branch and two unpushed commits, as
    literal text, over a project with no version control of any kind. It is the
    same class of thing as a map called @port_fwd: it reads as a feature. */
+/* `nft 1.0.9 · kernel 6.8` sat in the status bar, in the export dialog and in
+   the about panel as literal text — on every machine, whether or not one had
+   ever been contacted. Both numbers come from the host now, and a guard here
+   is cheaper than noticing again in a year. */
+test("the markup claims no version of anything it has not asked", () => {
+  /* comments explaining what used to be here are allowed to quote it */
+  const prose = html.replace(/<!--[\s\S]*?-->/g, "");
+  const claims = [...prose.matchAll(/\bnft\s+[\d.]+|\bkernel\s+[\d.]+|nf_tables API [\d.x]+/gi)]
+    .map((m) => m[0]);
+  assert.deepEqual(claims, [], `hard-coded versions in index.html: ${claims.join(", ")}`);
+});
+
 test("nothing in the markup claims a version control that does not exist", () => {
   assert.ok(!/>main\s*<span class="dimmer">/.test(html),
     "a hard-coded branch name and commit count");

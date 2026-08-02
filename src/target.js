@@ -52,8 +52,30 @@ export async function probe(tg = target) {
   if (tg.kind === "local" && !native.platform.local_nft_possible)
     return { ok: false, why: t("no nft on this platform", "no hay nft en esta plataforma") };
 
-  const r = await native.nftVersion(asTauriTarget(tg));
-  return r.ok
-    ? { ok: true, version: r.stdout.trim().split("\n")[0] }
-    : { ok: false, why: (r.stderr || "").trim().split("\n")[0] || t("no answer", "sin respuesta") };
+  const r = await native.hostProbe(asTauriTarget(tg));
+  if (!r.ok)
+    return { ok: false, why: (r.stderr || "").trim().split("\n")[0] || t("no answer", "sin respuesta") };
+
+  return { ok: true, ...readProbe(r.stdout) };
+}
+
+/* `nftables v1.0.9 (Old Doc Yak)` and `Linux 6.8.0-45-generic` into the two
+   numbers the status bar shows, plus the lines they came from — a version we
+   could not make sense of is still worth showing verbatim. */
+export function readProbe(stdout) {
+  const field = (k) =>
+    (String(stdout || "")
+      .split("\n")
+      .find((l) => l.startsWith(k + "\t")) || "")
+      .slice(k.length + 1)
+      .trim();
+
+  const nft = field("nft");
+  const uname = field("kernel");
+  return {
+    version: /\bv?(\d[\w.]*)/.exec(nft)?.[1] || nft,
+    banner: nft,
+    kernel: uname.split(/\s+/).pop() || "",
+    uname,
+  };
 }

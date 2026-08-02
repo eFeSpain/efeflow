@@ -135,10 +135,20 @@ fn run(target: &Target, cmd: &[&str], stdin: Option<&str>) -> Outcome {
     }
 }
 
-/// Is there an nft we can talk to, and which version?
+/// Is there an nft we can talk to, and what is it running on?
+///
+/// Both answers in one round trip, because both are wanted at the same moment
+/// and one of them is over a network. Tagged rather than positional: newer
+/// `nft --version` prints a block of build details under the version line, so
+/// "the second line" is not the kernel on every host.
 #[tauri::command]
-pub fn nft_version(target: Target) -> Outcome {
-    run(&target, &["nft", "--version"], None)
+pub fn host_probe(target: Target) -> Outcome {
+    shell(
+        &target,
+        "set -e\n\
+         printf 'nft\\t'; nft --version | head -n 1\n\
+         printf 'kernel\\t'; uname -sr\n",
+    )
 }
 
 /// Read the live ruleset. `-a` includes handles, which we strip on import but
