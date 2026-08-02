@@ -165,7 +165,7 @@ dialog opens.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 386 assertions
+npm test             # 395 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 ```
 

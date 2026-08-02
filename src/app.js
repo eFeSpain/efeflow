@@ -10,7 +10,7 @@ import {
 } from "./core/model.js";
 import { generate, generateWithMap } from "./core/generate.js";
 import { parseNft, parseRule, verify, normalise } from "./core/parse.js";
-import { analyse, worstCase } from "./core/analyse.js";
+import { analyse, worstCase, criteria } from "./core/analyse.js";
 import { evaluate, matches, inSet, inCidr, PRESETS, PATHS, packet } from "./core/simulate.js";
 import { diffLines } from "./core/diff.js";
 import { PRIO_NAME, NAME_PRIO } from "./core/priority.js";
@@ -1733,10 +1733,18 @@ function renderFindings(){
   g.textContent = grade;
   g.style.cssText = `background:rgba(${tone[1]},.1);border-color:rgba(${tone[1]},.28);color:var(${gcol})`;
 
-  const rules = MODEL.chains.reduce((a,c)=>a+c.rules.filter(r=>r.on).length,0);
+  const live = MODEL.chains.flatMap(c=>c.rules.filter(r=>r.on));
+  const rules = live.length;
+  /* The simulator says which part of a verdict it assumed. This is the same
+     admission from the other screen: a rule carrying a match nothing here can
+     read is one this list is silent about, and silence that looks like a clean
+     bill of health is the thing worth avoiding. */
+  const unread = live.filter(r=>criteria(r.expr)._opaque).length;
   $("#val-sub").textContent = t(
     `Checked ${rules} rules across ${MODEL.chains.length} chains · worst case ${worstCase()} evaluations per packet`,
-    `${rules} reglas revisadas en ${MODEL.chains.length} cadenas · peor caso ${worstCase()} evaluaciones por paquete`);
+    `${rules} reglas revisadas en ${MODEL.chains.length} cadenas · peor caso ${worstCase()} evaluaciones por paquete`)
+    + (unread ? t(` · ${unread} carrying a match this cannot read, and left alone`,
+                  ` · ${unread} con una coincidencia que no sabe leer, y no las juzga`) : "");
   $("#val-fixall-t").textContent = fixable
     ? t(`Fix ${fixable} automatically`,`Corregir ${fixable} automáticamente`)
     : t("Nothing to fix","Nada que corregir");

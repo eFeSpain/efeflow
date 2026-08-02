@@ -7,7 +7,7 @@ import { MODEL, R, ruleLine, jumpTarget, UID, chainOf } from './model.js';
    rebuilds every chain and rule from JSON — left the fixes pointing at
    orphans, so the button did nothing and said nothing. Resolve on apply. */
 const at = (uid, i) => { const c = chainOf(uid); return c && c.rules[i] ? c : null; };
-import { inSet } from './simulate.js';
+import { inSet, readable } from './simulate.js';
 import { covers as addrCovers } from './addr.js';
 import { lintRuleset } from './lint.js';
 import { escape as esc } from './html.js';
@@ -29,12 +29,42 @@ const CRIT = [
   ["sport", /sport (\{[^}]*\}|\S+)/],
   ["dport", /dport (\{[^}]*\}|\S+)/],
 ];
+/* Statements that say what to do rather than what to match, so leaving one
+   unread costs nothing. Everything else left over is a constraint this file
+   did not see. */
+const NOT_A_MATCH = [
+  /\blog\b(?:\s+(?:prefix\s+"(?:[^"\\]|\\.)*"|level\s+\S+|group\s+\d+|snaplen\s+\d+|queue-threshold\s+\d+|flags\s+\S+))*/g,
+  /\bcounter(?:\s+name\s+"[^"]*"|\s+packets\s+\d+\s+bytes\s+\d+)?/g,
+  /\bcomment\s+"(?:[^"\\]|\\.)*"/g,
+  /\blimit rate\s+(?:over\s+)?\d+\/\w+(?:\s+burst\s+\d+\s+\w+)?/g,
+];
+
 export function criteria(expr){
+  /* against the masked expression: `fib saddr . iif oif missing` names iif and
+     oif as keys of a lookup, and reading them as constraints did not produce
+     nothing — it produced iif "oif" and oif "missing", invented out of thin
+     air and then reasoned with */
+  const e = readable(expr);
   const c = {};
-  CRIT.forEach(([k,re])=>{ const m = expr.match(re); if(m) c[k] = m[1]; });
-  c._limit  = /limit rate/.test(expr);      /* rate-limited ⇒ non-deterministic */
-  c._log    = /\blog\b/.test(expr);
-  c._negate = /!=/.test(expr);
+  const read = [];
+  CRIT.forEach(([k,re])=>{
+    const m = e.match(re);
+    if(m){ c[k] = m[1]; read.push([m.index, m.index + m[0].length]); }
+  });
+  c._limit  = /limit rate/.test(e);         /* rate-limited ⇒ non-deterministic */
+  c._log    = /\blog\b/.test(e);
+  c._negate = /!=/.test(e);
+
+  /* What is left once everything read has been taken out. A rule carrying one
+     of those matches far fewer packets than its criteria suggest, and the
+     whole of this file's reasoning is about how many packets a rule matches. */
+  for(const re of NOT_A_MATCH)
+    for(const m of e.matchAll(re)) read.push([m.index, m.index + m[0].length]);
+  read.sort((a,b)=>a[0]-b[0]);
+  let at = 0, rest = "";
+  for(const [x,y] of read){ if(x > at) rest += e.slice(at, x); at = Math.max(at, y); }
+  rest += e.slice(at);
+  c._opaque = /\S/.test(rest) || readable(expr) !== String(expr || "");
   return c;
 }
 const listOf = v => v.startsWith("{") ? v.slice(1,-1).split(",").map(s=>s.trim()) : [v];
@@ -53,18 +83,27 @@ function covers(a,b){
      can go through it untested. */
   return B.every(x => addrCovers(a, x));
 }
-/* every packet matching b also matches a */
+/* every packet matching b also matches a
+ *
+ * `a._opaque` and not `b._opaque`, and the asymmetry is the point. If A
+ * carries a match nothing read, A may fire far less often than its criteria
+ * suggest, so it cannot be claimed to cover anything. If B does, B fires less
+ * often than it looks — and a rule covering the looser reading of B covers the
+ * tighter one too, so that finding still stands. */
 export function subsumes(a,b){
   if(a._limit || a._negate || b._negate) return false;   /* can't reason safely */
+  if(a._opaque) return false;
   return CRIT.every(([k])=>{
     if(a[k]===undefined) return true;      /* a is wildcard here */
     if(b[k]===undefined) return false;     /* b is broader than a */
     return covers(a[k], b[k]);
   });
 }
-/* some packet matches both */
+/* some packet matches both — and here either side being unread is fatal, since
+   an unread constraint on either can be the very thing that keeps them apart */
 export function overlaps(a,b){
   if(a._negate || b._negate) return false;
+  if(a._opaque || b._opaque) return false;
   return CRIT.every(([k])=>{
     if(a[k]===undefined || b[k]===undefined) return true;
     return covers(a[k],b[k]) || covers(b[k],a[k]);

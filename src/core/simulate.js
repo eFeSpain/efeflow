@@ -115,6 +115,11 @@ const OPAQUE = [
 
 /* the expression with the opaque statements struck out, so nothing reads into
    one; the spans, so the caller can put them back */
+/* The expression with the statements nothing reads into struck out. Shared
+   with the analyser, which was making the same mistake this was written for:
+   reading the `oif` out of the middle of a fib lookup. */
+export const readable = e => mask(String(e || "")).masked;
+
 function mask(e){
   const chars = [...e];
   const spans = [];
