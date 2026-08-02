@@ -34,11 +34,12 @@ export function blankRuleset(){
    is a small lie about what state you are in — and the one state where it
    matters, because every screen describes a ruleset. blankRuleset() is what
    New produces; this is what no project looks like. */
-/* `objects` and `tables` are what preserve-by-default needs somewhere to live:
-   the flowtables, named counters, ct helpers and table flags that nftables has
-   and this model does not. Nothing edits them — they are carried, so that a
-   ruleset holding one comes back out holding it. */
-export const MODEL = { chains: [], sets: [], objects: [], tables: [] };
+/* `objects`, `tables` and `prelude` are where preserve-by-default puts what it
+   keeps: the flowtables and ct helpers, the table flags, and the `define` and
+   `include` lines above the first table. The last of those were dropped while
+   the rules using `$wan` were kept, so an imported script came back out
+   referencing a variable nothing defined. */
+export const MODEL = { chains: [], sets: [], objects: [], tables: [], prelude: [] };
 
 /* Every verdict the parser can produce needs an entry in both, because the
    canvas paints a pill from them per rule. `goto` shares the colour of `jump`

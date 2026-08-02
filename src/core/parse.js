@@ -57,8 +57,13 @@ export function logicalLines(text){
   return out;
 }
 
+/* What eFeFlow itself writes above the first table. Re-importing our own
+   output must not read the preamble back as somebody's prelude and stack
+   another copy of it on every round trip. */
+const OUR_PREAMBLE = /^(flush ruleset|delete table\s|table\s+\S+(\s+\S+)?$)/;
+
 export function parseNft(text){
-  const chains = [], sets = [], objects = [], tables = [], errors = [];
+  const chains = [], sets = [], objects = [], tables = [], errors = [], prelude = [];
 
   /* innermost frame last; every `}` pops exactly one */
   const stack = [];
@@ -107,7 +112,10 @@ export function parseNft(text){
     }
 
     const f = top();
-    if(!f) continue;                                  /* outside every table */
+    /* Outside every table: `define wan = "eth0"`, `include "…"`. These were
+       dropped while the rules using `$wan` were kept, so an imported script
+       came back out referencing a variable nothing defined. */
+    if(!f){ if(!OUR_PREAMBLE.test(line)) prelude.push(line); continue; }
     if(f.kind === "object"){ f.obj.body.push(line); continue; }
     if(f.kind === "set"){ readSetLine(f.set, line); continue; }
     /* directly inside a table: `flags dormant`, `comment "…"` */
@@ -140,7 +148,7 @@ export function parseNft(text){
   }
   while(stack.length) close();                        /* an unterminated file */
 
-  return { chains, sets, objects, tables, errors };
+  return { chains, sets, objects, tables, prelude, errors };
 }
 
 /* Three of nftables' object kinds are two words, and telling them from a kind

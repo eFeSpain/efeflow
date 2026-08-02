@@ -78,12 +78,12 @@ const HIST = {past:[], future:[], max:80};
 /* Everything the ruleset is made of, including the parts nothing edits: an
    undo that forgot the flowtables would delete them on the first Ctrl+Z. */
 const snapshot = () => JSON.stringify(
-  {c:MODEL.chains, s:MODEL.sets, o:MODEL.objects, tb:MODEL.tables});
+  {c:MODEL.chains, s:MODEL.sets, o:MODEL.objects, tb:MODEL.tables, pr:MODEL.prelude});
 CUR = null, PENDING = null;
 function restore(str){
   const o = JSON.parse(str);
   MODEL.chains = o.c; MODEL.sets = o.s;
-  MODEL.objects = o.o || []; MODEL.tables = o.tb || [];
+  MODEL.objects = o.o || []; MODEL.tables = o.tb || []; MODEL.prelude = o.pr || [];
 }
 function refresh(keepSel){
   renderChains(); paintCode(); drawWires(); modelChanged();
@@ -2382,6 +2382,10 @@ function reviewImport(){
         "Flowtables, named counters and quotas, ct helpers — carried through unchanged.",
         "Flowtables, counters y quotas con nombre, helpers de ct — se conservan sin tocar."))}"
         >${t("Objects carried","Objetos conservados")}</span><span class="v">${p.objects.length}</span></div>`:""}
+      ${p.prelude.length?`<div class="imp-stat"><span class="k" title="${esc(t(
+        "The define and include lines above the first table, written back above it.",
+        "Las líneas define e include de encima de la primera tabla, reescritas encima de ella."))}"
+        >${t("Definitions kept","Definiciones conservadas")}</span><span class="v">${p.prelude.length}</span></div>`:""}
       ${p.errors.length?`<div class="imp-stat"><span class="k" style="color:var(--warn)">${t("Unparsed lines","Líneas no analizadas")}</span>
         <span class="v" style="color:var(--warn)">${p.errors.length}</span></div>`:""}
     </div>
@@ -2441,6 +2445,7 @@ $("#imp-go").addEventListener("click", ()=>{
     MODEL.sets    = p.sets;
     MODEL.objects = p.objects;
     MODEL.tables  = p.tables;
+    MODEL.prelude = p.prelude;
   });
   openProject();
   $$(".scrim").forEach(s=>s.classList.remove("on"));
@@ -2480,6 +2485,17 @@ const splitMapType = s => {
   return i < 0 ? [s.t.trim(), ""] : [s.t.slice(0, i).trim(), s.t.slice(i + 1).trim()];
 };
 const joinMapType = (key, value) => (value ? `${key} : ${value}` : key);
+
+/* A list to choose from is only right when the thing is a name from that list.
+   `typeof` takes an expression, and a concatenation is two types joined by a
+   dot — neither is in any list, and both are text. */
+const typeControl = (id, value, list, decl) =>
+  decl === "typeof" || value.includes(".")
+    ? `<input type="text" id="${id}" value="${esc(value)}" spellcheck="false"
+         placeholder="${decl === "typeof" ? "ip saddr . tcp dport" : "ipv4_addr . inet_service"}">`
+    : `<select id="${id}">${list.map(x =>
+        `<option${x===value?" selected":""}>${x}</option>`).join("")}
+        ${list.includes(value)||!value?"":`<option selected>${esc(value)}</option>`}</select>`;
 
 /* the declaration as nft would print it, which is what the preview shows */
 const setDecl = s => {
@@ -2664,16 +2680,23 @@ function renderSets(){
           ${rs.length?`disabled title="${esc(t(`Referenced by ${rs.length} rules`,`Referenciado por ${rs.length} reglas`))}"`:""}>
           <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>${t("Delete set","Eliminar set")}</button>
       </div>
+      <!-- The keyword decides whether what follows is a name or an expression,
+           so it has to be something you can set. A set declared with typeof
+           used to show its whole expression as an extra entry in a list of
+           scalar type names, and picking any of them left "typeof ipv4_addr"
+           behind — which nft rejects. An editor may not damage what it has no
+           way of representing. -->
+      <div class="fld" style="max-width:190px"><span class="lbl">${t("declared as","declarado como")}</span>
+        <div class="seg" id="set-decl">
+          <button data-decl="type"${(s.decl||"type")==="type"?' class="on"':""}>type</button>
+          <button data-decl="typeof"${s.decl==="typeof"?' class="on"':""}>typeof</button>
+        </div></div>
       <div class="set-props">
         <label class="fld"><span class="lbl">${s.kind==="map"?t("key type","tipo de clave"):"type"}</span>
-          <select id="set-type">${TYPES.map(x=>
-            `<option${x===keyT?" selected":""}>${x}</option>`).join("")}
-            ${TYPES.includes(keyT)?"":`<option selected>${esc(keyT)}</option>`}</select></label>
+          ${typeControl("set-type", keyT, TYPES, s.decl)}</label>
         ${s.kind==="map"?`
         <label class="fld"><span class="lbl">${t("value type","tipo de valor")}</span>
-          <select id="set-vtype">${MAP_VALUES.map(x=>
-            `<option${x===valT?" selected":""}>${x}</option>`).join("")}
-            ${MAP_VALUES.includes(valT)?"":`<option selected>${esc(valT)}</option>`}</select></label>`:""}
+          ${typeControl("set-vtype", valT, MAP_VALUES, s.decl)}</label>`:""}
         <div class="fld"><span class="lbl">flags</span>
           <div class="preset" id="set-flags">${FLAGS.map(f=>
             `<button data-flag="${f}"${(s.f||"").includes(f)?' class="on"':""}>${f}</button>`).join("")}</div></div>
@@ -2736,6 +2759,14 @@ document.addEventListener("click", e=>{
     const have = (s.f||"").split(",").map(x=>x.trim()).filter(Boolean);
     const next = have.includes(f) ? have.filter(x=>x!==f) : [...have, f];
     edit(t("set flags","flags del set"), ()=>{ s.f = next.join(", "); });
+    return;
+  }
+  const dc = e.target.closest("#set-decl [data-decl]");
+  if(dc){
+    const s = curSet(); if(!s) return;
+    /* switching the keyword changes what the value means, not the value: what
+       was there stays there until you change it */
+    edit(t("set declaration","declaración del set"), ()=>{ s.decl = dc.dataset.decl; });
     return;
   }
   if(e.target.closest("#set-a-automerge")){
@@ -3413,7 +3444,7 @@ filePick.addEventListener("change", ()=>{
         const o = deserialise(text);
         edit(t("open project","abrir proyecto"), ()=>{
           MODEL.chains = o.chains; MODEL.sets = o.sets;
-          MODEL.objects = o.objects; MODEL.tables = o.tables;
+          MODEL.objects = o.objects; MODEL.tables = o.tables; MODEL.prelude = o.prelude;
         });
         /* the name and the scratch lists are part of the project, not the
            ruleset, so they sit outside the undo snapshot */
@@ -3550,7 +3581,7 @@ function startEmpty(){
   edit(t("new ruleset","ruleset nuevo"), ()=>{
     const e = blankRuleset();
     MODEL.chains = e.chains; MODEL.sets = e.sets;
-    MODEL.objects = []; MODEL.tables = [];
+    MODEL.objects = []; MODEL.tables = []; MODEL.prelude = [];
   });
   showProject();
   go("editor");

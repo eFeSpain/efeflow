@@ -53,6 +53,7 @@ export function deserialise(text) {
     sets: o.sets || [],
     objects: o.objects || [],
     tables: o.tables || [],
+    prelude: o.prelude || [],
     scratch: { ifaces: [], networks: [], ...(o.scratch || {}) },
   };
 }
