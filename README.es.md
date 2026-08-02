@@ -186,6 +186,42 @@ vista.
 
 ---
 
+## Las mismas preguntas, sin ventana
+
+Todo lo que decide algo vive en `src/core/` y nunca toca el DOM. Esa regla
+existe para que el parser se pueda probar contra un volcado real de `nft list
+ruleset` — y de paso permite que un pipeline pregunte lo que pregunta la
+interfaz, antes de que un ruleset llegue a una máquina.
+
+```console
+$ efeflow lint fw.nft
+fw.nft:103  error conflict   Conflicting DNAT targets for the same destination port
+      ip saddr 198.51.100.0/24 tcp dport 8443 dnat to 10.20.0.31:443
+fw.nft:71   warn  shadowed   Rule 11 is shadowed by rule 9 and can never match
+      ip saddr 10.10.0.0/24 tcp dport 443 accept
+
+  32 rules in 7 chains across 2 tables  ·  round-trip 76/76 = 100%
+  1 error  2 warnings  3 hints
+```
+
+`--json` para lo que no es una persona, `-` para leer de una tubería,
+`--fail-on error|warn|hint|never` para mover el umbral. Salida **0** si no hay
+nada en él o por encima, **1** si lo hay, y **2** si un fichero no se pudo leer
+siquiera — porque un tick verde que solo significa que nadie miró es peor que
+ningún tick.
+
+```yaml
+- run: npx github:eFeSpain/efeflow lint --fail-on warn nftables/*.nft
+```
+
+**No sustituye a `nft -c`, y no pretende hacerlo.** Conserva lo que no sabe
+modelar en vez de rechazarlo, así que una línea que no es nftables en absoluto
+pasa como texto y no la reporta nadie. `--nft` le pasa el fichero al de verdad
+donde el de verdad existe; y donde no, dice qué opinión falta en lugar de dar a
+entender que hubo dos.
+
+---
+
 ## Instalar
 
 Coge un instalador de [**Releases**](https://github.com/eFeSpain/efeflow/releases/latest):
@@ -203,7 +239,10 @@ Linux `.deb` `.rpm` `.AppImage` · Windows `.msi` · macOS `.dmg`
 | Ambas cosas **por SSH** | ✅ | ✅ | ✅ |
 
 **SSH no es el plan B, es el diseño**: el firewall rara vez es la máquina donde
-tienes el editor abierto. Pulsa el chip de arriba a la derecha para apuntar
+tienes el editor abierto. Y nadie administra una sola caja, así que el chip de
+arriba a la derecha guarda la lista de las que llevas — en esta máquina y en
+todos los proyectos, porque un inventario describe tu parque y no el ruleset
+que tengas abierto. Púlsalo para apuntar
 eFeFlow a un host. Delega en el `ssh` del sistema, así que tus claves, tu agente
 y tu `~/.ssh/config` ya se aplican, y eFeFlow no guarda credenciales.
 
@@ -236,9 +275,12 @@ tratan como una máquina:
 
 **Leer contadores** trae de vuelta `nft list ruleset` y pone los paquetes y
 bytes reales sobre tus reglas. Es la única respuesta honesta a *¿esta regla se
-usa alguna vez?* — el analizador sabe decirte que una regla es inalcanzable,
-pero solo el kernel sabe decirte que una alcanzable lleva seis semanas sin casar
-nada.
+usa alguna vez?* — el analizador sabe demostrar que una regla es inalcanzable,
+pero solo el kernel sabe decirte que una alcanzable no ha casado nada. Las que
+están a cero se marcan frías en el lienzo y se agrupan en un hallazgo, y las
+palabras son exactamente *desde que se cargó el ruleset*, porque es lo que un
+contador sabe. Una regla sin `counter` no está fría, está sin medir, y se cuenta
+aparte.
 
 **Vigilar** engancha `nft monitor` y te informa de cada cambio que haga la
 máquina mientras lo tengas abierto, lo haga quien lo haga.
@@ -280,6 +322,8 @@ npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
 npm test             # 541 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
+
+node bin/efeflow.mjs lint fw.nft    # el linter, directo desde el clon
 ```
 
 Necesita los [prerrequisitos de Tauri](https://tauri.app/start/prerequisites/)
