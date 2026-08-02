@@ -240,7 +240,10 @@
   <div id="status">
     <button class="st"><span class="sw" style="background:var(--v-accept)"></span><span data-t="Syntax valid|Sintaxis válida">Syntax valid</span></button>
     <button class="st" data-go="validate"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span id="st-problems">—</span></button>
-    <button class="st"><svg class="ico sm" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>main <span class="dimmer">↑2</span></button>
+    <!-- This said `main ↑2`: a branch and two unpushed commits, both literal
+         text, over a project with no version control of any kind. What is
+         true here is whether the work has been saved. -->
+    <button class="st" id="st-saved" data-tt="Save the project — Ctrl+S|Guardar el proyecto — Ctrl+S"><svg class="ico sm" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg><span id="st-saved-t">—</span></button>
     <div class="spacer"></div>
     <span class="st" id="st-counts">—</span>
     <span class="st"><span data-t="Worst case|Peor caso">Worst case</span>&nbsp;<span class="num" id="st-worst" style="color:var(--t2)">—</span>&nbsp;<span data-t="evals/pkt|evals/paq">evals/pkt</span></span>
@@ -258,6 +261,9 @@
   <aside class="lib">
     <div class="lib-search">
       <input type="text" data-tp="Filter objects…|Filtrar objetos…" id="lib-filter">
+      <!-- what you add to the catalogues is kept on this machine, so these are
+           how it reaches another one, or the rest of a team -->
+      <button class="tb icon" id="lib-menu" data-tt="Your catalogue: where it is kept, export, import|Tu catálogo: dónde se guarda, exportar, importar"><svg class="ico sm" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
     </div>
     <div class="lib-body" id="lib-body"></div>
   </aside>
@@ -390,9 +396,11 @@
 
     <div class="grid g2">
       <div class="card">
-        <div class="hd"><h3 data-t="Version history|Historial de versiones">Version history</h3>
-          <span class="chip"><svg class="ico sm" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>main</span>
-          <button class="tb icon"><svg class="ico sm" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
+        <!-- The timeline below is real — it is the undo history. The card
+             called it "Version history" under a `main` branch chip, which
+             framed it as something it is not. -->
+        <div class="hd"><h3 data-t="Edit history|Historial de ediciones">Edit history</h3>
+          <span class="lbl" style="flex:1;text-transform:none;letter-spacing:0" data-t="this session|esta sesión">this session</span>
         </div>
         <div class="tl" id="tl-history"></div>
         </div>

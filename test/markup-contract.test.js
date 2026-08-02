@@ -46,3 +46,16 @@ test("every screen the rail can reach has a section", () => {
     assert.ok(ids.has(`s-${id}`), `nav points at #s-${id}, which does not exist`);
   }
 });
+
+/* The status bar carried `main ↑2` — a branch and two unpushed commits, as
+   literal text, over a project with no version control of any kind. It is the
+   same class of thing as a map called @port_fwd: it reads as a feature. */
+test("nothing in the markup claims a version control that does not exist", () => {
+  assert.ok(!/>main\s*<span class="dimmer">/.test(html),
+    "a hard-coded branch name and commit count");
+  assert.doesNotMatch(html, /Version history\|Historial de versiones/,
+    "the undo history was labelled as version history");
+  const gitCode = /\bgit\s+(rev-parse|status|branch|log)\b/;
+  assert.ok(!gitCode.test(js) && !gitCode.test(main),
+    "if git is ever shown, this test should be replaced by one that checks it works");
+});

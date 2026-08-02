@@ -150,3 +150,49 @@ test("a line that is not a service is refused, not stored", async () => {
 
   assert.equal(items("SV").length, before, "a service with no port is not a service");
 });
+
+/* What you add is knowledge about the world, so it is kept per machine rather
+   than per project — which is exactly why it needs a way off the machine. */
+test("the catalogue can be carried to another machine", async () => {
+  await boot();
+  await newRuleset();
+
+  click('.cat[data-kind="SV"] [data-add]');
+  await settle(40);
+  $("#cf-body input").value = "acme 9911/tcp";
+  click("#cf-yes");
+  await settle(60);
+  assert.ok(items("SV").includes("acme"));
+
+  /* export writes through the same path the project save uses */
+  let written = null;
+  const win = globalThis.window;
+  const real = globalThis.URL.createObjectURL;
+  globalThis.URL.createObjectURL = (b) => { written = b; return "blob:captured"; };
+  try {
+    click("#lib-menu");
+    await settle(40);
+    const exportItem = $$("[data-act]").find((a) => a.dataset.act === "export");
+    assert.ok(exportItem, "there has to be a way out");
+    click(exportItem);
+    await settle(80);
+  } finally {
+    globalThis.URL.createObjectURL = real;
+  }
+
+  assert.ok(written, "export produced nothing");
+  const payload = JSON.parse(await written.text());
+  assert.ok(payload.services.some((s) => s.n === "acme"),
+    "the exported catalogue must contain what you added");
+  assert.ok(Array.isArray(payload.protocols) && Array.isArray(payload.helpers),
+    "and all three vocabularies, so an import is complete");
+});
+
+test("the menu offers to say where the catalogue is kept", async () => {
+  await boot();
+  await newRuleset();
+  click("#lib-menu");
+  await settle(40);
+  const acts = $$("[data-act]").map((a) => a.dataset.act);
+  for (const a of ["where", "export", "import"]) assert.ok(acts.includes(a), `${a} is missing`);
+});

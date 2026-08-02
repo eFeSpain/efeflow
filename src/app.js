@@ -213,13 +213,36 @@ $("#dw-toggle").addEventListener("click",e=>{
    case: they describe the box these rules are for, so they travel with it. */
 const VKEY = "efeflow.vocabulary";
 let VOCAB = emptyVocabulary();
+
+/* Synchronously from local storage so the first render has something, then
+   from the file, which is the authority. The webview's storage is a leveldb
+   blob — unreadable, unmergeable, and it does not leave the machine. */
 try{
   const raw = localStorage.getItem(VKEY);
   if(raw) Object.assign(VOCAB, JSON.parse(raw));
 }catch{ /* a corrupt entry is not worth a crash */ }
+
+const mergeVocab = text => {
+  try{
+    const o = JSON.parse(text);
+    if(!o || typeof o !== "object") return false;
+    for(const k of Object.keys(emptyVocabulary()))
+      if(Array.isArray(o[k])) VOCAB[k] = o[k];
+    return true;
+  }catch{ return false; }
+};
+
+native.readSetting("vocabulary").then(text=>{
+  if(text && mergeVocab(text)) renderLibrary();
+  else if(VOCAB.services.length || VOCAB.protocols.length || VOCAB.helpers.length)
+    vocabChanged();          /* first run after the move: carry the old store over */
+}).catch(()=>{ /* browser, or no config directory */ });
+
 const ownOf = gl => VOCAB[OWNABLE[gl]?.key] ?? [];
 function vocabChanged(){
-  try{ localStorage.setItem(VKEY, JSON.stringify(VOCAB)); }catch{ /* private mode */ }
+  const text = JSON.stringify(VOCAB, null, 2);
+  try{ localStorage.setItem(VKEY, text); }catch{ /* private mode */ }
+  native.writeSetting("vocabulary", text).catch(()=>{ /* read-only profile */ });
   renderLibrary();
 }
 
@@ -2943,6 +2966,13 @@ function showProject(){
   const cf = $("#code-filename");
   if(cf) cf.textContent = t("Generated · ","Generado · ") + project.name + ".nft";
   const ap = $("#about-project"); if(ap) ap.textContent = label;
+
+  /* What the branch indicator pretended to say. This one is true. */
+  const sv = $("#st-saved-t");
+  if(sv) sv.textContent = !project.open ? "—"
+    : !project.path      ? t("not saved","sin guardar")
+    : HIST.past.length   ? t(`${HIST.past.length} unsaved`, `${HIST.past.length} sin guardar`)
+                         : t("saved","guardado");
   $$(".fname").forEach(n=> n.textContent = project.name + ".nft");
 }
 
@@ -3648,3 +3678,63 @@ paintEmpty();
 $("#es-new").addEventListener("click", ()=>{ startEmpty(); });
 $("#es-import").addEventListener("click", ()=>go("import"));
 $("#es-tour").addEventListener("click", ()=>{ startEmpty(); startTour(); });
+
+/* ══ THE CATALOGUE: WHERE IT LIVES, AND HOW IT LEAVES ═══════════════════
+   What you add to Services, Protocols and Helpers is kept on this machine,
+   which is right for knowledge about the world — telnet is 23 in every
+   project. It is also why it needs a way out: the ports of an internal
+   network get looked up by one person and used by ten. */
+$("#lib-menu")?.addEventListener("click", async e=>{
+  e.stopPropagation();
+  const mine = VOCAB.services.length + VOCAB.protocols.length + VOCAB.helpers.length;
+  const m = openCtx(e.clientX, e.clientY, [
+    ["where", t("Where is it kept?","¿Dónde se guarda?"),
+     "M12 21s7-5.7 7-11a7 7 0 1 0-14 0c0 5.3 7 11 7 11z M12 10h.01"],
+    ["export", t(`Export your catalogue (${mine})`, `Exportar tu catálogo (${mine})`),
+     "M12 3v13M7 11l5 5 5-5M4 21h16"],
+    ["import", t("Import a catalogue…","Importar un catálogo…"),
+     "M12 16V3M7 8l5-5 5 5M4 21h16"],
+  ]);
+  m.addEventListener("click", async ev=>{
+    const a = ev.target.closest("[data-act]"); if(!a) return;
+    const act = a.dataset.act;
+    killCtx();
+
+    if(act === "where"){
+      const where = await native.settingPath("vocabulary");
+      await confirmDialog(t("Your catalogue","Tu catálogo"),
+        where
+          ? t(`It is a plain JSON file at:\n\n${where}\n\nBack it up, put it in a repository, or point a synced folder at it — editing it by hand is fine.`,
+              `Es un fichero JSON en:\n\n${where}\n\nHaz copia, mételo en un repositorio, o apunta una carpeta sincronizada ahí — editarlo a mano es correcto.`)
+          : t("In the browser it is kept in local storage, which does not leave this profile. The desktop app writes a JSON file you can back up.",
+              "En el navegador se guarda en el almacenamiento local, que no sale de este perfil. La aplicación de escritorio escribe un fichero JSON del que puedes hacer copia."),
+        t("Close","Cerrar"));
+      return;
+    }
+
+    if(act === "export"){
+      if(!mine){
+        toast(t("Nothing of your own to export yet","Todavía no has añadido nada"));
+        return;
+      }
+      const where = await native.saveTextFile("efeflow-catalogue.json",
+        JSON.stringify(VOCAB, null, 2), [{name:"eFeFlow catalogue", extensions:["json"]}]);
+      if(where) toast(t("Exported to ","Exportado a ")+where);
+      return;
+    }
+
+    if(act === "import"){
+      const picked = await native.openTextFile([{name:"eFeFlow catalogue", extensions:["json"]}]);
+      if(!picked) return;
+      const before = VOCAB.services.length + VOCAB.protocols.length + VOCAB.helpers.length;
+      if(!mergeVocab(picked.text)){
+        toast(t("That is not a catalogue file","Eso no es un fichero de catálogo"));
+        return;
+      }
+      vocabChanged();
+      const after = VOCAB.services.length + VOCAB.protocols.length + VOCAB.helpers.length;
+      toast(t(`Catalogue imported — ${after} entries, was ${before}`,
+              `Catálogo importado — ${after} entradas, antes ${before}`));
+    }
+  });
+});

@@ -129,6 +129,46 @@ export async function openTextFile(filters) {
   });
 }
 
+/* ── settings that outlive one project ────────────────────────────────
+   A plain JSON file in the app's config directory rather than the webview's
+   local storage, which is a leveldb blob you cannot read, back up, put in
+   git, or sync between machines. In a browser there is no such directory,
+   so localStorage remains the answer there. */
+export async function readSetting(name) {
+  if (!inTauri) {
+    try { return localStorage.getItem("efeflow." + name); } catch { return null; }
+  }
+  const { readTextFile, exists } = await import("@tauri-apps/plugin-fs");
+  const { appConfigDir, join } = await import("@tauri-apps/api/path");
+  const file = await join(await appConfigDir(), `${name}.json`);
+  try {
+    return (await exists(file)) ? await readTextFile(file) : null;
+  } catch {
+    return null;                       /* unreadable is the same as absent */
+  }
+}
+
+export async function writeSetting(name, text) {
+  if (!inTauri) {
+    try { localStorage.setItem("efeflow." + name, text); } catch { /* private mode */ }
+    return null;
+  }
+  const { writeTextFile, mkdir } = await import("@tauri-apps/plugin-fs");
+  const { appConfigDir, join } = await import("@tauri-apps/api/path");
+  const dir = await appConfigDir();
+  try { await mkdir(dir, { recursive: true }); } catch { /* already there */ }
+  const file = await join(dir, `${name}.json`);
+  await writeTextFile(file, text);
+  return file;
+}
+
+/* Where it lives, so the interface can tell the user rather than describe it. */
+export async function settingPath(name) {
+  if (!inTauri) return null;
+  const { appConfigDir, join } = await import("@tauri-apps/api/path");
+  return join(await appConfigDir(), `${name}.json`);
+}
+
 /* ── window controls, since the window is frameless ───────────────────
    These are IPC calls and Tauri gates them per capability. A missing grant
    rejects silently from the caller's point of view, which reads as a dead

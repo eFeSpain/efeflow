@@ -23,9 +23,13 @@
 
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
+    "fs:allow-mkdir",
+    "fs:allow-exists",
     {
       "identifier": "fs:scope",
       "allow": [
+        { "path": "$APPCONFIG" },
+        { "path": "$APPCONFIG/**" },
         { "path": "$HOME/**" },
         { "path": "$DESKTOP/**" },
         { "path": "$DOCUMENT/**" },
