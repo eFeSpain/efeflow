@@ -44,7 +44,13 @@ let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BAS
 FIND = [];
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
-const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+/* Text on its way into markup. The quotes matter as much as the angle
+   brackets: nearly every use of this is inside an attribute, and without them
+   a name out of somebody else's project file closes the attribute and opens a
+   tag. Exported so a test can hold it to that. */
+export const esc = s => String(s ?? "")
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+  .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 const el = (tag,c,h)=>{const n=document.createElement(tag); if(c)n.className=c; if(h!=null)n.innerHTML=h; return n;};
 /* chain and interface keys contain "/" and spaces, so they need escaping
    before they go into an attribute selector. Declared here with the other
@@ -517,7 +523,7 @@ function renderChains(){
     node.innerHTML = `
       <div class="chain-hd">
         <span style="color:var(--${ch.policy==="drop"?"v-drop":"v-accept"});font-size:9px">◆</span>
-        <span class="cn">${ch.id}</span><span class="fam">${ch.table.split(" ")[0]}</span>
+        <span class="cn">${esc(ch.id)}</span><span class="fam">${esc(ch.table.split(" ")[0])}</span>
       </div>
       <div class="chain-meta">
         ${ch.hook?`<span class="chip">hook ${ch.hook}</span><span class="chip">prio ${ch.prio}</span>`:`<span class="chip">${t("no hook","sin hook")}</span>`}
@@ -844,7 +850,7 @@ function select(chainId, i, fromCode){
     if(hit && !fromCode) l.scrollIntoView({block:"center",behavior:"smooth"});
   });
   if(fromCode){
-    const row = $(`.rule[data-chain="${chainId}"][data-i="${i}"]`);
+    const row = $(`.rule[data-chain="${cssEsc(chainId)}"][data-i="${i}"]`);
     if(row){ go("editor"); row.scrollIntoView({block:"center",inline:"center",behavior:"smooth"}); }
   }
   const p = parse(r.expr);
@@ -859,7 +865,7 @@ function select(chainId, i, fromCode){
         <div style="flex:1"></div>
         <span class="sw-toggle${r.on?" on":""}" id="rule-on" title="${t("Enable rule","Activar la regla")}"></span>
       </div>
-      <div class="path">${ch.table} / ${ch.id} · ${t("position","posición")} ${i+1} ${t("of","de")} ${ch.rules.length}</div>
+      <div class="path">${esc(ch.table)} / ${esc(ch.id)} · ${t("position","posición")} ${i+1} ${t("of","de")} ${ch.rules.length}</div>
       <!-- The rule as nft source, and editable as nft source. The fields below
            cover the nine things this panel models; nftables says a great deal
            more than nine things, and until this existed there was no way to
@@ -874,7 +880,7 @@ function select(chainId, i, fromCode){
                      border-radius:var(--r-sm);background:rgba(${c[0]},.08);border:1px solid rgba(${c[0]},.22)">
           <svg class="ico sm" style="color:var(${c[1]});margin-top:1px;flex:none" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
           <div style="flex:1">
-            <div style="font-size:11.5px;color:var(--t1);line-height:1.45;font-weight:500">${tt(f.title)}</div>
+            <div style="font-size:11.5px;color:var(--t1);line-height:1.45;font-weight:500">${esc(tt(f.title))}</div>
             ${f.fix?`<button class="tb" style="height:22px;margin-top:6px;padding:0 8px;color:var(${c[1]})"
                data-fix="${FIND.indexOf(f)}">${tt(f.fix.label)}</button>`:""}
           </div></div>`;
@@ -1115,16 +1121,16 @@ setTimeout(()=>{
 const lane = $("#lane"), traceEl = $("#trace"), pkt = $("#pkt"), vb = $("#vb");
 function renderLane(res){
   lane.innerHTML = res.steps.map(h=>`
-    <div class="hop" data-chain="${UID(h.chain)}" style="${h.depth?`margin-left:${h.depth*22}px`:""}">
+    <div class="hop" data-chain="${esc(UID(h.chain))}" style="${h.depth?`margin-left:${h.depth*22}px`:""}">
       <span class="knob"></span>
       <div class="hop-t">
         <span class="h">${h.chain.hook || (lang() === "es"?"salto":"jump")}</span>
-        <span class="c">${h.chain.id}</span>
+        <span class="c">${esc(h.chain.id)}</span>
         ${h.chain.prio!==null?`<span class="chip">prio ${h.chain.prio}</span>`:""}
         ${h.chain.policy?`<span class="pill ${h.chain.policy==="drop"?"v-drop":"v-accept"}"><span class="sw"></span>policy ${h.chain.policy}</span>`:""}
       </div>
       ${h.evs.map(e=>`
-        <div class="ev${e.unsure?" guessed":""}" data-chain="${UID(h.chain)}" data-i="${e.i}"${
+        <div class="ev${e.unsure?" guessed":""}" data-chain="${esc(UID(h.chain))}" data-i="${e.i}"${
           e.unsure ? ` title="${esc(t(
             `Taken as matching. Nothing evaluated ${e.unsure.join(", ")}.`,
             `Se da por coincidente. Nada ha evaluado ${e.unsure.join(", ")}.`))}"` : ""}>
@@ -1190,7 +1196,7 @@ function runSim(){
   const flat = [];
   res.steps.forEach(h=>{
     flat.push({type:"hop",h});
-    $$(`.hop[data-chain="${UID(h.chain)}"] .ev`, lane).forEach((node,k)=>{
+    $$(`.hop[data-chain="${cssEsc(UID(h.chain))}"] .ev`, lane).forEach((node,k)=>{
       flat.push({type:"ev", node, e:h.evs[k], h});
     });
   });
@@ -1215,10 +1221,10 @@ function runSim(){
   let d = 0, idx = 0;
   const frame = f=>{
       if(f.type==="hop"){
-        const hop = $(`.hop[data-chain="${UID(f.h.chain)}"]`, lane);
+        const hop = $(`.hop[data-chain="${cssEsc(UID(f.h.chain))}"]`, lane);
         hop.classList.add("done");
         $$(".hk").forEach(k=>k.classList.toggle("lit", k.dataset.hook===f.h.chain.hook));
-        push("", stamp(), `${t("enter","entra en")} <b>${f.h.chain.table} / ${f.h.chain.id}</b>${f.h.chain.hook?` · hook ${f.h.chain.hook} prio ${f.h.chain.prio}`:""}`);
+        push("", stamp(), `${t("enter","entra en")} <b>${esc(f.h.chain.table)} / ${esc(f.h.chain.id)}</b>${f.h.chain.hook?` · hook ${f.h.chain.hook} prio ${f.h.chain.prio}`:""}`);
         return;
       }
       const {node,e} = f;
@@ -1229,7 +1235,7 @@ function runSim(){
       node.classList.add(e.st==="match"?"match":"miss");
       if(e.st!=="match") node.classList.add("pass");
       /* mirror the trace back onto the editor canvas */
-      const cvRow = $(`.rule[data-chain="${node.dataset.chain}"][data-i="${node.dataset.i}"]`);
+      const cvRow = $(`.rule[data-chain="${cssEsc(node.dataset.chain)}"][data-i="${node.dataset.i}"]`);
       if(cvRow) cvRow.classList.add(e.st==="match"?"trace":"faded");
       if(e.st==="match"){
         if(cvRow) cvRow.classList.add("hit");
@@ -1261,7 +1267,7 @@ function runSim(){
       : `<svg class="ico lg" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>`;
     $("#vb-txt").textContent = VNAME[v];
     $("#vb-txt").style.color = `var(${col})`;
-    const loc = `<code>${res.final.chain.table} / ${res.final.chain.id}</code>`;
+    const loc = `<code>${esc(res.final.chain.table)} / ${esc(res.final.chain.id)}</code>`;
     /* The verdict is only the verdict your ruleset gives you if everything on
        the way to it was actually evaluated. Where it was not, say so here
        rather than let the banner speak for a guess. */
@@ -1486,8 +1492,8 @@ function paintDrawer(){
            ${f.chain?`data-goto="${FIND.indexOf(f)}"`:""}>
         <span class="no" style="color:var(--${f.sev==="error"?"v-drop":f.sev==="warn"?"warn":"t4"})">●</span>
         <span class="tx" style="white-space:normal;padding-right:20px">
-          <span style="color:var(--t1)">${tt(f.title)}</span>
-          <span style="color:var(--t4)"> · ${f.where}</span></span>
+          <span style="color:var(--t1)">${esc(tt(f.title))}</span>
+          <span style="color:var(--t4)"> · ${esc(f.where)}</span></span>
       </div>`).join("")
       : `<div style="padding:34px;text-align:center;color:var(--t4);font-size:12px">
            ${t("No problems found.","Sin problemas.")}</div>`;
@@ -1678,7 +1684,7 @@ function renderFindings(){
       <summary>
         <span class="sev" style="background:${s.col}"></span>
         <span class="pill ${f.sev==="error"?"v-drop":f.sev==="warn"?"v-warnp":"v-neutral"}"><span class="sw"></span>${tt(s.nm)}</span>
-        <span class="ttl"><div class="h">${tt(f.title)}</div><div class="l">${f.where} · ${f.kind}</div></span>
+        <span class="ttl"><div class="h">${esc(tt(f.title))}</div><div class="l">${esc(f.where)} · ${f.kind}</div></span>
         ${CARET}
       </summary>
       <div class="finding-body">
@@ -1709,7 +1715,7 @@ function renderFindings(){
     <div class="opt-card">
       <div class="t">
         <span class="pill ${f.sev==="error"?"v-drop":f.sev==="warn"?"v-warnp":"v-accept"}"><span class="sw"></span>${f.kind}</span>
-        <h4>${tt(f.title)}</h4>
+        <h4>${esc(tt(f.title))}</h4>
         <button class="tb" style="height:23px" data-fix="${FIND.indexOf(f)}">${tt(f.fix.label)}</button>
       </div>
       <p>${tt(f.detail)}</p>
@@ -1743,7 +1749,7 @@ function renderFindings(){
   $$(".rule").forEach(x=>x.classList.remove("warn","err"));
   FIND.forEach(f=>{
     if(!f.chain) return;
-    const row = $(`.rule[data-chain="${UID(f.chain)}"][data-i="${f.i}"]`);
+    const row = $(`.rule[data-chain="${cssEsc(UID(f.chain))}"][data-i="${f.i}"]`);
     if(row) row.classList.add(f.sev==="error"?"err":"warn");
   });
 }
@@ -1807,7 +1813,7 @@ function addRule(chainId){
     ch.rules.push(R("", ch.policy==="drop" ? "accept" : "drop", {pkts:0,bytes:0}));
   });
   select(chainId, ch.rules.length-1);
-  const row = $(`.rule[data-chain="${chainId}"][data-i="${ch.rules.length-1}"]`);
+  const row = $(`.rule[data-chain="${cssEsc(chainId)}"][data-i="${ch.rules.length-1}"]`);
   if(row) row.scrollIntoView({block:"center",behavior:"smooth"});
   const f = $("#f-dport"); if(f) f.focus();
 }
@@ -2499,8 +2505,8 @@ function renderSets(){
     </div>`;
 
   refs.innerHTML = rs.length ? rs.map(({ch,r,i})=>`
-    <div class="ref" data-ref="${UID(ch)}:${i}">
-      <div class="loc"><span style="color:var(--${VCOLOR[r.verdict]||"--t3"})">◆</span>${ch.table} / ${ch.id} · ${t("rule","regla")} ${i+1}</div>
+    <div class="ref" data-ref="${esc(UID(ch))}:${i}">
+      <div class="loc"><span style="color:var(--${VCOLOR[r.verdict]||"--t3"})">◆</span>${esc(ch.table)} / ${esc(ch.id)} · ${t("rule","regla")} ${i+1}</div>
       <div class="ex">${highlight(ruleLine(r)).replace(new RegExp("@"+s.n,"g"),`<mark>@${s.n}</mark>`)}</div>
     </div>`).join("") : `
     <div style="padding:32px 18px;text-align:center;font-size:11.5px;color:var(--t4);line-height:1.6">
@@ -2922,7 +2928,7 @@ function renderDash(){
         c.rules.filter(r=>r.on).forEach(r=> mix[r.verdict] = (mix[r.verdict]||0)+1);
         const bars = Object.entries(mix).sort((a,b)=>b[1]-a[1]).map(([v,n])=>
           `<i style="flex:${n};background:var(${VCOLOR[v]||"--v-log"})"></i>`).join("");
-        return `<div class="hm-ch" data-chain-go="${UID(c)}">
+        return `<div class="hm-ch" data-chain-go="${esc(UID(c))}">
           <div class="n"><span style="color:var(--${c.policy==="drop"?"v-drop":"v-accept"});font-size:9px">◆</span>
             ${esc(c.id)}<span class="p">${c.prio>0?"+"+c.prio:c.prio}</span></div>
           <div class="hm-bars">${bars||'<i style="flex:1;background:var(--line-2)"></i>'}</div></div>`;
@@ -2960,7 +2966,7 @@ function renderDash(){
 document.addEventListener("click", e=>{
   const c = e.target.closest("[data-chain-go]");
   if(c){ go("editor"); setTimeout(()=>{
-    const row = $(`.rule[data-chain="${c.dataset.chainGo}"]`);
+    const row = $(`.rule[data-chain="${cssEsc(c.dataset.chainGo)}"]`);
     if(row){ select(c.dataset.chainGo, 0); row.scrollIntoView({block:"center",inline:"center",behavior:"smooth"}); }
   },60); return; }
   const s = e.target.closest("[data-set-go]");

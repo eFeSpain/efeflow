@@ -61,6 +61,12 @@ export async function boot() {
   const win = dom.window;
   stubMissingPlatform(win);
 
+  /* The boot guard used to be inline, and jsdom ran it with the document. It
+     is a file now so that the page's CSP can say script-src 'self' and mean
+     it — jsdom does not fetch subresources, so the harness plays the browser's
+     part and runs it here, before the modules, exactly as the page does. */
+  win.eval(readFileSync(new URL("../public/boot-guard.js", import.meta.url), "utf8"));
+
   // The modules read these off the global scope, exactly as in a browser.
   globalThis.window = win;
   globalThis.document = win.document;

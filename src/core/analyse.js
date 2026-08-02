@@ -9,6 +9,7 @@ import { MODEL, R, ruleLine, jumpTarget, UID, chainOf } from './model.js';
 const at = (uid, i) => { const c = chainOf(uid); return c && c.rules[i] ? c : null; };
 import { inSet, inCidr } from './simulate.js';
 import { lintRuleset } from './lint.js';
+import { escape as esc } from './html.js';
 import { t } from '../i18n.js';
 const CRIT = [
   ["proto", /\b(tcp|udp|sctp)\b/],
@@ -103,8 +104,8 @@ export function analyse(){
         title:[`Conflicting DNAT targets for the same destination port`,
                `Destinos DNAT en conflicto para el mismo puerto destino`],
         where:`${ch.table} / ${ch.id}`,
-        detail:[`Rules ${a.i+1} and ${b.i+1} both match traffic to <code>${a.c.dport||"?"}</code> but translate it to different hosts. nftables terminates the chain on the first NAT verdict, so rule ${a.i+1} silently wins for every packet matching both and rule ${b.i+1} never fires.`,
-                `Las reglas ${a.i+1} y ${b.i+1} coinciden con tráfico a <code>${a.c.dport||"?"}</code> pero lo traducen a hosts distintos. nftables termina la cadena en el primer veredicto NAT, así que la regla ${a.i+1} gana en silencio para todo paquete que case con ambas y la ${b.i+1} nunca se dispara.`],
+        detail:[`Rules ${a.i+1} and ${b.i+1} both match traffic to <code>${esc(a.c.dport||"?")}</code> but translate it to different hosts. nftables terminates the chain on the first NAT verdict, so rule ${a.i+1} silently wins for every packet matching both and rule ${b.i+1} never fires.`,
+                `Las reglas ${a.i+1} y ${b.i+1} coinciden con tráfico a <code>${esc(a.c.dport||"?")}</code> pero lo traducen a hosts distintos. nftables termina la cadena en el primer veredicto NAT, así que la regla ${a.i+1} gana en silencio para todo paquete que case con ambas y la ${b.i+1} nunca se dispara.`],
         code:[[a.i+1, ruleLine(a.r), "neg"],[b.i+1, ruleLine(b.r), "dead"]],
         /* The narrowing comes from the other rule, never from a name we made
            up. This appended `ip saddr != @admin_nets` — a set from the demo
@@ -138,8 +139,8 @@ export function analyse(){
                `${sibs.length} reglas solo difieren en el puerto destino`],
         where:`${ch.table} / ${ch.id} · ${t("rules","reglas")} ${sibs.map(s=>s.i+1).join(", ")}`,
         detail:match
-          ? [`These ports are exactly the contents of the existing set <code>@${match.n}</code>. One set lookup is a single hash probe instead of ${sibs.length} linear comparisons, and leaves one place to edit.`,
-             `Estos puertos son exactamente el contenido del set existente <code>@${match.n}</code>. Una consulta a set es un solo sondeo hash en vez de ${sibs.length} comparaciones lineales, y deja un único sitio que editar.`]
+          ? [`These ports are exactly the contents of the existing set <code>@${esc(match.n)}</code>. One set lookup is a single hash probe instead of ${sibs.length} linear comparisons, and leaves one place to edit.`,
+             `Estos puertos son exactamente el contenido del set existente <code>@${esc(match.n)}</code>. Una consulta a set es un solo sondeo hash en vez de ${sibs.length} comparaciones lineales, y deja un único sitio que editar.`]
           : [`Collapsing them into an anonymous set costs one hash probe instead of ${sibs.length} comparisons.`,
              `Colapsarlas en un set anónimo cuesta un sondeo hash en vez de ${sibs.length} comparaciones.`],
         code:sibs.map(s=>[s.i+1, ruleLine(s.r), "neg"])
