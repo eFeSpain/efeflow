@@ -1010,8 +1010,16 @@ export function addresses(){
   return [...m.values()].sort((a,b)=>b.n-a.n);
 }
 
+/* Both halves, exactly as the Interfaces palette shows them: the names your
+   rules already mention, and the ones you wrote down for the box you are
+   working on. Keeping a name and then not being offered it — in the simulator
+   or on a rule — makes the act of keeping it pointless. */
 export function ifaceNames(){
-  return [...new Set([...interfaces().map(e=>e.name), "lo"])].sort();
+  return [...new Set([
+    ...interfaces().map(e=>e.name),
+    ...project.scratch.ifaces,
+    "lo",
+  ])].sort();
 }
 
 function fillInterfaces(){
@@ -2960,6 +2968,11 @@ const usagesOf = (kind, name) => {
 
 const scratchOf = kind => kind === "IF" ? project.scratch.ifaces : project.scratch.networks;
 
+/* Kept names are not part of MODEL, so the model hooks that refresh the
+   interface pickers never fire for them. Every edit to a kept list goes
+   through here, or the palette and the pickers drift apart again. */
+const scratchChanged = ()=>{ renderLibrary(); fillInterfaces(); };
+
 /* Keeping a name to hand before any rule uses it. */
 $("#lib-body").addEventListener("click", async e=>{
   const add = e.target.closest("[data-add]");
@@ -2979,7 +2992,7 @@ $("#lib-body").addEventListener("click", async e=>{
   if(!name) return;
   const list = scratchOf(kind);
   if(!list.includes(name)) list.push(name);
-  renderLibrary();
+  scratchChanged();
   toast(t(`${name} kept with the project`, `${name} guardado con el proyecto`));
 });
 
@@ -3014,7 +3027,7 @@ document.addEventListener("contextmenu", e=>{
     if(act === "drop"){
       const list = scratchOf(kind);
       list.splice(list.indexOf(name), 1);
-      renderLibrary();
+      scratchChanged();
       return;
     }
     if(act === "edit"){
@@ -3026,7 +3039,7 @@ document.addEventListener("contextmenu", e=>{
       if(!next || next === name) return;
       const list = scratchOf(kind);
       list[list.indexOf(name)] = next;
-      renderLibrary();
+      scratchChanged();
       return;
     }
 

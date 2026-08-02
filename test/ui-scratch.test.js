@@ -83,3 +83,32 @@ test("an unused entry can be edited and removed", async () => {
      because there are no rules to keep in step */
   assert.ok(libNames("NW").includes("172.20.0.0/16"));
 });
+
+/* A name you keep is only worth keeping if the rest of the app offers it.
+   ifaceNames() read the rules alone, so an interface added by hand showed up
+   in the palette and nowhere else — not in the simulator, not on a rule. */
+const optionValues = (sel) => $$(`${sel} option`).map((o) => o.value || o.textContent.trim());
+
+test("an interface you keep is offered where interfaces are chosen", async () => {
+  await boot();
+  await newRuleset();
+  await addVia("IF", "vlan99");
+
+  assert.ok(optionValues("#dl-ifaces").includes("vlan99"),
+    "the rule editor suggests interfaces from this list");
+  assert.ok(optionValues("#sim-iif").includes("vlan99"),
+    "and the simulator has to let you send a packet in on it");
+  assert.ok(optionValues("#sim-oif").includes("vlan99"));
+});
+
+test("renaming or dropping a kept interface reaches those lists too", async () => {
+  await boot();
+  await newRuleset();
+  await addVia("IF", "vlan99");
+  assert.ok(optionValues("#sim-iif").includes("vlan99"));
+
+  /* the lists are not part of MODEL, so nothing re-renders them on its own */
+  project.scratch.ifaces.length = 0;
+  const { ifaceNames } = await import("../src/app.js");
+  assert.ok(!ifaceNames().includes("vlan99"), "the source of the list follows the project");
+});
