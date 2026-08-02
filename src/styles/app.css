@@ -1016,6 +1016,9 @@ pre.code{margin:0;padding:10px 0 18px;font:450 11.5px/1.65 var(--mono);letter-sp
 }
 .imp-left textarea:focus{box-shadow:none}
 .imp-bar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);flex:none}
+/* the example picker stands in a row of .tb buttons, so it takes their metrics
+   rather than the full-width the generic select rule assumes for form fields */
+#imp-sample{width:auto;max-width:220px;height:27px;font-size:12px}
 .imp-side{display:flex;flex-direction:column;overflow-y:auto;background:var(--base)}
 .imp-sec{padding:13px 14px;border-bottom:1px solid var(--line)}
 .imp-stat{display:flex;align-items:baseline;justify-content:space-between;padding:3px 0;font-size:11.5px}

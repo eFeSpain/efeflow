@@ -138,7 +138,7 @@ It is the one operation that can lock you out of a machine.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 112 assertions
+npm test             # 155 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 ```
 

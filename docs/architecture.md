@@ -15,7 +15,7 @@ src/core/        pure, DOM-free, covered by npm test
   diff.js          LCS diff against the last import or export
   project.js       name, origin, and the names you keep by hand
   bus.js           one registry every derived view subscribes to
-  samples.js       the ruleset the import dialog offers
+  samples.js       the worked scenarios the import dialog offers
 src/app.js       the interface
 src/native.js    bridge to Rust; degrades to browser equivalents
 src/target.js    where nft runs: this machine, or a host over SSH
@@ -48,7 +48,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 112 assertions.
+`npm test` — 155 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across
@@ -82,22 +82,37 @@ must never open on a firewall its user did not write.
 UI tests load it through the import dialog rather than assigning to `MODEL`, so
 they exercise the path a real ruleset arrives by.
 
-## The sample, and why it is in `core/`
+## The samples, and why they are in `core/`
 
-`core/samples.js` holds the ruleset the import dialog offers, so the import path
-can be tried without a host. It used to be a template literal inside `app.js`,
-where no test could reach it.
+`core/samples.js` holds the worked scenarios the import dialog offers — a
+filtering host, a NAT gateway, port forwarding with hairpin, a WireGuard
+endpoint, a load balancer, rogue-DHCP filtering on a bridge, a hardened public
+server. They exist so the import path can be tried without a host, and so the
+shapes people actually need can be read as rules instead of described in a
+manual. The first was a template literal inside `app.js`, where no test could
+reach it.
 
-It sits in `core/` because it makes a promise the tests have to be able to
-check. `test/samples.test.js` holds it to two: every rule re-emits
-byte-identical — the sample is the first ruleset a new user runs the round-trip
-check against, so it had better be honest there — and every address in it is
-RFC 1918 or RFC 5737 documentation space. **Nothing that ships in a public
-repository may describe a real network**, and a shipped ruleset is exactly the
-kind of file where somebody's internal subnets get committed by accident.
+They sit in `core/` because they make promises the tests have to be able to
+check. `test/samples.test.js` holds **every** sample to four: it parses with no
+unrecognised lines, every rule re-emits byte-identical, it is substantial enough
+to read as a scenario, and every address in it is RFC 1918 or RFC 5737
+documentation space.
 
-It is never applied. It lands in the textarea and faces the round-trip review,
-exactly like a paste.
+Two of those are load-bearing. A sample that lost a rule on the way in would
+make the honest round-trip percentage a liar on the very rulesets a new user
+reaches for first. And **nothing that ships in a public repository may describe
+a real network** — a shipped ruleset is exactly the kind of file where
+somebody's internal subnets get committed by accident.
+
+None is ever applied. One lands in the textarea and faces the round-trip
+review, exactly like a paste. The description rides in as a `#` comment, which
+the parser and the round-trip check both skip.
+
+The rogue-DHCP sample is named for what it does. DHCP snooping is a switch
+feature: it watches the exchange and builds a binding table. A bridge can only
+refuse to carry server traffic from a port with no business answering, so that
+is what the sample claims. In a firewall tool a mislabelled example gets copied
+and deployed.
 
 ## Screenshots
 

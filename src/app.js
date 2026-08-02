@@ -15,7 +15,7 @@ import { evaluate, matches, inSet, inCidr, PRESETS, PATHS, packet } from "./core
 import { diffLines } from "./core/diff.js";
 import { PRIO_NAME, NAME_PRIO } from "./core/priority.js";
 import { PROJECT, project, setProject, serialise, deserialise } from "./core/project.js";
-import { SAMPLE_NFT } from "./core/samples.js";
+import { SAMPLES, sampleById } from "./core/samples.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
 import { target, loadTarget, saveTarget, asTauriTarget, describe, probe } from "./target.js";
@@ -1938,7 +1938,29 @@ function reviewImport(){
 }
 
 $("#imp-text").addEventListener("input", reviewImport);
-$("#imp-sample").addEventListener("click", ()=>{ $("#imp-text").value = SAMPLE_NFT; reviewImport(); });
+/* Worked scenarios, so the import path can be tried without a host and so the
+   shapes people actually need — port forwarding, a tunnel, a balancer — can be
+   read as rules rather than described in a manual. */
+function fillSamples(){
+  const sel = $("#imp-sample"); if(!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = [
+    `<option value="">${esc(t("Load an example…","Cargar un ejemplo…"))}</option>`,
+    ...SAMPLES.map(s=>`<option value="${esc(s.id)}">${esc(t(s.title.en, s.title.es))}</option>`),
+  ].join("");
+  sel.value = keep;                       /* a language switch is not a choice */
+}
+$("#imp-sample").addEventListener("change", e=>{
+  const s = sampleById(e.target.value); if(!s) return;
+  /* The description rides in as an nft comment. The parser skips `#` lines and
+     so does the round-trip check, so it costs nothing, and it stays with the
+     text if you paste it somewhere else — in whichever language you are in. */
+  $("#imp-text").value =
+    `# ${t(s.title.en, s.title.es)}\n# ${t(s.blurb.en, s.blurb.es)}\n\n${s.nft}`;
+  reviewImport();
+});
+fillSamples();
+onLangChange(fillSamples);
 $("#imp-clear").addEventListener("click", ()=>{ $("#imp-text").value = ""; reviewImport(); });
 
 $("#imp-go").addEventListener("click", ()=>{
