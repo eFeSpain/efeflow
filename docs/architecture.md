@@ -114,6 +114,17 @@ refuse to carry server traffic from a port with no business answering, so that
 is what the sample claims. In a firewall tool a mislabelled example gets copied
 and deployed.
 
+## The Rust half
+
+CI runs `cargo fmt --check` and `cargo clippy -D warnings` over `src-tauri`,
+and neither has a counterpart in `npm test` — so a Rust change can pass
+everything locally and fail on push. `npm run rust:check` is the same pair;
+`npm run rust:fmt` fixes the formatting half.
+
+Take rustfmt's output rather than configuring around it. It is the convention
+CI enforces, and there are under two hundred lines of Rust here to have an
+opinion about.
+
 ## Screenshots
 
 `npm run shots` regenerates `docs/*.png` from the real frontend in headless

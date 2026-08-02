@@ -41,15 +41,28 @@ pub struct Outcome {
 
 impl Outcome {
     fn failed(msg: impl Into<String>) -> Self {
-        Outcome { ok: false, stdout: String::new(), stderr: msg.into(), code: None }
+        Outcome {
+            ok: false,
+            stdout: String::new(),
+            stderr: msg.into(),
+            code: None,
+        }
     }
 }
 
 /// Build the argv for a command against a target, without a shell in the way.
 fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
     match target {
-        Target::Local => (cmd[0].to_string(), cmd[1..].iter().map(|s| s.to_string()).collect()),
-        Target::Ssh { host, user, port, sudo } => {
+        Target::Local => (
+            cmd[0].to_string(),
+            cmd[1..].iter().map(|s| s.to_string()).collect(),
+        ),
+        Target::Ssh {
+            host,
+            user,
+            port,
+            sudo,
+        } => {
             let mut args: Vec<String> = vec![
                 "-o".into(),
                 "BatchMode=yes".into(),
@@ -77,7 +90,11 @@ fn run(target: &Target, cmd: &[&str], stdin: Option<&str>) -> Outcome {
     let (program, args) = argv(target, cmd);
     let mut child = match Command::new(&program)
         .args(&args)
-        .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
