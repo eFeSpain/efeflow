@@ -1023,11 +1023,18 @@
 
     <div class="imp-body">
       <div class="imp-left">
+        <!-- The instruction and the controls were one flex row. Adding the
+             scenario picker made five things compete for it, and the label —
+             the only one that could shrink — was squeezed into a column two
+             words wide. It belongs above the textarea it describes; the
+             controls below it are the alternatives to pasting. -->
         <div class="imp-bar">
-          <span class="lbl" style="flex:1" data-t="Paste the output of nft list ruleset|Pega la salida de nft list ruleset">Paste the output of nft list ruleset</span>
-          <button class="tb accent" id="imp-host"><svg class="ico" viewBox="0 0 24 24"><path d="M4 17V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 10l3 2-3 2M13 14h4"/></svg><span data-t="Read from host|Leer del host">Read from host</span></button>
-          <select id="imp-sample" data-tt="Load a worked scenario|Cargar un escenario resuelto"></select>
-          <button class="tb" id="imp-clear" data-t="Clear|Limpiar">Clear</button>
+          <span class="lbl imp-hint" data-t="Paste the output of nft list ruleset|Pega la salida de nft list ruleset">Paste the output of nft list ruleset</span>
+          <div class="imp-acts">
+            <button class="tb accent" id="imp-host"><svg class="ico" viewBox="0 0 24 24"><path d="M4 17V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 10l3 2-3 2M13 14h4"/></svg><span data-t="Read from host|Leer del host">Read from host</span></button>
+            <select id="imp-sample" data-tt="Load a worked scenario|Cargar un escenario resuelto"></select>
+            <button class="tb" id="imp-clear" data-t="Clear|Limpiar">Clear</button>
+          </div>
         </div>
         <textarea id="imp-text" spellcheck="false" data-tp="table inet filter {&#10;    chain input {&#10;        type filter hook input priority filter; policy drop;&#10;        ct state established,related accept&#10;    }&#10;}|table inet filter {&#10;    chain input {&#10;        type filter hook input priority filter; policy drop;&#10;        ct state established,related accept&#10;    }&#10;}"></textarea>
       </div>

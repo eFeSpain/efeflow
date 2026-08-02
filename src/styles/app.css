@@ -1036,7 +1036,16 @@ pre.code{margin:0;padding:10px 0 18px;font:450 11.5px/1.65 var(--mono);letter-sp
   font:450 11.5px/1.65 var(--mono);padding:12px 14px;letter-spacing:-.1px;min-height:290px;
 }
 .imp-left textarea:focus{box-shadow:none}
-.imp-bar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);flex:none}
+/* Two rows: what to do, then the ways of doing it without typing. One row
+   could not hold both once there were four controls, and the instruction was
+   the only thing in it that could shrink. */
+.imp-bar{
+  display:flex;flex-direction:column;align-items:stretch;gap:7px;
+  padding:9px 12px;border-bottom:1px solid var(--line);flex:none;
+}
+.imp-hint{min-width:0}
+.imp-acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.imp-acts #imp-clear{margin-left:auto}
 /* the example picker stands in a row of .tb buttons, so it takes their metrics
    rather than the full-width the generic select rule assumes for form fields */
 #imp-sample{width:auto;max-width:220px;height:27px;font-size:12px}

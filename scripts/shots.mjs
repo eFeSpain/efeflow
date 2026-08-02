@@ -34,6 +34,10 @@ await page.waitForTimeout(1200);
 await shot("boot", "the mark drawing itself");
 await page.waitForTimeout(1800);
 
+/* What a launch actually looks like now: nothing open. Captured before the
+   fixture goes in, because afterwards there is no way back to it. */
+await shot("empty", "no project open");
+
 /* load something worth looking at */
 await page.evaluate((text) => {
   const area = document.querySelector("#imp-text");
