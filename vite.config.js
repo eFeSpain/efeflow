@@ -27,5 +27,18 @@ export default defineConfig({
     sourcemap: true,
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      /* A name imported from a module that does not export it is not a
+         warning, it is `undefined()` at the moment that line runs. `nftVersion`
+         was renamed and one call site was missed; rollup said so, the build
+         went green, and it shipped in a release bundle — reachable only on the
+         one platform that has a local nft, which is the platform nobody here
+         builds on. Nothing about that should be survivable. */
+      onwarn(warning, warn) {
+        if (warning.code === "MISSING_EXPORT" || warning.code === "UNRESOLVED_IMPORT")
+          throw new Error(`${warning.code}: ${warning.message}`);
+        warn(warning);
+      },
+    },
   },
 });

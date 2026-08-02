@@ -4,6 +4,7 @@
 import "./app.js";
 import { applyLang, t } from "./i18n.js";
 import * as native from "./native.js";
+import { probe } from "./target.js";
 import { MODEL, UID } from "./core/model.js";
 import { onModelChange } from "./core/bus.js";
 
@@ -49,11 +50,16 @@ async function detectTarget() {
     );
     return;
   }
+  /* `nftVersion` stopped existing when nft's version and the kernel's started
+     coming back in one round trip. Nothing failed the build: rollup warned
+     that the name was not exported and carried on, so the call survived into
+     a shipped bundle as `undefined()` — on the one platform that reaches it. */
   if (native.platform.local_nft_possible) {
-    const v = await native.nftVersion();
-    if (v.ok) {
+    const p = await probe({ kind: "local" });
+    if (p.ok) {
       chip.classList.add("live");
-      label.textContent = v.stdout.trim().split(/\s+/).slice(0, 2).join(" ");
+      label.textContent = `nft ${p.version}`;
+      chip.title = [p.banner, p.uname].filter(Boolean).join("\n");
       return;
     }
   }
