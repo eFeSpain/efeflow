@@ -1116,3 +1116,9 @@ pre.code{margin:0;padding:10px 0 18px;font:450 11.5px/1.65 var(--mono);letter-sp
 .es-choices{display:flex;flex-direction:column;gap:8px;text-align:left}
 #es-tour{margin-inline:auto;color:var(--t3)}
 #es-tour:hover{color:var(--aqua)}
+
+/* An empty category still needs a row saying so, but it is a note rather than
+   an object: it dragged like one and produced nothing when dropped. */
+.obj.ph{opacity:.45;cursor:default}
+.obj.ph:hover{background:none;border-color:transparent}
+.obj.ph .gl{opacity:.4}

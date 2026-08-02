@@ -103,11 +103,20 @@ test("an address can be changed everywhere too", async () => {
   );
 });
 
-test("constants are not offered a rename they cannot honour", async () => {
+/* Services became editable, so a right-click does something now — but not
+   this. A rule carries `tcp dport 22`, not the word ssh, so there is nothing
+   for a rename to propagate to. It offers to override the entry instead. */
+test("a service is not offered a rename it cannot honour", async () => {
   await boot();
   await importFixture();
   const ssh = libItem("ssh");
   assert.ok(ssh, "services are still a palette");
-  const e = rightClick(ssh);
-  assert.ok(!e.defaultPrevented, "a constant has nothing to rename");
+
+  rightClick(ssh);
+  await settle(30);
+  const actions = $$("[data-act]").map((a) => a.dataset.act);
+  assert.ok(!actions.includes("ren"),
+    "renaming ssh cannot reach the rules, which name the port");
+  assert.ok(!actions.includes("show"),
+    "and no rule can be shown as using it by name");
 });

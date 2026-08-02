@@ -17,6 +17,8 @@ import { PRIO_NAME, NAME_PRIO } from "./core/priority.js";
 import { PROJECT, project, setProject, serialise, deserialise } from "./core/project.js";
 import { SAMPLES, sampleById } from "./core/samples.js";
 import { TOUR, tourStep } from "./core/tour.js";
+import { catalogue, protoOf, OWNABLE, BUILT_IN, emptyVocabulary,
+         TEMPLATES, templateById } from "./core/vocabulary.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
 import { target, loadTarget, saveTarget, asTauriTarget, describe, probe } from "./target.js";
@@ -203,7 +205,24 @@ $("#dw-toggle").addEventListener("click",e=>{
   requestAnimationFrame(drawWires);
 });
 
-/* ══ OBJECT LIBRARY ═════════════════════════════════════════════════════ */
+/* ══ OBJECT LIBRARY ═════════════════════════════════════════════════════
+   What you add to the vocabularies is kept on this machine, not in the
+   project. A port you had to look up once should be there in the next project
+   too, and without having saved anything — telnet is 23 whoever's firewall you
+   are writing. The interfaces and networks in project.scratch are the opposite
+   case: they describe the box these rules are for, so they travel with it. */
+const VKEY = "efeflow.vocabulary";
+let VOCAB = emptyVocabulary();
+try{
+  const raw = localStorage.getItem(VKEY);
+  if(raw) Object.assign(VOCAB, JSON.parse(raw));
+}catch{ /* a corrupt entry is not worth a crash */ }
+const ownOf = gl => VOCAB[OWNABLE[gl]?.key] ?? [];
+function vocabChanged(){
+  try{ localStorage.setItem(VKEY, JSON.stringify(VOCAB)); }catch{ /* private mode */ }
+  renderLibrary();
+}
+
 const CH_ = () => t("chains","cadenas"), CH1 = () => t("chain","cadena"), RL_ = () => t("rules","reglas");
 const LIB = () => [
   /* the tables and sets your ruleset has, not four invented ones */
@@ -211,13 +230,22 @@ const LIB = () => [
      const seen = new Map();
      MODEL.chains.forEach(c=> seen.set(c.table, (seen.get(c.table)||0)+1));
      const rows = [...seen].map(([n,k])=>[n, `${k} ${k===1?CH1():CH_()}`]);
-     return rows.length ? rows : [["inet filter", `0 ${CH_()}`]];
+     /* the fallback named a table called "inet filter" that nothing had
+        created — the third flag marks a row as a note, not an object */
+     return rows.length ? rows : [[t("no tables yet","aún sin tablas"), "", true]];
    })()],
   [t("Chains","Cadenas"),"CH",[[t("base chain","cadena base"),""],[t("regular chain","cadena regular"),""],["prerouting",""],["input",""],["forward",""],["output",""],["postrouting",""]]],
   ["Sets","SE", MODEL.sets.length
      ? MODEL.sets.map(s=>["@"+s.n, s.el.length>999 ? (s.el.length/1000).toFixed(1)+"k" : String(s.el.length)])
-     : [[t("no sets yet","aún sin sets"),""]]],
-  ["Maps","MP",[["@port_fwd","3"],["verdict map",""],[t("+ new map","+ nuevo map"),""]]],
+     : [[t("no sets yet","aún sin sets"),"",true]]],
+  /* Sets were derived and maps were not: this listed a map called @port_fwd
+     with three elements, which no ruleset here has ever contained. */
+  ["Maps","MP", (()=>{
+     const maps = MODEL.sets.filter(s=>s.kind === "map");
+     return maps.length
+       ? maps.map(s=>["@"+s.n, `${s.el.length} ${s.el.length===1?t("entry","entrada"):t("entries","entradas")}`])
+       : [[t("no maps yet","aún sin maps"),"",true]];
+   })()],
   /* Yours, both halves: the interfaces your rules already name, and the ones
      you have written down for the box you are working on. No invented list —
      an unchangeable placeholder is worse than an empty shelf. */
@@ -237,16 +265,24 @@ const LIB = () => [
        ...kept.map(n=>[n, t("unused","sin usar")]),
      ];
    })()],
-  [t("Services","Servicios"),"SV",[["ssh","22"],["https","443"],["http","80"],["dns","53"],["wireguard","51820"],["winbox","8291"],["snmp","161"]]],
-  [t("Protocols","Protocolos"),"PR",[["tcp",""],["udp",""],["icmp",""],["icmpv6",""],["sctp",""],["esp",""],["ah",""]]],
+  /* Seven services, seven protocols and three helpers, none of them editable,
+     so the first thing anybody needed — ftp, telnet — sent them elsewhere. */
+  [t("Services","Servicios"),"SV",
+    catalogue(ownOf("SV")).map(s=>[s.n, `${s.p}/${s.proto}`])],
+  [t("Protocols","Protocolos"),"PR",
+    catalogue(ownOf("PR"), BUILT_IN.PR).map(p=>[p.n, ""])],
   [t("Connection states","Estados de conexión"),"CT",[["established",""],["related",""],["new",""],["invalid",""],["untracked",""],["ct status dnat",""]]],
   [t("Actions","Acciones"),"AC",[["accept",""],["drop",""],["reject with",""],["jump",""],["goto",""],["return",""],["continue",""]]],
   ["NAT","NT",[["dnat to",""],["snat to",""],["masquerade",""],["redirect to",""]]],
-  [t("Helpers","Helpers"),"HL",[["ct helper ftp",""],["ct helper sip",""],["ct helper tftp",""]]],
+  [t("Helpers","Helpers"),"HL",
+    catalogue(ownOf("HL"), BUILT_IN.HL).map(h=>[h.n, `${h.p}/${h.proto}`])],
   [t("Counters","Contadores"),"CN",[["counter",""],[t("named counter","counter con nombre"),""],["quota",""]]],
   [t("Meters","Medidores"),"ME",[["meter flood",""],["limit rate",""],["limit rate over",""]]],
   [t("Marks","Marcas"),"MK",[["meta mark set",""],["ct mark set",""],["meta priority",""]]],
-  [t("Templates","Plantillas"),"TP",[[t("Stateful baseline","Base con estado"),`9 ${RL_()}`],[t("WAN hardening","Fortificación WAN"),`6 ${RL_()}`],[t("Docker-safe forward","Forward compatible con Docker"),`4 ${RL_()}`],[t("VPN split tunnel","VPN túnel dividido"),`5 ${RL_()}`]]],
+  /* The counts here were invented and dropping one did nothing. They are real
+     rule groups now, and the count is however many rules the group holds. */
+  [t("Templates","Plantillas"),"TP",
+    TEMPLATES.map(x=>[t(x.title.en, x.title.es), `${x.rules.length} ${RL_()}`])],
 ];
 const libBody = $("#lib-body");
 function renderLibrary(){
@@ -258,7 +294,11 @@ function renderLibrary(){
        your ruleset reflected back, the rest are constants to drag. */
     const derived = ["TB","CH","SE","MP","IF","NW"].includes(gl);
     d.dataset.kind = gl;
-    const ownable = gl === "IF" || gl === "NW";
+    /* Two kinds of list can be added to: the ones describing this box, and the
+       vocabularies describing the world. The rest are closed by nftables' own
+       grammar — there is no eighth verdict, and offering to invent one would
+       emit a ruleset that does not load. Those are completed, not opened. */
+    const ownable = gl === "IF" || gl === "NW" || !!OWNABLE[gl];
     d.innerHTML = `<summary>
         <svg class="ico sm tw" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
         <span class="nm">${esc(cat)}</span>
@@ -266,10 +306,12 @@ function renderLibrary(){
                     "De tu ruleset — clic derecho para renombrar en todo"))}">·</span>`:""}
         ${ownable?`<button class="cat-add" data-add="${gl}" title="${esc(
             gl==="IF" ? t("Add an interface you plan to use","Añadir una interfaz que vas a usar")
-                      : t("Add a network you work with","Añadir una red con la que trabajas"))}">+</button>`:""}
-        <span class="ct">${items.length}</span></summary>
-      <div class="cat-items">${items.map(([n,r])=>
-        `<div class="obj" draggable="true"><span class="gl">${gl}</span><span class="nm">${esc(n)}</span><span class="rf">${esc(r)}</span></div>`).join("")}</div>`;
+          : gl==="NW" ? t("Add a network you work with","Añadir una red con la que trabajas")
+                      : t("Add one — kept on this machine, in every project",
+                          "Añadir uno — se guarda en esta máquina, en todos los proyectos"))}">+</button>`:""}
+        <span class="ct">${items.filter(i=>!i[2]).length}</span></summary>
+      <div class="cat-items">${items.map(([n,r,ph])=>
+        `<div class="obj${ph?" ph":""}" draggable="${ph?"false":"true"}"><span class="gl">${gl}</span><span class="nm">${esc(n)}</span><span class="rf">${esc(r)}</span></div>`).join("")}</div>`;
     libBody.appendChild(d);
   });
 }
@@ -1668,14 +1710,31 @@ $("#redo").addEventListener("click", redo);
    rule) and a rule being reordered (order is semantics, so this is an
    edit, not a cosmetic move).                                           */
 DRAG = null;
-const SVC_PROTO = {dns:"udp", wireguard:"udp", snmp:"udp"};
+/* was SVC_PROTO, three entries hard-coded beside a seven-item list; the
+   catalogue in core/vocabulary.js carries the protocol with the service */
 
-/* what a dropped object contributes to a rule */
-function fragment(k, name, ref, ch){
+/* What a dropped object contributes to a rule. Exported so a test can ask
+   every palette category what it produces — five of them used to produce
+   nothing at all, which is invisible until somebody drags one. */
+export function fragment(k, name, ref, ch){
   const egress = ch.hook==="output" || ch.hook==="postrouting";
   switch(k){
-    case "SV": return {expr:`${SVC_PROTO[name]||"tcp"} dport ${ref}`};
+    case "SV": return {expr:`${protoOf(name, ownOf("SV"))} dport ${ref.split("/")[0]}`};
     case "PR": return {expr:`meta l4proto ${name}`};
+    /* A helper is assigned in a rule on the port the protocol negotiates on;
+       it was listed and did nothing when dropped. */
+    case "HL": {
+      const h = catalogue(ownOf("HL"), BUILT_IN.HL).find(x=>x.n===name);
+      return h ? {expr:`${h.proto} dport ${h.p} ct helper set "${h.n}"`} : null;
+    }
+    case "MP": {
+      const m = MODEL.sets.find(x=>"@"+x.n===name && x.kind==="map");
+      return m ? {expr:`ip ${egress?"daddr":"saddr"} @${m.n}`} : null;
+    }
+    case "TP": {
+      const tpl = TEMPLATES.find(x=>t(x.title.en, x.title.es) === name);
+      return tpl ? {rules: tpl.rules} : null;
+    }
     case "NW": return {expr:`ip ${egress?"daddr":"saddr"} ${name}`};
     case "IF": return {expr:`${egress?"oifname":"iifname"} "${name}"`};
     case "CT": return {expr: name.startsWith("ct ") ? name : `ct state ${name}`};
@@ -1689,16 +1748,29 @@ function fragment(k, name, ref, ch){
     case "AC": {
       const v = name.split(" ")[0];
       if(v==="reject") return {verdict:"reject", to:"icmpx admin-prohibited"};
-      if(v==="jump" || v==="goto") return {verdict:v, to:"fwd_mgmt"};
+      /* This offered a jump to `fwd_mgmt`, a chain from the demo ruleset that
+         has not shipped for a long time. Aim at a chain the project has, and
+         say so when it has none to aim at. */
+      if(v==="jump" || v==="goto"){
+        const target = MODEL.chains.find(c=>c.table===ch.table && !c.hook && c!==ch)
+                    || MODEL.chains.find(c=>c.table===ch.table && c!==ch);
+        if(!target) return null;
+        return {verdict:v, to:target.id};
+      }
       return {verdict:v};
     }
     case "NT": {
       if(name==="masquerade")      return {verdict:"snat", to:"masquerade"};
-      if(name.startsWith("dnat"))  return {verdict:"dnat", to:"10.20.0.15:443"};
-      if(name.startsWith("snat"))  return {verdict:"snat", to:"198.51.100.10"};
-      return {verdict:"dnat", to:"127.0.0.1:8080"};
+      /* These arrived carrying 10.20.0.15:443 and 198.51.100.10 — addresses
+         from the old demo, silently written into somebody's real ruleset. The
+         verdict is what was dragged; the destination is theirs to fill in. */
+      if(name.startsWith("dnat"))  return {verdict:"dnat", to:""};
+      if(name.startsWith("snat"))  return {verdict:"snat", to:""};
+      return {verdict:"dnat", to:""};
     }
-    case "CN": return {counter:true};
+    /* `pkts = 1` claimed one packet the rule had never seen, which is the lie
+       the counter split was made to remove. `ctr` is the statement. */
+    case "CN": return {ctr:true};
     default:   return null;
   }
 }
@@ -1870,6 +1942,19 @@ document.addEventListener("drop", e=>{
   }
   const name = DRAG.n;
   let idx;
+
+  /* a template is a group of rules, so it appends rather than merging */
+  if(frag.rules){
+    edit(t("add template ","añadir plantilla ")+name, ()=>{
+      frag.rules.forEach(x=> ch.rules.push(R(x.expr, x.verdict, {
+        ctr: !!x.ctr, pkts:0, bytes:0, ...(x.cmt?{cmt:x.cmt}:{}), ...(x.implicit?{implicit:true}:{}),
+      })));
+    });
+    select(cid, ch.rules.length-1);
+    toast(t(`Added ${frag.rules.length} rules`,`Añadidas ${frag.rules.length} reglas`)+" — Ctrl+Z");
+    DRAG = null; return;
+  }
+
   edit(t("drop ","soltar ")+name, ()=>{
     let r;
     if(row){ idx = +row.dataset.i; r = ch.rules[idx]; }
@@ -1881,7 +1966,7 @@ document.addEventListener("drop", e=>{
       r.expr = (re.test(r.expr) ? r.expr.replace(re, frag.expr) : (r.expr ? r.expr+" "+frag.expr : frag.expr)).trim();
     }
     if(frag.verdict){ r.verdict = frag.verdict; if(frag.to!==undefined) r.to = frag.to; else delete r.to; }
-    if(frag.counter && !r.pkts) r.pkts = 1;
+    if(frag.ctr) r.ctr = true;
   });
   select(cid, idx);
   toast(t(`Added ${name}`,`Añadido ${name}`)+" — Ctrl+Z");
@@ -3041,6 +3126,32 @@ $("#lib-body").addEventListener("click", async e=>{
   e.preventDefault();
   e.stopPropagation();          /* do not toggle the <details> */
   const kind = add.dataset.add;
+
+  /* the vocabularies take a line rather than a bare name, because a service
+     without its port is not a service */
+  const spec = OWNABLE[kind];
+  if(spec){
+    const CAT = {SV:t("service","servicio"), PR:t("protocol","protocolo"), HL:t("helper","helper")};
+    const line = await promptDialog(
+      t(`Add a ${CAT[kind]}`, `Añadir un ${CAT[kind]}`),
+      t(`${spec.hint.en}. Kept on this machine, so it is here in every project.`,
+        `${spec.hint.es}. Se guarda en esta máquina, así que estará en todos tus proyectos.`),
+      spec.example, t("Add","Añadir"));
+    if(!line) return;
+    const parsed = spec.parse(line);
+    if(!parsed){
+      toast(t(`Could not read “${line}” — try ${spec.example}`,
+              `No se entiende «${line}» — prueba ${spec.example}`));
+      return;
+    }
+    const list = ownOf(kind);
+    const at = list.findIndex(x=>x.n === parsed.n);
+    if(at >= 0) list[at] = parsed; else list.push(parsed);
+    vocabChanged();
+    toast(t(`${parsed.n} kept on this machine`, `${parsed.n} guardado en esta máquina`));
+    return;
+  }
+
   const name = await promptDialog(
     kind === "IF" ? t("Add an interface","Añadir interfaz") : t("Add a network","Añadir red"),
     kind === "IF"
@@ -3061,7 +3172,49 @@ document.addEventListener("contextmenu", e=>{
   const obj = e.target.closest("#lib-body .obj");
   if(!obj) return;
   const kind = $(".gl", obj).textContent.trim();
-  if(kind !== "IF" && kind !== "NW") return;   /* the rest are constants */
+
+  /* A vocabulary entry you added is yours to change; a built-in one is not,
+     but you can shadow it by adding the same name with a different port. */
+  if(OWNABLE[kind]){
+    const n = $(".nm", obj).textContent.trim();
+    const list = ownOf(kind);
+    const at = list.findIndex(x=>x.n === n);
+    if(at < 0){
+      e.preventDefault(); e.stopPropagation();
+      const m0 = openCtx(e.clientX, e.clientY, [["shadow",
+        t("Override with your own…","Sustituir por el tuyo…"), "M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"]]);
+      m0.addEventListener("click", async ev=>{
+        if(!ev.target.closest("[data-act]")) return;
+        killCtx();
+        $(`[data-add="${kind}"]`)?.click();
+      });
+      return;
+    }
+    e.preventDefault(); e.stopPropagation();
+    const spec = OWNABLE[kind];
+    const cur = list[at];
+    const asLine = cur.p ? `${cur.n} ${cur.p}/${cur.proto}` : cur.n;
+    const m1 = openCtx(e.clientX, e.clientY, [
+      ["edit", t("Edit","Editar"), "M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"],
+      ["drop", t("Remove from the list","Quitar de la lista"),
+       "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13", true],
+    ]);
+    m1.addEventListener("click", async ev=>{
+      const a = ev.target.closest("[data-act]"); if(!a) return;
+      const act = a.dataset.act; killCtx();
+      if(act === "drop"){ list.splice(at,1); vocabChanged(); return; }
+      const line = await promptDialog(t("Edit","Editar"),
+        t(spec.hint.en, spec.hint.es), asLine, t("Save","Guardar"));
+      if(!line) return;
+      const parsed = spec.parse(line);
+      if(!parsed){ toast(t(`Could not read “${line}”`,`No se entiende «${line}»`)); return; }
+      list[at] = parsed;
+      vocabChanged();
+    });
+    return;
+  }
+
+  if(kind !== "IF" && kind !== "NW") return;   /* the rest are closed by nftables */
   const name = $(".nm", obj).textContent.trim();
   const uses = usagesOf(kind, name);
   const kept = scratchOf(kind).includes(name);
