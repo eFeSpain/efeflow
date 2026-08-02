@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { parseNft, roundTrip } from "../src/core/parse.js";
+import { parseNft, roundTrip, verify } from "../src/core/parse.js";
 import { SAMPLES, sampleById } from "../src/core/samples.js";
 
 /* Anything the product offers to load has to clear the same bar it holds the
@@ -38,6 +38,13 @@ for (const s of SAMPLES) {
     const rt = roundTrip(s.nft, p);
     assert.equal(rt.diffs.length, 0, `${s.id}\n` + JSON.stringify(rt.diffs, null, 2));
     assert.equal(rt.ok, rt.total);
+  });
+
+  /* The stronger claim, and the one the import dialog now makes: not "every
+     rule came back" but "this is the same ruleset". */
+  test(`${s.id} survives the whole-file check, not just its rules`, () => {
+    const v = verify(s.nft);
+    assert.deepEqual(v.diffs, [], `${s.id}\n` + JSON.stringify(v.diffs, null, 2));
   });
 
   test(`${s.id} is a ruleset worth showing`, () => {

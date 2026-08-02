@@ -1,62 +1,168 @@
 /* nftables source → model. The expression is kept verbatim minus the
-   counter and comment, which is what makes the round-trip faithful. */
+   counter and comment, which is what makes the round-trip faithful.
+
+   The governing rule is preserve by default. nftables is a much larger
+   language than this model, and every construct the parser did not recognise
+   used to be dropped on the floor — silently, and in the case of anything that
+   opened a brace, taking the enclosing table with it. A flowtable and a named
+   counter each closed their table early, so every chain below them was filed
+   under a table that did not exist. Whatever we cannot model, we keep as text
+   and put back where it was. */
 import { ruleLine } from './model.js';
+import { generate } from './generate.js';
 import { PRIO_NAME } from './priority.js';
-export function parseNft(text){
-  const chains = [], sets = [], errors = [];
-  let table = null, cur = null, curSet = null, depth = 0;
 
-  text.split("\n").forEach((raw, ln)=>{
-    let line = raw.replace(/#\s*handle\s+\d+\s*$/,"").trim();
-    if(!line || line.startsWith("#")) return;
+const count = (s, ch) => (s.match(ch === "{" ? /\{/g : /\}/g) || []).length;
+/* how much deeper this line leaves you: `elements = { a,` is +1, `}` is -1 */
+const net = s => count(s, "{") - count(s, "}");
 
-    if(line === "}"){
-      depth--;
-      if(curSet){ sets.push(curSet); curSet = null; }
-      else if(cur){ cur = null; }
-      else table = null;
+/* A block opener is `chain foo {`, not `elements = {`. nft wraps a long
+   element list across lines, so the two shapes have to be told apart before
+   anything else looks at them. */
+const isOpener = line => /\{$/.test(line) && !line.includes("=");
+
+/* Comment-stripped, brace-balanced lines. nft prints a set's elements over as
+   many lines as it needs, and reading them one at a time is how a blocklist
+   with four hundred entries imported with none. */
+export function logicalLines(text){
+  const out = [];
+  let pending = null;
+  const flush = () => {
+    out.push({ text: pending.text, ln: pending.ln, raw: pending.text, handle: pending.handle });
+    pending = null;
+  };
+  text.split("\n").forEach((raw, ln) => {
+    /* `nft -a list ruleset` prints the handle of every rule as a trailing
+       comment. It is how you delete or replace one rule on a live host, so it
+       is worth keeping — and it used to be stripped here and a made-up number
+       shown in its place. */
+    const h = raw.match(/#\s*handle\s+(\d+)\s*$/);
+    const handle = h ? +h[1] : null;
+    const line = raw.replace(/#\s*handle\s+\d+\s*$/, "").trim();
+    if(pending){
+      pending.text += " " + line;
+      pending.depth += net(line);
+      pending.handle ??= handle;
+      if(pending.depth <= 0) flush();
       return;
     }
+    if(!line || line.startsWith("#")) return;
+    /* a line that opens a brace it does not close, and is not a block header,
+       is a statement nft has wrapped: read on until it closes */
+    if(net(line) > 0 && !isOpener(line)){ pending = { text: line, ln, depth: net(line), handle }; return; }
+    out.push({ text: line, ln, raw: raw.trim(), handle });
+  });
+  if(pending) flush();
+  return out;
+}
+
+export function parseNft(text){
+  const chains = [], sets = [], objects = [], tables = [], errors = [];
+
+  /* innermost frame last; every `}` pops exactly one */
+  const stack = [];
+  const top = () => stack[stack.length - 1];
+  const tableName = () => {
+    for(let i = stack.length - 1; i >= 0; i--) if(stack[i].kind === "table") return stack[i].name;
+    return null;
+  };
+  const close = () => {
+    const f = stack.pop();
+    if(!f) return;
+    if(f.kind === "set")    sets.push(f.set);
+    if(f.kind === "object") objects.push(f.obj);
+    if(f.kind === "table")  tables.push({ name: f.name, extra: f.extra || [] });
+  };
+
+  for(const { text: line, ln, raw, handle } of logicalLines(text)){
+    if(/^\}\s*;?$/.test(line)){ close(); continue; }
 
     let m;
-    if((m = line.match(/^table\s+(\w+)\s+(\S+)\s*\{$/))){
-      table = `${m[1]} ${m[2]}`; depth++; return;
+    /* `table inet filter {` — and `table filter {`, where the family is ip */
+    if((m = line.match(/^table\s+(\w+)(?:\s+(\S+))?\s*\{$/))){
+      stack.push({ kind: "table", name: m[2] ? `${m[1]} ${m[2]}` : `ip ${m[1]}` });
+      continue;
     }
     if((m = line.match(/^(set|map)\s+(\S+)\s*\{$/))){
-      curSet = {n:m[2], t:"", f:"", el:[], kind:m[1], table:table||"inet fw"}; depth++; return;
-    }
-    if(curSet){
-      if((m = line.match(/^type\s+(.+?);?$/)))     curSet.t = m[1].replace(/\s*;$/,"");
-      else if((m = line.match(/^flags\s+(.+?);?$/))) curSet.f = m[1].replace(/\s*;$/,"");
-      else if((m = line.match(/^elements\s*=\s*\{(.*)\}\s*$/)))
-        curSet.el = m[1].split(",").map(s=>s.trim()).filter(Boolean);
-      return;
+      stack.push({ kind: "set", set: {
+        n: m[2], t: "", f: "", el: [], body: [], kind: m[1], table: tableName() || "inet fw",
+      }});
+      continue;
     }
     if((m = line.match(/^chain\s+(\S+)\s*\{$/))){
-      cur = {id:m[1], table:table||"inet fw", hook:null, prio:null,
-             type:"regular", policy:null, rules:[]};
-      chains.push(cur); depth++; return;
+      const c = { id: m[1], table: tableName() || "inet fw", hook: null, prio: null,
+                  type: "regular", policy: null, rules: [], extra: [],
+                  ...(handle ? { handle } : {}) };
+      chains.push(c);
+      stack.push({ kind: "chain", chain: c });
+      continue;
     }
-    if(!cur){ return; }
+    /* Anything else that opens a block inside a table is an object nftables
+       has and this model does not: a flowtable, a named counter or quota, a
+       ct helper or timeout, a synproxy. Keep the body verbatim. */
+    if(isOpener(line) && tableName()){
+      const o = line.match(/^(\S+)(?:\s+(\S+))?\s*\{$/);
+      stack.push({ kind: "object", obj: {
+        table: tableName(), kind: o ? o[1] : line.replace(/\s*\{$/, ""), name: (o && o[2]) || "", body: [],
+      }});
+      continue;
+    }
 
-    /* chain header: type filter hook input priority filter; policy drop; */
-    if((m = line.match(/^type\s+(\w+)\s+hook\s+(\w+)\s+(?:device\s+"\S+"\s+)?priority\s+(-?\w+)\s*;(?:\s*policy\s+(\w+)\s*;)?/))){
-      cur.type = m[1]; cur.hook = m[2];
-      const p = m[3];
+    const f = top();
+    if(!f) continue;                                  /* outside every table */
+    if(f.kind === "object"){ f.obj.body.push(line); continue; }
+    if(f.kind === "set"){ readSetLine(f.set, line); continue; }
+    /* directly inside a table: `flags dormant`, `comment "…"` */
+    if(f.kind === "table"){ (f.extra ||= []).push(line); continue; }
+
+    const cur = f.chain;
+    /* chain header: type filter hook input [device "eth0"] priority filter; policy drop; */
+    if((m = line.match(/^type\s+(\w+)\s+hook\s+(\w+)\s+(.*?)priority\s+(-?\w+)\s*;(?:\s*policy\s+(\w+)\s*;?)?/))){
+      cur.type = m[1];
+      cur.hook = m[2];
+      /* a netdev chain names the device it is attached to, and without it the
+         chain is not one nft will accept back */
+      cur.dev = m[3].trim() || null;
+      const p = m[4];
       cur.prio = /^-?\d+$/.test(p) ? +p : (PRIO_NAME[p] ?? 0);
       cur.prioName = /^-?\d+$/.test(p) ? null : p;
-      cur.policy = m[4] || "accept";
-      return;
+      cur.policy = m[5] || "accept";
+      continue;
     }
-    if((m = line.match(/^policy\s+(\w+)\s*;?$/))){ cur.policy = m[1]; return; }
+    if((m = line.match(/^policy\s+(\w+)\s*;?$/))){ cur.policy = m[1]; continue; }
+    /* chain-level statements that are not rules: `flags offload`, `comment "…"` */
+    if(/^(flags|comment)\s/.test(line)){ cur.extra.push(line); continue; }
 
-    /* a rule */
     const rule = parseRule(line);
-    if(rule) cur.rules.push(rule);
-    else errors.push({ln:ln+1, line:raw.trim()});
-  });
+    if(rule){
+      if(handle) rule.handle = handle;
+      cur.rules.push(rule);
+    }
+    else errors.push({ ln: ln + 1, line: raw });
+  }
+  while(stack.length) close();                        /* an unterminated file */
 
-  return {chains, sets, errors};
+  return { chains, sets, objects, tables, errors };
+}
+
+/* `type`, `flags` and `elements` are the parts the set editor owns; every
+   other line — size, timeout, gc-interval, auto-merge, policy, comment — is
+   kept where it sat so it can be written back in the same place. */
+function readSetLine(s, line){
+  let m;
+  if((m = line.match(/^(type|typeof)\s+(.+?)\s*;?$/))){
+    s.t = m[2];
+    s.decl = m[1];
+    s.body.push({ k: "type" });
+    return;
+  }
+  if((m = line.match(/^flags\s+(.+?)\s*;?$/))){ s.f = m[1]; s.body.push({ k: "flags" }); return; }
+  if((m = line.match(/^elements\s*=\s*\{(.*)\}\s*$/))){
+    s.el = m[1].split(",").map(x => x.trim()).filter(Boolean);
+    s.body.push({ k: "elements" });
+    return;
+  }
+  s.body.push({ k: "raw", v: line });
 }
 
 /* verdict scanners, longest form first so `dnat to` beats a bare token */
@@ -64,7 +170,10 @@ export function parseNft(text){
 const VERDICT_RE = [
   [/(?:^|\s+)masquerade$/,                    ()=>({verdict:"snat", to:"masquerade"})],
   [/(?:^|\s+)(dnat|snat)\s+to\s+(.+)$/,       m=>({verdict:m[1], to:m[2]})],
-  [/(?:^|\s+)redirect\s+to\s+(.+)$/,          m=>({verdict:"dnat", to:m[1]})],
+  /* redirect is a DNAT to this machine, and the port is optional. Folding it
+     into dnat lost that distinction and emitted `dnat to :8080`, which nft
+     rejects — a dnat needs a destination, a redirect already has one. */
+  [/(?:^|\s+)redirect(?:\s+to\s+(.+))?$/,     m=>({verdict:"redirect", ...(m[1]?{to:m[1]}:{})})],
   [/(?:^|\s+)(jump|goto)\s+(\S+)$/,           m=>({verdict:m[1], to:m[2]})],
   [/(?:^|\s+)reject\s+with\s+(.+)$/,          m=>({verdict:"reject", to:m[1]})],
   [/(?:^|\s+)reject$/,                        ()=>({verdict:"reject"})],
@@ -106,18 +215,17 @@ export function parseRule(line){
 /* ── round-trip proof: re-emit each rule and compare to its source ── */
 export const normalise = s => s.replace(/#\s*handle\s+\d+\s*$/,"")
                         .replace(/\bcounter\s+packets\s+\d+\s+bytes\s+\d+/,"counter")
-                        .replace(/\s+/g," ").replace(/;$/,"").trim();
+                        .replace(/\s+/g," ").replace(/\s+;/g,";").replace(/;$/,"").trim();
 
 export function roundTrip(text, parsed){
   const srcRules = [];
   let inChain = false, inSet = false;
-  text.split("\n").forEach(raw=>{
-    const line = raw.trim();
+  logicalLines(text).forEach(({text: line})=>{
     if(/^(set|map)\s+\S+\s*\{$/.test(line)){ inSet = true; return; }
     if(/^chain\s+\S+\s*\{$/.test(line)){ inChain = true; return; }
-    if(line === "}"){ if(inSet) inSet = false; else inChain = false; return; }
-    if(!inChain || inSet || !line || line.startsWith("#")) return;
-    if(/^(type|policy)\s/.test(line)) return;
+    if(/^\}\s*;?$/.test(line)){ if(inSet) inSet = false; else inChain = false; return; }
+    if(!inChain || inSet) return;
+    if(/^(type|policy|flags|comment)\s/.test(line)) return;
     srcRules.push(normalise(line));
   });
 
@@ -129,4 +237,26 @@ export function roundTrip(text, parsed){
   for(let i=0;i<n;i++)
     if(srcRules[i] !== emitted[i]) diffs.push({i, src:srcRules[i]??"—", out:emitted[i]??"—"});
   return {total:srcRules.length, ok:srcRules.length-diffs.length, diffs};
+}
+
+/* ── the honest version of the same question ──────────────────────────────
+   roundTrip answers "did every rule come back the same". That is a smaller
+   claim than the import dialog was making with it: chain headers, sets, table
+   flags and every object were outside its reach, so it could report a clean
+   100% on a ruleset whose netdev chain had lost its device. This compares the
+   whole file — parse it, emit it, and diff what we get against what we were
+   given, line for line. */
+const meaningful = lines => lines
+  .map(l => normalise(typeof l === "string" ? l : l.text))
+  .filter(l => l && l !== "flush ruleset" && !l.startsWith("#"));
+
+export function verify(text){
+  const parsed = parseNft(text);
+  const src = meaningful(logicalLines(text));
+  const out = meaningful(generate(parsed));
+
+  const diffs = [];
+  for(let i = 0; i < Math.max(src.length, out.length); i++)
+    if(src[i] !== out[i]) diffs.push({ i, src: src[i] ?? "—", out: out[i] ?? "—" });
+  return { total: src.length, ok: src.length - diffs.length, diffs, parsed };
 }

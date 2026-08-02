@@ -35,6 +35,10 @@ export const serialise = () =>
       scratch: project.scratch,
       chains: MODEL.chains,
       sets: MODEL.sets,
+      /* carried, not edited — but a project file that dropped them would give
+         you back a ruleset without its flowtables and without its table flags */
+      objects: MODEL.objects,
+      tables: MODEL.tables,
     },
     null,
     2,
@@ -47,6 +51,8 @@ export function deserialise(text) {
     name: o.name || "imported",
     chains: o.chains,
     sets: o.sets || [],
+    objects: o.objects || [],
+    tables: o.tables || [],
     scratch: { ifaces: [], networks: [], ...(o.scratch || {}) },
   };
 }

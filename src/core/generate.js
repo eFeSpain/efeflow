@@ -3,11 +3,43 @@
  * Emission also records where each line came from. Without that, the code pane
  * has to match rules back to lines by their text — and two chains can hold the
  * same rule, so selecting one would highlight all of them. Provenance makes
- * the round-trip identity-based instead of string-based. */
+ * the round-trip identity-based instead of string-based.
+ *
+ * The output is shaped the way `nft list ruleset` shapes it — one attribute
+ * per line, `priority filter;` rather than `priority 0 ;` — so that a ruleset
+ * read off a host and written back out compares line for line. That is what
+ * makes verify() in parse.js able to make a claim about the whole file rather
+ * than only about its rules. */
 import { MODEL, ruleLine, UID } from "./model.js";
 import { PROJECT } from "./project.js";
 
-export function generateWithMap() {
+/* The set body, in the order it was read. `type`, `flags` and `elements` are
+   the parts the editor owns and are re-emitted from the live values; anything
+   else — size, timeout, gc-interval, auto-merge, policy, comment — is put back
+   exactly where it sat. A set built in the editor has no recorded body, so it
+   gets the canonical one. */
+function setBody(s){
+  const body = s.body?.length ? s.body : [{ k: "type" }, { k: "flags" }, { k: "elements" }];
+  const seen = new Set(body.map(x => x.k));
+  const out = [];
+  for(const slot of body){
+    if(slot.k === "type")     out.push(`${s.decl || "type"} ${s.t}`);
+    else if(slot.k === "flags"){ if(s.f) out.push(`flags ${s.f}`); }
+    else if(slot.k === "elements"){ if(s.el.length) out.push(`elements = { ${s.el.join(", ")} }`); }
+    else out.push(slot.v);
+  }
+  /* flags or elements added in the editor to a set that was read without them */
+  if(s.f && !seen.has("flags")) out.splice(1, 0, `flags ${s.f}`);
+  if(s.el.length && !seen.has("elements")) out.push(`elements = { ${s.el.join(", ")} }`);
+  return out;
+}
+
+export function generateWithMap(model = MODEL) {
+  const chains = model.chains || [];
+  const sets = model.sets || [];
+  const objects = model.objects || [];
+  const tableInfo = model.tables || [];
+
   const L = [];
   const M = []; // parallel to L: {uid, i} for rule lines, null otherwise
   const put = (line, origin = null) => {
@@ -23,8 +55,10 @@ export function generateWithMap() {
 
   const tables = [
     ...new Set([
-      ...MODEL.chains.map((c) => c.table),
-      ...MODEL.sets.map((s) => s.table).filter(Boolean),
+      ...chains.map((c) => c.table),
+      ...sets.map((s) => s.table).filter(Boolean),
+      ...objects.map((o) => o.table).filter(Boolean),
+      ...tableInfo.map((t) => t.name),
     ]),
   ];
   if (!tables.length) tables.push("inet fw");
@@ -32,24 +66,48 @@ export function generateWithMap() {
   tables.forEach((tb) => {
     put(`table ${tb} {`);
 
+    /* table-level statements: `flags dormant`, `comment "…"`. Losing the first
+       turns a firewall its author had deliberately parked back on. */
+    const info = tableInfo.find((t) => t.name === tb);
+    if (info?.extra.length) {
+      info.extra.forEach((l) => put(`\t${l}`));
+      put("");
+    }
+
     /* a set with no recorded table belongs to the first one, as nft requires
        it to live beside the rules that reference it */
-    MODEL.sets
+    sets
       .filter((s) => (s.table || tables[0]) === tb)
       .forEach((s) => {
         put(`\t${s.kind === "map" ? "map" : "set"} ${s.n} {`);
-        put(`\t\ttype ${s.t}${s.f ? " ; flags " + s.f : ""}`);
-        if (s.el.length) put(`\t\telements = { ${s.el.join(", ")} }`);
+        setBody(s).forEach((l) => put(`\t\t${l}`));
         put("\t}");
         put("");
       });
 
-    MODEL.chains
+    /* flowtables, named counters and quotas, ct helpers and timeouts: the
+       objects nftables has and this model does not, kept as they arrived */
+    objects
+      .filter((o) => o.table === tb)
+      .forEach((o) => {
+        put(`\t${o.kind}${o.name ? " " + o.name : ""} {`);
+        o.body.forEach((l) => put(`\t\t${l}`));
+        put("\t}");
+        put("");
+      });
+
+    chains
       .filter((c) => c.table === tb)
       .forEach((ch) => {
         put(`\tchain ${ch.id} {`);
-        if (ch.hook)
-          put(`\t\ttype ${ch.type} hook ${ch.hook} priority ${ch.prio} ; policy ${ch.policy} ;`);
+        if (ch.hook) {
+          /* nft prints known priorities by name, so a `priority dstnat` that
+             comes back as `priority -100` is a diff on every chain header */
+          const prio = ch.prioName || ch.prio;
+          const dev = ch.dev ? ch.dev + " " : "";
+          put(`\t\ttype ${ch.type} hook ${ch.hook} ${dev}priority ${prio}; policy ${ch.policy};`);
+        }
+        (ch.extra || []).forEach((l) => put(`\t\t${l}`));
         ch.rules.forEach((r, i) => {
           if (!r.on) return;
           put(`\t\t${ruleLine(r)}${r.cmt ? ` comment "${r.cmt}"` : ""}`, { uid: UID(ch), i });
@@ -73,4 +131,4 @@ export function generateWithMap() {
   return { lines: L, map: M };
 }
 
-export const generate = () => generateWithMap().lines;
+export const generate = (model) => generateWithMap(model).lines;

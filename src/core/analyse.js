@@ -90,8 +90,12 @@ export function analyse(){
     });
 
     /* ── overlapping NAT with divergent targets ── */
-    const nats = rs.filter(x=>x.r.verdict==="dnat");
+    /* redirect is a DNAT too, and two redirects to different ports collide the
+       same way — but a dnat and a redirect are not comparable targets, so only
+       pairs of the same verdict are weighed against each other. */
+    const nats = rs.filter(x=>x.r.verdict==="dnat" || x.r.verdict==="redirect");
     nats.forEach((a,k)=> nats.slice(k+1).forEach(b=>{
+      if(a.r.verdict!==b.r.verdict) return;
       if(a.r.to===b.r.to || !overlaps(a.c,b.c)) return;
       out.push(F("error","conflict",{
         chain:ch, i:b.i, ref:a.i,
