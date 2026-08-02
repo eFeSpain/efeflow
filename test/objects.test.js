@@ -40,6 +40,10 @@ test("a counter and a quota are their numbers", () => {
   c.body = editObject(c, { packets: "0", bytes: "0" });
   assert.deepEqual(c.body, ["packets 0 bytes 0"]);
 
+  /* nft refuses `gbytes` — "expecting bytes, kbytes or mbytes", checked
+     against 1.1.6 — so it is not a unit this offers. Reading one anyway is
+     preserve-by-default doing its job: a file that arrives with it is not a
+     file to choke on. */
   const q = obj("quota", "monthly", ["over 10 gbytes"]);
   const r = readObject(q);
   assert.equal(r.mode, "over");
@@ -143,4 +147,28 @@ test("every template parses back as the object it claims to be", () => {
     assert.equal(p.objects[0].name, "thing");
     assert.deepEqual(verify(src).diffs, [], kind);
   }
+});
+
+/* Everything offered has to be something nft would take.
+ *
+ * The quota template emitted `over 1 gbytes`, and the unit dropdown offered
+ * it. nft 1.1.6 answers "Wrong unit format, expecting bytes, kbytes or
+ * mbytes" and refuses the file — so making a quota in the editor produced a
+ * ruleset that would not load, and nothing said so until the apply. */
+test("no offered quota unit is one nft refuses", async () => {
+  const { readFileSync } = await import("node:fs");
+  const OK = ["bytes", "kbytes", "mbytes"];
+
+  const t = OBJECT_TEMPLATE.quota.join(" ");
+  const unit = t.match(/\b(\w*bytes)\b/)[1];
+  assert.ok(OK.includes(unit), `the quota template offers ${unit}, which nft refuses`);
+
+  const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  const list = app.match(/unit:\s*\[([^\]]*)\]/);
+  assert.ok(list, "the unit dropdown should be findable");
+  for (const u of list[1].split(",").map((s) => s.trim().replace(/"/g, "")))
+    assert.ok(OK.includes(u), `the unit dropdown offers ${u}, which nft refuses`);
+
+  for (const m of app.matchAll(/quota over [\d\s]*(\w*bytes)/g))
+    assert.ok(OK.includes(m[1]), `the palette drops ${m[1]}, which nft refuses`);
 });

@@ -131,31 +131,43 @@ export function generateWithMap(model = MODEL, opts = {}) {
       put("");
     }
 
-    /* a set with no recorded table belongs to the first one, as nft requires
-       it to live beside the rules that reference it */
-    sets
-      .filter((s) => (s.table || tables[0]) === tb)
-      .forEach((s) => {
-        put(`\t${s.kind === "map" ? "map" : "set"} ${s.n} {`);
-        setBody(s).forEach((l) => put(`\t\t${l}`));
-        put("\t}");
-        put("");
-      });
+    /* What order the members of a table come out in.
+     *
+     * This emitted sets, then objects, then chains. nft prints named objects
+     * *first* — counter, quota, set, chain, checked against nft 1.1.6 — so any
+     * ruleset with a named counter or a flowtable came back out reordered, and
+     * the round-trip check read the move as loss. It reported 85% on a file
+     * nothing had been dropped from, which is the one number this application
+     * asks people to trust.
+     *
+     * So members keep the position they arrived in, and anything made since —
+     * which has no position — follows in nft's own order. A set with no
+     * recorded table belongs to the first one, as nft requires it to live
+     * beside the rules that reference it. Declaration order does not matter to
+     * nft itself: a chain may name a set declared below it, also checked. */
+    const RANK = { object: 0, set: 1, chain: 2 };
+    const members = [
+      ...objects.filter((o) => o.table === tb).map((o) => ({ o, at: o.seq, k: "object" })),
+      ...sets.filter((s) => (s.table || tables[0]) === tb).map((s) => ({ s, at: s.seq, k: "set" })),
+      ...chains.filter((c) => c.table === tb).map((c) => ({ c, at: c.seq, k: "chain" })),
+    ].sort((a, b) => {
+      const known = (x) => typeof x.at === "number";
+      if (known(a) && known(b)) return a.at - b.at;
+      if (known(a) !== known(b)) return known(a) ? -1 : 1;   /* imported first */
+      return RANK[a.k] - RANK[b.k];                          /* then nft's order */
+    });
 
-    /* flowtables, named counters and quotas, ct helpers and timeouts: the
-       objects nftables has and this model does not, kept as they arrived */
-    objects
-      .filter((o) => o.table === tb)
-      .forEach((o) => {
+    members.forEach((m) => {
+      if (m.k === "object") {
+        const o = m.o;
         put(`\t${o.kind}${o.name ? " " + o.name : ""} {`);
         o.body.forEach((l) => put(`\t\t${l}`));
-        put("\t}");
-        put("");
-      });
-
-    chains
-      .filter((c) => c.table === tb)
-      .forEach((ch) => {
+      } else if (m.k === "set") {
+        const s = m.s;
+        put(`\t${s.kind === "map" ? "map" : "set"} ${s.n} {`);
+        setBody(s).forEach((l) => put(`\t\t${l}`));
+      } else {
+        const ch = m.c;
         put(`\tchain ${ch.id} {`);
         if (ch.hook) {
           /* nft prints known priorities by name, so a `priority dstnat` that
@@ -169,9 +181,10 @@ export function generateWithMap(model = MODEL, opts = {}) {
           if (!r.on) return;
           put(`\t\t${ruleLine(r)}${r.cmt ? ` comment "${r.cmt}"` : ""}`, { uid: UID(ch), i });
         });
-        put("\t}");
-        put("");
-      });
+      }
+      put("\t}");
+      put("");
+    });
 
     if (L.at(-1) === "") {
       L.pop();

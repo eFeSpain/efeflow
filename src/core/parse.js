@@ -65,6 +65,11 @@ const OUR_PREAMBLE = /^(flush ruleset|delete table\s|table\s+\S+(\s+\S+)?$)/;
 export function parseNft(text){
   const chains = [], sets = [], objects = [], tables = [], errors = [], prelude = [];
   const ruleLines = {};
+  /* Where each member sat among its siblings, so a table comes back out in the
+     order it went in. nft prints named objects before sets and sets before
+     chains; reordering them made the round-trip check report loss where there
+     was none. Anything made in the editor afterwards has no seq, and follows. */
+  let seq = 0;
 
   /* innermost frame last; every `}` pops exactly one */
   const stack = [];
@@ -93,12 +98,13 @@ export function parseNft(text){
     if((m = line.match(/^(set|map)\s+(\S+)\s*\{$/))){
       stack.push({ kind: "set", set: {
         n: m[2], t: "", f: "", el: [], body: [], kind: m[1], table: tableName() || "inet fw",
+        seq: seq++,
       }});
       continue;
     }
     if((m = line.match(/^chain\s+(\S+)\s*\{$/))){
       const c = { id: m[1], table: tableName() || "inet fw", hook: null, prio: null,
-                  type: "regular", policy: null, rules: [], extra: [],
+                  type: "regular", policy: null, rules: [], extra: [], seq: seq++,
                   ...(handle ? { handle } : {}) };
       chains.push(c);
       stack.push({ kind: "chain", chain: c });
@@ -108,7 +114,8 @@ export function parseNft(text){
        has and this model does not: a flowtable, a named counter or quota, a
        ct helper or timeout, a synproxy. Keep the body verbatim. */
     if(isOpener(line) && tableName()){
-      stack.push({ kind: "object", obj: { table: tableName(), ...splitObject(line), body: [] } });
+      stack.push({ kind: "object",
+                   obj: { table: tableName(), ...splitObject(line), body: [], seq: seq++ } });
       continue;
     }
 

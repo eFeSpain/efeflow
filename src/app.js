@@ -2210,7 +2210,7 @@ export function fragment(k, name, ref, ch){
        counter and a quota are not that statement: they are their own. */
     case "CN":
       if(name.startsWith("counter name")) return {expr:name};
-      if(name === "quota over")           return {expr:"quota over 1 gbytes"};
+      if(name === "quota over")           return {expr:"quota over 1 mbytes"};
       return {ctr:true};
     default:   return null;
   }
@@ -2638,7 +2638,7 @@ const OBJ_LABEL = {
 const OBJ_CHOICES = {
   hook: ["ingress","egress","prerouting","input","forward","output","postrouting"],
   mode: ["over","until"],
-  unit: ["bytes","kbytes","mbytes","gbytes"],
+  unit: ["bytes","kbytes","mbytes"],
   protocol: ["tcp","udp","sctp","dccp"],
 };
 

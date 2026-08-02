@@ -37,7 +37,7 @@ export const OBJECT_FIELDS = {
 export const OBJECT_TEMPLATE = {
   flowtable: ["hook ingress priority filter", "devices = { }"],
   counter: ["packets 0 bytes 0"],
-  quota: ["over 1 gbytes"],
+  quota: ["over 1 mbytes"],
   "ct helper": ['type "ftp" protocol tcp'],
   "ct timeout": ["protocol tcp", "policy = { established: 3600 }"],
   synproxy: ["mss 1460", "wscale 7"],
@@ -96,7 +96,7 @@ export function editObject(o, patch = {}) {
     const now = readObject(o);
     const mode = has("mode") ? patch.mode : now.mode || "over";
     const amount = has("amount") ? patch.amount : now.amount || "1";
-    const unit = has("unit") ? patch.unit : now.unit || "gbytes";
+    const unit = has("unit") ? patch.unit : now.unit || "mbytes";
     body = splice(body, RE.quota, `${mode} ${amount} ${unit}`.trim());
   }
   if (has("type")) body = splice(body, RE.type, `type "${patch.type}"`);
