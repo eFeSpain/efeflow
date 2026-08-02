@@ -10,6 +10,7 @@ const at = (uid, i) => { const c = chainOf(uid); return c && c.rules[i] ? c : nu
 import { inSet, readable } from './simulate.js';
 import { covers as addrCovers } from './addr.js';
 import { lintRuleset } from './lint.js';
+import { dormantTables, isDormant, readTable, writeTable } from './tables.js';
 import { escape as esc } from './html.js';
 import { t } from '../i18n.js';
 const CRIT = [
@@ -268,6 +269,26 @@ export function analyse(){
     }));
   });
 
+  /* ── tables that are loaded and not running ───────────────────────────
+     `flags dormant` unregisters every base chain in the table. The ruleset
+     applies, nft says nothing, and not one packet is filtered by it. Somebody
+     parked it on purpose once; the risk is that nobody remembers. */
+  dormantTables(MODEL).forEach(name=>{
+    const info = readTable(MODEL, name);
+    if(!info.chains) return;   /* an empty parked table is a note, not a risk */
+    out.push(F("warn","dormant",{
+      table:name,
+      title:[`Table ${name} is dormant — its ${info.rules} rule${info.rules===1?"":"s"} are not running`,
+             `La tabla ${name} está dormant — sus ${info.rules} regla${info.rules===1?"":"s"} no se están aplicando`],
+      where:`${name} · ${t("table","tabla")}`,
+      detail:[`<code>flags dormant</code> unregisters every base chain in the table, so nothing in it ever sees a packet. The ruleset still loads and nft reports nothing wrong — this is the state a firewall is parked in, and it looks identical to a working one everywhere it is not read out loud.`,
+              `<code>flags dormant</code> desregistra todas las cadenas base de la tabla, así que nada dentro de ella llega a ver un paquete. El ruleset sigue cargando y nft no informa de nada — es el estado en el que se aparca un firewall, y es idéntico a uno en marcha en todos los sitios donde no se dice en voz alta.`],
+      code:[["", `table ${name} { flags dormant }`, "neg"]],
+      fix:{label:["Wake the table up","Despertar la tabla"],
+           run:()=>{ writeTable(MODEL, name, {dormant:false, comment:readTable(MODEL,name).comment}); }},
+    }));
+  });
+
   /* ── rules nft would refuse ──────────────────────────────────────────
      Everything above describes a ruleset that works. This one asks whether it
      works at all, and it belongs at the top: a shadowed rule costs you an
@@ -284,15 +305,18 @@ export function analyse(){
   });
 
   const rank = {error:0, warn:1, hint:2};
-  /* syntax first within the errors: it is the one that stops everything */
-  const kindRank = k => k==="syntax" ? 0 : 1;
+  /* Syntax first within the errors: it is the one that stops everything. And
+     dormant first within the warnings — a shadowed rule costs an evaluation, a
+     parked table means none of the rules below are running at all. */
+  const kindRank = k => k==="syntax" || k==="dormant" ? 0 : 1;
   return out.sort((a,b)=> rank[a.sev]-rank[b.sev] || kindRank(a.kind)-kindRank(b.kind));
 }
 
 /* worst-case evaluations along the two real packet paths */
 export function worstCase(){
   const live = ch => ch.rules.filter(r=>r.on).length;
-  const inHook = h => MODEL.chains.filter(c=>c.hook===h);
+  /* a parked table costs nothing: its chains are not attached to the hook */
+  const inHook = h => MODEL.chains.filter(c=>c.hook===h && !isDormant(MODEL, c.table));
   const cost = h => inHook(h).reduce((a,c)=>a+live(c), 0);
   const jumpCost = h => inHook(h).reduce((max,c)=> Math.max(max,
     ...c.rules.filter(r=>r.on && (r.verdict==="jump"||r.verdict==="goto"))

@@ -908,6 +908,59 @@
   </div>
 </div>
 
+<!-- The one level of nftables that had no editor. `flags dormant` and the table
+     comment were both carried through an import and could not be written, and
+     dormant is not decoration: it is how a firewall is parked. -->
+<div class="scrim" id="scrim-table">
+  <div class="modal glass" style="width:min(560px,92vw);margin-top:10vh">
+    <div class="modal-hd">
+      <div style="width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:none;
+                  background:var(--aqua-wash);border:1px solid var(--aqua-line);color:var(--aqua)">
+        <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg></div>
+      <h2 id="tbl-title">—</h2>
+      <button class="tb icon" data-close><svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+
+    <div class="modal-body">
+      <div class="row2">
+        <div class="fld"><span class="lbl" data-t="Family|Familia">Family</span>
+          <select id="tbl-family">
+            <option>inet</option><option>ip</option><option>ip6</option>
+            <option>arp</option><option>bridge</option><option>netdev</option>
+          </select></div>
+        <div class="fld"><span class="lbl" data-t="Table name|Nombre de la tabla">Table name</span>
+          <input type="text" id="tbl-name" placeholder="fw" spellcheck="false"></div>
+      </div>
+
+      <div class="fld"><span class="lbl" data-t="Comment|Comentario">Comment</span>
+        <input type="text" id="tbl-comment" data-tp="what this table is for|para qué sirve esta tabla"></div>
+
+      <div class="fld"><span class="lbl" data-t="State|Estado">State</span>
+        <div class="inline" style="height:29px">
+          <span class="lbl" style="text-transform:none;letter-spacing:0;font-size:11.5px">flags dormant</span>
+          <span class="sw-toggle" id="tbl-dormant"></span>
+        </div>
+        <span class="lbl" id="tbl-dormant-note"
+              style="text-transform:none;letter-spacing:0;font-size:10.5px;color:var(--t4)">—</span>
+      </div>
+
+      <div class="mono" id="tbl-preview" style="font-size:11px;color:var(--t3);padding:9px 11px;
+           background:var(--sunken);border:1px solid var(--line);border-radius:var(--r-sm)">—</div>
+      <div id="tbl-holds" style="font-size:11.5px;color:var(--t3)"></div>
+      <div id="tbl-warn" class="tg-result bad" style="display:none"></div>
+    </div>
+
+    <div class="modal-ft">
+      <button class="tb" id="tbl-delete" style="color:var(--v-drop);display:none">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+        <span data-t="Delete table|Eliminar tabla">Delete table</span></button>
+      <span style="flex:1"></span>
+      <button class="tb" data-close data-t="Cancel|Cancelar">Cancel</button>
+      <button class="tb pri" id="tbl-save">—</button>
+    </div>
+  </div>
+</div>
+
 <div class="scrim" id="scrim-target">
   <div class="modal glass" style="width:min(560px,92vw);margin-top:11vh">
     <div class="modal-hd">

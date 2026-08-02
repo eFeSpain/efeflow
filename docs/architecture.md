@@ -14,6 +14,7 @@ src/core/        pure, DOM-free, covered by npm test
   simulate.js      packet evaluation
   lint.js          what nft would reject, before nft is asked
   expr.js          surgical edits to one match of one rule
+  tables.js        the table itself: family, comment, flags dormant
   objects.js       named counters, quotas, ct helpers, flowtables
   addr.js          addresses and prefixes, v4 and v6
   sync.js          which rule here is which rule there
@@ -55,7 +56,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 432 assertions.
+`npm test` — 461 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across

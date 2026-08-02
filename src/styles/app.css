@@ -107,6 +107,23 @@ body{
 .proj .nm{font-weight:500;font-size:12.5px}
 .dot-live{width:5px;height:5px;border-radius:99px;background:var(--warn);flex:none;box-shadow:0 0 0 3px rgba(240,193,60,.13)}
 
+/* The tables of the ruleset, in the one place that already listed them. They
+   were flat text; a table has properties now, and one of them — dormant —
+   changes what the whole file means, so it is said here rather than nowhere. */
+#proj-tables{display:flex;align-items:center;gap:4px}
+.tbl-chip{
+  display:inline-flex;align-items:center;gap:4px;height:19px;padding:0 5px;
+  border-radius:5px;font:inherit;font-size:11px;color:var(--t4);
+  border:1px solid transparent;transition:background .13s var(--ease),color .13s var(--ease);
+}
+.tbl-chip:hover{background:var(--raised-2);color:var(--t2);border-color:var(--line)}
+.tbl-chip.off{color:var(--warn)}
+.tbl-chip .zz{
+  font-size:9px;letter-spacing:.4px;text-transform:uppercase;padding:0 3px;border-radius:3px;
+  background:rgba(240,193,60,.14);border:1px solid rgba(240,193,60,.3);
+}
+.tbl-chip.add{color:var(--t4);font-size:13px;line-height:1;padding:0 6px}
+
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .tb{
   display:inline-flex;align-items:center;gap:6px;height:27px;padding:0 9px;
@@ -444,6 +461,11 @@ select{appearance:none;cursor:pointer;padding-right:26px;
   transition:box-shadow .2s var(--ease),border-color .2s var(--ease),transform .2s var(--ease);
 }
 .chain:hover{border-color:var(--line-3)}
+/* A chain in a dormant table is loaded and unregistered: it filters nothing.
+   Drawn like every other card, it was the one lie the canvas could tell. */
+.chain.parked{border-style:dashed;border-color:rgba(240,193,60,.34);opacity:.72}
+.chain.parked:hover{opacity:1}
+.chip.parked{color:var(--warn);background:rgba(240,193,60,.12);border-color:rgba(240,193,60,.3)}
 .chain.focus{border-color:var(--aqua-line);box-shadow:0 0 0 1px var(--aqua-line),0 0 34px -6px rgba(57,213,255,.45),0 14px 40px -12px rgba(0,0,0,.8)}
 .chain-hd{display:flex;align-items:center;gap:7px;padding:9px 10px 9px 11px;border-bottom:1px solid var(--line)}
 .chain-hd .cn{font:600 12.5px var(--mono);letter-spacing:-.2px;flex:1;color:var(--t1)}

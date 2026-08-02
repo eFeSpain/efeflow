@@ -2,6 +2,7 @@
    emitted from, so a verdict here is the verdict the export produces. */
 import { MODEL, UID, chainOf, jumpTarget } from './model.js';
 import { inCidr, family, looksLikeAddr } from './addr.js';
+import { isDormant } from './tables.js';
 export { inCidr };
 
 const setOf = n => (MODEL.sets.find(s=>s.n===n)||{el:[]}).el;
@@ -300,10 +301,16 @@ export function evaluate(p){
     return {stop:"chain", settled:false};
   };
 
+  /* A dormant table's base chains are never registered with netfilter, so no
+     packet enters them. Walking them anyway made a parked firewall trace
+     exactly like a live one — the one case where the whole screen is wrong. */
+  const parked = new Set();
+
   /* nat chains can be skipped entirely, which is how you see what the filter
      path alone decides */
   const byHook = h => MODEL.chains
     .filter(c=>c.hook===h && (p.nat || c.type!=="nat"))
+    .filter(c=>{ if(!isDormant(MODEL, c.table)) return true; parked.add(c.table); return false; })
     .sort((a,b)=>a.prio-b.prio).map(c=>UID(c));
 
   const stages = (PATHS[p.dir] || PATHS.in).flatMap(([h])=>byHook(h));
@@ -338,6 +345,8 @@ export function evaluate(p){
     final: final || accepted || {v:"accept", chain:chainOf(last), policy:true},
     sure: unsure.length === 0,
     unsure,
+    /* tables this packet would have gone through if they were not parked */
+    parked: [...parked],
   };
 }
 

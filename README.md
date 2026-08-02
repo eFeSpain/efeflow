@@ -97,6 +97,14 @@ counters and ct helpers it carries through untouched rather than modelling. The
 percentage it reports is honest evidence that nothing was lost in translation,
 and if a line cannot be reproduced it shows you which one.
 
+Tables have properties of their own, which matters most for one of them.
+`flags dormant` unregisters every base chain in a table: the ruleset loads, nft
+reports nothing wrong, and not one packet is filtered by it. That is how a
+firewall is parked, and a parked table used to read exactly like a running one
+here. It now says so where the tables are named, on every chain card it holds,
+in the validation report, and in the simulator — which stops walking it, because
+the kernel does.
+
 ### And the rest
 
 <table>
@@ -187,7 +195,7 @@ which rule you are deleting is worse than not deleting one.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 432 assertions
+npm test             # 461 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 ```
 

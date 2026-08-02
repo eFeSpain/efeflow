@@ -97,6 +97,14 @@ counters con nombre y helpers de ct que conserva intactos en vez de modelar. El
 porcentaje que muestra es la prueba honesta de que no se ha perdido nada por el
 camino, y si una línea no se puede reproducir te dice cuál.
 
+Las tablas tienen propiedades propias, y una de ellas importa más que el resto.
+`flags dormant` desregistra todas las cadenas base de una tabla: el ruleset
+carga, nft no informa de nada raro, y ni un solo paquete pasa por ella. Así se
+aparca un firewall, y hasta ahora una tabla aparcada se leía aquí exactamente
+igual que una en marcha. Ahora lo dice donde se nombran las tablas, en cada
+tarjeta de cadena que contiene, en el informe de validación y en el simulador
+—que deja de recorrerla, porque el kernel también.
+
 ### Y lo demás
 
 <table>
@@ -189,7 +197,7 @@ aproximadamente qué regla estás borrando es peor que no borrar ninguna.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 432 aserciones
+npm test             # 461 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 

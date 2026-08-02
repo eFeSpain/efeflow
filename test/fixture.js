@@ -11,5 +11,8 @@ export function loadFlawed() {
   const p = parseNft(flawedSource());
   MODEL.chains = p.chains;
   MODEL.sets = p.sets.map((s) => ({ ...s }));
+  /* the table's own properties — `flags dormant` decides whether any of the
+     chains below run at all, so a model without them is not the ruleset */
+  MODEL.tables = p.tables;
   return p;
 }

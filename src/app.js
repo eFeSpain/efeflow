@@ -22,6 +22,8 @@ import { catalogue, protoOf, OWNABLE, BUILT_IN, emptyVocabulary,
 import { readExpr, editExpr } from "./core/expr.js";
 import { readObject, editObject, refsToObject, OBJECT_FIELDS, OBJECT_TEMPLATE, OBJECT_KINDS } from "./core/objects.js";
 import { lintRule } from "./core/lint.js";
+import { FAMILIES, splitTable, joinTable, tableNames, readTable, writeTable,
+         renameTable, removeTable, isDormant, dormantTables } from "./core/tables.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
 import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
 import { target, loadTarget, saveTarget, asTauriTarget, describe, probe } from "./target.js";
@@ -273,9 +275,13 @@ const CH_ = () => t("chains","cadenas"), CH1 = () => t("chain","cadena"), RL_ = 
 const LIB = () => [
   /* the tables and sets your ruleset has, not four invented ones */
   [t("Tables","Tablas"),"TB", (()=>{
-     const seen = new Map();
-     MODEL.chains.forEach(c=> seen.set(c.table, (seen.get(c.table)||0)+1));
-     const rows = [...seen].map(([n,k])=>[n, `${k} ${k===1?CH1():CH_()}`]);
+     /* derived from every filing, not only from the chains: a table can exist
+        holding nothing but a set, or nothing at all but a comment and a flag */
+     const rows = tableNames(MODEL).map(n=>{
+       const info = readTable(MODEL, n);
+       return [n, info.dormant ? t("dormant","dormant")
+                               : `${info.chains} ${info.chains===1?CH1():CH_()}`];
+     });
      /* the fallback named a table called "inet filter" that nothing had
         created — the third flag marks a row as a note, not an object */
      return rows.length ? rows : [[t("no tables yet","aún sin tablas"), "", true]];
@@ -526,7 +532,10 @@ function renderChains(){
   chainsEl.innerHTML = "";
   MODEL.chains.forEach(ch=>{
     const p = POS[UID(ch)]; if(!p) return;
-    const node = el("div","chain");
+    /* a base chain in a dormant table is never registered with netfilter, so
+       this card is loaded and filtering nothing — it has to look like it */
+    const parked = isDormant(MODEL, ch.table);
+    const node = el("div","chain"+(parked?" parked":""));
     node.dataset.chain = UID(ch);
     node.style.left = p.x+"px";   /* the row comes from placeChains, after measuring */
     const polPill = ch.policy
@@ -540,6 +549,9 @@ function renderChains(){
       <div class="chain-meta">
         ${ch.hook?`<span class="chip">hook ${ch.hook}</span><span class="chip">prio ${ch.prio}</span>`:`<span class="chip">${t("no hook","sin hook")}</span>`}
         ${polPill}
+        ${parked?`<span class="chip parked" title="${esc(t(
+            `${ch.table} is dormant — this chain is loaded and sees no packets`,
+            `${ch.table} está dormant — esta cadena está cargada y no ve ningún paquete`))}">dormant</span>`:""}
       </div>
       <div class="chain-rules"></div>
       <div class="chain-ft">
@@ -1373,12 +1385,23 @@ function runSim(){
           `Assumed, not evaluated: ${res.unsure.map(u=>`<code>${esc(u)}</code>`).join(", ")}. The packet was taken as matching those, so this verdict is a guess where they are concerned.`,
           `Asumido, no evaluado: ${res.unsure.map(u=>`<code>${esc(u)}</code>`).join(", ")}. El paquete se ha dado por coincidente con eso, así que este veredicto es una suposición en esa parte.`)}</span>
       </div>`;
+    /* Chains that were skipped because their table is parked. Without this the
+       trace of a dormant ruleset is a short walk to accept with no explanation
+       — which is exactly what the kernel does, and exactly what nobody expects
+       to be looking at. */
+    const parked = (res.parked || []).length ? `
+      <div class="vb-guess">
+        <svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <span>${t(
+          `Not walked: ${res.parked.map(x=>`<code>${esc(x)}</code>`).join(", ")} ${res.parked.length===1?"is":"are"} dormant, so ${res.parked.length===1?"its":"their"} chains are not registered and no packet enters them.`,
+          `Sin recorrer: ${res.parked.map(x=>`<code>${esc(x)}</code>`).join(", ")} ${res.parked.length===1?"está":"están"} dormant, así que sus cadenas no están registradas y ningún paquete entra en ellas.`)}</span>
+      </div>` : "";
     $("#vb-why").innerHTML = (res.final.policy
       ? t(`No rule in ${loc} matched — the packet fell through to the chain policy.`,
           `Ninguna regla de ${loc} ha coincidido — el paquete cae a la política de la cadena.`)
       : t(`Matched rule ${res.final.i+1} in ${loc}: <code>${esc(ruleLine(res.final.r))}</code>`,
           `Coincide la regla ${res.final.i+1} de ${loc}: <code>${esc(ruleLine(res.final.r))}</code>`))
-      + guessed;
+      + guessed + parked;
     vb.classList.toggle("unsure", !res.sure);
     vb.classList.add("show");
     const n = traceEl.querySelectorAll(".tr").length-1;
@@ -3618,12 +3641,26 @@ function showProject(){
   const tb = $("#tb-proj");
   if(tb) tb.textContent = label;
   /* the table list was hard-coded to "inet fw", which stopped being true the
-     moment anyone imported or started fresh */
-  const tables = [...new Set(MODEL.chains.map(c=>c.table))];
+     moment anyone imported or started fresh. It was also read-only text over
+     the one level of nftables nothing here could edit — so each name is the
+     way into its properties now, and a parked table says so where it is named. */
+  const tables = tableNames(MODEL);
   const tb2 = $("#proj-tables");
-  if(tb2) tb2.textContent = tables.length
-    ? "/ " + tables.slice(0,2).join(" · ") + (tables.length>2 ? ` +${tables.length-2}` : "")
-    : "";
+  /* with nothing open there is nothing to list, and a lone + beside "no
+     project" is an offer to configure a ruleset that does not exist yet */
+  if(tb2) tb2.innerHTML = !tables.length ? ""
+    : `<span class="dimmer">/</span>`
+    + tables.slice(0,2).map(n=>{
+        const off = isDormant(MODEL, n);
+        return `<button class="tbl-chip${off?" off":""}" data-table="${esc(n)}" title="${esc(off
+          ? t(`${n} is dormant — nothing in it is running. Click to edit.`,
+              `${n} está dormant — nada de lo que contiene se aplica. Clic para editar.`)
+          : t(`${n} — click for its properties`, `${n} — clic para sus propiedades`))}"
+          >${esc(n)}${off?`<span class="zz">dormant</span>`:""}</button>`;
+      }).join(`<span class="dimmer">·</span>`)
+    + (tables.length>2 ? `<span class="dimmer">+${tables.length-2}</span>` : "")
+    + `<button class="tbl-chip add" data-table-new title="${esc(
+         t("New table","Tabla nueva"))}">+</button>`;
 
   /* Everywhere else the name or the origin was written out by hand. Each of
      those was a small lie the moment anything was imported or renamed. */
@@ -4156,6 +4193,117 @@ document.addEventListener("keydown", e=>{
      && !e.target.closest("input,textarea")){ e.preventDefault(); openChain(null); }
 });
 
+/* ══ TABLES ═════════════════════════════════════════════════════════════
+   Tables were the one level of nftables with no editor at all. They were
+   discovered from the chains filed under them, which meant an imported
+   `flags dormant` round-tripped invisibly: the ruleset was parked and every
+   screen here read it as running. */
+let tblEditing = null;   /* full name when editing, null when creating */
+
+const tblDraft = () => ({
+  family: $("#tbl-family").value,
+  name:   $("#tbl-name").value.trim(),
+  comment:$("#tbl-comment").value.trim(),
+  dormant:$("#tbl-dormant").classList.contains("on"),
+});
+
+function tblSync(){
+  const d = tblDraft();
+  const full = joinTable(d.family, d.name);
+  const body = [
+    ...(d.dormant ? ["flags dormant"] : []),
+    ...(d.comment ? [`comment "${d.comment.replace(/"/g,"")}"`] : []),
+  ].join(" ; ");
+  $("#tbl-preview").innerHTML = highlight(`table ${full || "?"} { ${body}${body?" ":""}}`);
+
+  $("#tbl-dormant-note").textContent = d.dormant
+    ? t("Loaded and not running: nftables unregisters every base chain, so nothing in this table sees a packet.",
+        "Cargada y sin aplicarse: nftables desregistra todas sus cadenas base, así que nada de esta tabla ve un paquete.")
+    : t("Attached to its hooks — the chains in it filter traffic.",
+        "Enganchada a sus hooks: las cadenas que contiene filtran tráfico.");
+
+  /* what it takes with it, which is the whole point of asking before deleting */
+  const info = tblEditing ? readTable(MODEL, tblEditing) : null;
+  $("#tbl-holds").textContent = info && (info.chains || info.sets || info.objects)
+    ? t(`Holds ${info.chains} chain(s), ${info.rules} rule(s), ${info.sets} set(s) and ${info.objects} object(s).`,
+        `Contiene ${info.chains} cadena(s), ${info.rules} regla(s), ${info.sets} set(s) y ${info.objects} objeto(s).`)
+    : "";
+
+  const clash = full !== tblEditing && tableNames(MODEL).includes(full);
+  const msg = !d.name ? t("A table needs a name.","Una tabla necesita un nombre.")
+    : /\s/.test(d.name) ? t("A table name is one word.","El nombre de una tabla es una sola palabra.")
+    : clash ? t(`${full} already exists.`, `${full} ya existe.`)
+    : "";
+  const warn = $("#tbl-warn");
+  warn.style.display = msg ? "" : "none";
+  warn.textContent = msg;
+  $("#tbl-save").disabled = !!msg;
+}
+
+function openTable(full){
+  tblEditing = full && tableNames(MODEL).includes(full) ? full : null;
+  const info = tblEditing ? readTable(MODEL, tblEditing) : null;
+  $("#tbl-title").textContent = info
+    ? t("Table properties","Propiedades de la tabla")
+    : t("New table","Tabla nueva");
+  $("#tbl-save").textContent = info ? t("Save","Guardar") : t("Create table","Crear tabla");
+  $("#tbl-delete").style.display = info ? "" : "none";
+
+  $("#tbl-family").value  = info ? info.family : "inet";
+  $("#tbl-name").value    = info ? info.name : "";
+  $("#tbl-comment").value = info ? info.comment : "";
+  $("#tbl-dormant").classList.toggle("on", !!info?.dormant);
+
+  tblSync();
+  $("#scrim-table").classList.add("on");
+  if(!info) $("#tbl-name").focus();
+}
+
+$("#scrim-table").addEventListener("input", tblSync);
+$("#scrim-table").addEventListener("change", tblSync);
+/* The global .sw-toggle handler flips it, and it is on the document, so it runs
+   after this one — reading the class here would read the state it just left.
+   The export dialog waits a turn for the same reason. */
+$("#tbl-dormant").addEventListener("click", ()=>setTimeout(tblSync, 0));
+
+$("#tbl-save").addEventListener("click", ()=>{
+  const d = tblDraft();
+  const full = joinTable(d.family, d.name);
+  const was = tblEditing;
+  edit(was ? t("edit table","editar tabla") : t("new table","tabla nueva"), ()=>{
+    if(was && was !== full) renameTable(MODEL, was, full);
+    writeTable(MODEL, full, {dormant:d.dormant, comment:d.comment});
+  });
+  $("#scrim-table").classList.remove("on");
+  toast(was
+    ? (d.dormant ? t(`${full} is dormant — nothing in it is running`,
+                     `${full} está dormant — nada de lo que contiene se aplica`)
+                 : t("Table updated","Tabla actualizada"))
+    : t(`Added table ${full}`, `Añadida la tabla ${full}`));
+});
+
+$("#tbl-delete").addEventListener("click", async ()=>{
+  const full = tblEditing; if(!full) return;
+  const info = readTable(MODEL, full);
+  const ok = await confirmDialog(
+    t(`Delete ${full}?`, `¿Eliminar ${full}?`),
+    t(`Its ${info.chains} chain(s), ${info.rules} rule(s), ${info.sets} set(s) and ${info.objects} object(s) go with it. Ctrl+Z undoes this.`,
+      `Sus ${info.chains} cadena(s), ${info.rules} regla(s), ${info.sets} set(s) y ${info.objects} objeto(s) se van con ella. Ctrl+Z lo deshace.`),
+    t("Delete","Eliminar"));
+  if(!ok) return;
+  edit(t("delete table","eliminar tabla"), ()=>{ removeTable(MODEL, full); });
+  $("#scrim-table").classList.remove("on");
+});
+
+/* Two ways in, both of them places that already named the table: the header
+   beside the project, and the Tables shelf of the palette. */
+document.addEventListener("click", e=>{
+  const chip = e.target?.closest?.("[data-table],[data-table-new]");
+  if(chip){ openTable(chip.hasAttribute("data-table-new") ? null : chip.dataset.table); return; }
+  const row = e.target?.closest?.('.cat[data-kind="TB"] .obj:not(.ph)');
+  if(row) openTable($(".nm", row).textContent.trim());
+});
+
 /* ══ TARGET ═════════════════════════════════════════════════════════════
    The chip in the titlebar said "no local nft" and its tooltip suggested
    adding an SSH target, with nothing behind it. This is the something. */
@@ -4316,7 +4464,10 @@ $("#val-nft")?.addEventListener("click", async ()=>{
    reach the host to press anything at all. */
 APPLY = { scope:"tables", secs:60, timer:null, left:0 };
 
-const applyTables = () => [...new Set(MODEL.chains.map(c=>c.table))];
+/* Every table the export writes, which is not the same as every table holding
+   a chain: one carrying only a set — or nothing but a comment and a flag — is
+   still ours to replace, and naming it here is what the scoped apply promises. */
+const applyTables = () => tableNames(MODEL);
 
 function paintApplyForm(){
   const tables = applyTables();
