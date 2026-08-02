@@ -1,10 +1,18 @@
 import { defineConfig } from "vite";
+import { readFileSync } from "node:fs";
+
+/* The about panel used to read `1.0.0 · build 2026.08.01` out of the markup: a
+   version that would go stale the next time package.json moved, beside a build
+   date that was never a build of anything. Take the one that is true from the
+   one place that holds it, and drop the one that is not. */
+const { version } = JSON.parse(readFileSync(new URL("package.json", import.meta.url), "utf8"));
 
 // Tauri serves the frontend from a dev server in development and from the
 // bundled dist/ in release. The fixed port matters: tauri.conf.json points at
 // it, and a shifting port breaks `tauri dev`.
 export default defineConfig({
   clearScreen: false,
+  define: { __APP_VERSION__: JSON.stringify(version) },
   server: {
     port: 5183,
     strictPort: true,

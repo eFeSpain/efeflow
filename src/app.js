@@ -58,6 +58,10 @@ const el = (tag,c,h)=>{const n=document.createElement(tag); if(c)n.className=c; 
    further down would still be in its dead zone. */
 const cssEsc = s => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, "\\$&");
 
+/* Injected by vite from package.json. Falls back for the test harness, which
+   evaluates these modules directly rather than through a build. */
+const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
+
 /* the screens live at document root while authoring; dock them into the shell */
 $$(".screen").forEach(s=>$("#screens").appendChild(s));
 $$(".scrim").forEach(s=>document.body.appendChild(s));
@@ -2981,13 +2985,15 @@ function download(name, text, mime){
   setTimeout(()=>URL.revokeObjectURL(url), 2000);
 }
 
+/* The toggles are found by name rather than by position: the flush one used to
+   be first, and everything after it was read by index. */
+const exOn = id => !!$("#" + id)?.classList.contains("on");
+const exScope = () => $("#ex-scope .on")?.dataset.scope || "tables";
+
 function exportPayload(){
   const fmt = $$("#scrim-export .choice").findIndex(c=>c.classList.contains("on"));
-  const opt = $$("#scrim-export .sw-toggle").map(sw=>sw.classList.contains("on"));
-  const [flush, comments] = opt;
-  let lines = generate().slice();
-  if(!flush) lines = lines.filter(l=>l!=="flush ruleset");
-  if(!comments) lines = lines.map(l=>l.replace(/\s*comment "(?:[^"\\]|\\.)*"/,""));
+  let lines = generate(MODEL, {scope: exScope()}).slice();
+  if(!exOn("ex-comments")) lines = lines.map(l=>l.replace(/\s*comment "(?:[^"\\]|\\.)*"/,""));
 
   if(fmt===1){                                   /* incremental delta */
     const add = [];
@@ -3045,6 +3051,12 @@ ${lines.map(l=>"          "+l).join("\n")}
 
 function refreshExportStats(){
   const p = exportPayload();
+  const tables = [...new Set(MODEL.chains.map(c=>c.table))];
+  $("#ex-scope-note").textContent = exScope()==="tables"
+    ? t(`Replaces ${tables.join(", ")}. Anything else on the host is left alone.`,
+        `Reemplaza ${tables.join(", ")}. Cualquier otra cosa de la máquina se queda como está.`)
+    : t("flush ruleset: empties the kernel first, deleting anything eFeFlow did not write.",
+        "flush ruleset: vacía el kernel primero, borrando todo lo que no haya escrito eFeFlow.");
   const rules = MODEL.chains.reduce((a,c)=>a+c.rules.filter(r=>r.on).length,0);
   const cards = $$("#scrim-export .card .num");
   if(cards.length===4){
@@ -3060,7 +3072,7 @@ function refreshExportStats(){
    is on, the export waits for its answer. */
 async function exportChecked(){
   const p = exportPayload();
-  const wanted = $$("#scrim-export .sw-toggle")[2]?.classList.contains("on");
+  const wanted = exOn("ex-check");
   /* only the nft formats are something nft can be asked about */
   const nftSource = /\.nft$/.test(p.name);
   if(wanted && nftSource && REACH?.ok){
@@ -3079,6 +3091,8 @@ async function exportChecked(){
 }
 
 $("#scrim-export").addEventListener("click", e=>{
+  const sc = e.target.closest("#ex-scope [data-scope]");
+  if(sc){ $$("#ex-scope [data-scope]").forEach(x=>x.classList.toggle("on", x===sc)); refreshExportStats(); return; }
   if(e.target.closest(".choice, .sw-toggle")) setTimeout(refreshExportStats, 0);
   const btns = $$("#scrim-export .modal-ft .tb");
   if(e.target.closest(".modal-ft .tb.pri")){
@@ -3302,6 +3316,11 @@ function showProject(){
   const cf = $("#code-filename");
   if(cf) cf.textContent = t("Generated · ","Generado · ") + project.name + ".nft";
   const ap = $("#about-project"); if(ap) ap.textContent = label;
+
+  /* the version package.json holds, injected at build time, plus the beta the
+     badge and the README both say out loud */
+  const av = $("#about-version");
+  if(av) av.textContent = `${APP_VERSION} · ${t("beta","beta")}`;
 
   /* What the branch indicator pretended to say. This one is true. */
   const sv = $("#st-saved-t");
