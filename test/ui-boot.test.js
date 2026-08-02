@@ -82,3 +82,29 @@ test("the analyser reaches the badges", async () => {
   assert.notEqual(text("#val-grade"), "—", "health grade never filled in");
   assert.match(text("#st-problems") || "", /\d/, "status bar problem count never filled in");
 });
+
+/* Two 10px letters in the dimmest text colour were being missed, so the switch
+   is flags now. Losing the text means the accessible name has to be explicit,
+   and the pair has to keep showing which of the two is active. */
+test("the language switch is legible and still says which is active", async () => {
+  await boot();
+
+  const buttons = $$("#lang [data-lang]");
+  assert.equal(buttons.length, 2);
+
+  for (const b of buttons) {
+    assert.ok(b.getAttribute("aria-label")?.trim(),
+      "a button with no text needs a name for anything that cannot see it");
+    assert.ok(b.querySelector("svg.flag"), "and a flag to be legible at all");
+    assert.equal(b.querySelector("svg").getAttribute("aria-hidden"), "true",
+      "the flag is decoration; the label carries the meaning");
+  }
+
+  const on = buttons.filter((b) => b.classList.contains("on"));
+  assert.equal(on.length, 1, "exactly one language is current");
+
+  const other = buttons.find((b) => !b.classList.contains("on"));
+  click(other);
+  assert.ok(other.classList.contains("on"), "clicking a flag switches to it");
+  assert.equal($$("#lang [data-lang].on").length, 1, "and only one stays lit");
+});
