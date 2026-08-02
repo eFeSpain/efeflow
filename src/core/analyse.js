@@ -292,6 +292,82 @@ export function analyse(){
     });
   });
 
+  /* ── sets that grow ──────────────────────────────────────────────────
+     A set a rule writes to is filled by traffic, which means by whoever is
+     sending it. `add @banned { ip saddr }` under a rate limit is the standard
+     shape for tarpitting a scanner, and it is also the standard way to hand a
+     stranger a lever on kernel memory: without `size` the set grows until
+     something in the kernel gives, and without `timeout` nothing ever leaves.
+     nft accepts all of it — checked against nft 1.1.6 — so this is the kind of
+     thing nothing tells you until the box stops. */
+  const GROWS = /\b(?:add|update)\s+@(\w+)\b/g;
+  const written = new Set();
+  MODEL.chains.forEach(c=>c.rules.filter(r=>r.on).forEach(r=>{
+    for(const m of String(r.expr||"").matchAll(GROWS)) written.add(m[1]);
+  }));
+  MODEL.sets.forEach(s=>{
+    const attr = s.attr || {};
+    const size = /^\d+$/.test(attr.size || "") ? +attr.size : null;
+
+    /* An element carrying its own timeout needs the set to allow timeouts.
+       nft refuses the whole file — "Could not process rule: Invalid argument",
+       checked against nft 1.1.6 — and it is exactly the shape fail2ban and
+       friends write, so it arrives from outside and fails at the worst moment. */
+    if(s.el.some(e=>/\btimeout\s+\S/.test(e)) && !/\btimeout\b/.test(s.f||""))
+      out.push(F("error","set-elem-timeout",{
+        at:"set", set:s.n,
+        title:[`Set @${s.n} has elements with a timeout but does not allow timeouts`,
+               `El set @${s.n} tiene elementos con timeout pero no admite timeouts`],
+        where:`${s.table || "inet fw"} · set`,
+        detail:[`An element may only carry <code>timeout</code> if the set declares <code>flags timeout</code>. Without it nft refuses the file — the whole file, not the element — so nothing applies at all.`,
+                `Un elemento solo puede llevar <code>timeout</code> si el set declara <code>flags timeout</code>. Sin eso nft rechaza el fichero — el fichero entero, no el elemento — así que no se aplica nada.`],
+        code:[["", `set ${s.n} { ${s.f?`flags ${s.f}`:"no flags"} ; elements = { ${s.el.find(e=>/\btimeout\s+\S/.test(e))} } }`, "neg"]],
+        fix:{label:["Add flags timeout","Añadir flags timeout"],
+             run:()=>{ const t = MODEL.sets.find(x=>x.n===s.n && x.table===s.table); if(!t) return;
+                    t.f = t.f ? `${t.f},timeout` : "timeout";
+                    /* nft takes either order — checked — but it prints type
+                       first, and what we emit should read like what it emits */
+                    if(!t.body.some(b=>b.k==="flags")){
+                      const at = t.body.findIndex(b=>b.k==="type");
+                      t.body.splice(at < 0 ? 0 : at + 1, 0, {k:"flags"});
+                    } }},
+        go:"sets",
+      }));
+
+    if(written.has(s.n) && (!size || !attr.timeout)){
+      const missing = [!size && "size", !attr.timeout && "timeout"].filter(Boolean);
+      out.push(F("warn","set-unbounded",{
+        at:"set", set:s.n,
+        title:[`Set @${s.n} is filled by traffic and has no ${missing.join(" and no ")}`,
+               `El set @${s.n} lo llena el tráfico y no tiene ${missing.join(" ni ")}`],
+        where:`${s.table || "inet fw"} · set`,
+        detail:[`A rule adds to <code>@${s.n}</code>, so what goes in it is decided by whoever is sending packets. ${!size?"With no <code>size</code>, it grows until the kernel runs out of memory to grow it in. ":""}${!attr.timeout?"With no <code>timeout</code>, nothing ever leaves it again. ":""}nft accepts this without complaint, and nothing reports it until the machine is in trouble.`,
+                `Una regla añade a <code>@${s.n}</code>, así que lo que entra lo decide quien esté enviando paquetes. ${!size?"Sin <code>size</code>, crece hasta que el kernel se quede sin memoria donde crecer. ":""}${!attr.timeout?"Sin <code>timeout</code>, no sale nunca nada de él. ":""}nft lo acepta sin quejarse, y nadie lo reporta hasta que la máquina está en apuros.`],
+        code:[["", `set ${s.n} { type ${s.t}${s.f?" ; flags "+s.f:""}${size?" ; size "+size:""}${attr.timeout?" ; timeout "+attr.timeout:""} }`, "neg"]],
+        fix:{label:["Bound it","Acotarlo"],
+             run:()=>{ const t = MODEL.sets.find(x=>x.n===s.n && x.table===s.table); if(!t) return;
+                    t.attr = {...(t.attr||{})};
+                    if(!t.attr.size){ t.attr.size = "65535"; t.body.push({k:"attr", n:"size"}); }
+                    if(!t.attr.timeout){ t.attr.timeout = "1h"; t.body.push({k:"attr", n:"timeout"});
+                      if(!/\btimeout\b/.test(t.f||"")) t.f = t.f ? `${t.f},timeout` : "timeout"; } }},
+        go:"sets",
+      }));
+    }
+
+    /* room left, on a set that says how much room it has */
+    if(size && s.el.length >= size * 0.9)
+      out.push(F("warn","set-full",{
+        at:"set", set:s.n,
+        title:[`Set @${s.n} is at ${Math.round(s.el.length/size*100)}% of its size`,
+               `El set @${s.n} está al ${Math.round(s.el.length/size*100)}% de su size`],
+        where:`${s.table || "inet fw"} · set`,
+        detail:[`<code>size ${size}</code> is a hard limit: once it is reached the kernel refuses new elements, and whatever fills this set stops working with no error anybody watches for. It holds ${s.el.length}.`,
+                `<code>size ${size}</code> es un límite duro: al alcanzarlo el kernel rechaza elementos nuevos, y lo que alimente este set deja de funcionar sin un error que nadie vigila. Contiene ${s.el.length}.`],
+        code:[["", `set ${s.n} { size ${size} }  # ${s.el.length} elements`, "neg"]],
+        go:"sets",
+      }));
+  });
+
   /* ── sets loaded into the kernel that no rule consumes ── */
   const allExpr = MODEL.chains.flatMap(c=>c.rules.filter(r=>r.on).map(r=>r.expr)).join(" ");
   MODEL.sets.forEach(s=>{

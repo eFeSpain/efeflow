@@ -114,6 +114,8 @@ Los hallazgos se derivan del ruleset en cada cambio, nunca se escriben a mano.
 | **Eclipsada** | una regla que ya decide otra anterior |
 | **Conflicto** | reglas DNAT solapadas con destinos distintos |
 | **Dormant** | una tabla entera cargada y sin aplicarse |
+| **Set sin acotar** | un set que llena el tráfico y no tiene `size` ni `timeout` — memoria del kernel cuyo tamaño decide un desconocido |
+| **Set lleno** | un set al 90% de su `size`, pasado el cual el kernel rechaza elementos nuevos en silencio |
 | **Fusión** | reglas que solo difieren en el puerto, sustituibles por una consulta a set |
 | **Sin usar** | un set cargado en el kernel que ninguna regla consume |
 | **Fortificación** | una cadena que confía en conntrack pero nunca descarta `invalid` |
@@ -143,7 +145,7 @@ puede reproducir, te dice cuál antes de que te comprometas a nada.
 ## ⚠ Beta
 
 Hace el trabajo completo hoy: importar, demostrar, analizar, simular, editar,
-aplicar y exportar. Lo respaldan 501 comprobaciones automáticas, sobre el
+aplicar y exportar. Lo respaldan 512 comprobaciones automáticas, sobre el
 parser, el analizador, el evaluador de paquetes y la propia interfaz.
 
 Lo que todavía no tiene es kilometraje. **Ningún ruleset que no sea el de su
@@ -275,7 +277,7 @@ escribes `accept`, no `aceptar`.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 501 aserciones
+npm test             # 512 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 

@@ -112,6 +112,8 @@ Findings are derived from the ruleset on every change, never written by hand.
 | **Shadowed** | a rule an earlier one already decides |
 | **Conflict** | overlapping DNAT rules with different targets |
 | **Dormant** | a whole table loaded and not running |
+| **Unbounded set** | a set filled by traffic with no `size` or `timeout` — kernel memory a stranger decides the size of |
+| **Full set** | a set at 90% of its own `size`, past which the kernel silently refuses new elements |
 | **Merge** | rules differing only by port, which one set lookup replaces |
 | **Unused** | a set loaded into the kernel that no rule consumes |
 | **Hardening** | a chain that trusts conntrack but never drops `invalid` |
@@ -141,7 +143,7 @@ be reproduced, it tells you which one before you commit to anything.
 ## ⚠ Beta
 
 It does the whole job today: import, prove, analyse, simulate, edit, apply,
-export. 501 automated assertions stand behind it, across the parser, the
+export. 512 automated assertions stand behind it, across the parser, the
 analyser, the packet evaluator and the interface itself.
 
 What it does not have yet is mileage. **No ruleset but its author's has ever
@@ -271,7 +273,7 @@ write `accept`, not `aceptar`.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 501 assertions
+npm test             # 512 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 ```
 
