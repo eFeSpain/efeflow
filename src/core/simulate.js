@@ -1,22 +1,23 @@
 /* Evaluates a synthetic packet against the same model the code is
    emitted from, so a verdict here is the verdict the export produces. */
 import { MODEL, UID, chainOf, jumpTarget } from './model.js';
-export const ip2n = ip => ip.split(".").reduce((a,o)=>(a<<8)+(+o),0)>>>0;
-export function inCidr(ip,c){
-  if(!c.includes("/")) return ip===c;
-  const [net,bits] = c.split("/"), m = bits==="0"?0:(~0<<(32-+bits))>>>0;
-  return (ip2n(ip)&m)===(ip2n(net)&m);
-}
+import { inCidr, family, looksLikeAddr } from './addr.js';
+export { inCidr };
+
 const setOf = n => (MODEL.sets.find(s=>s.n===n)||{el:[]}).el;
 export function inSet(v,name){
   const el = setOf(name);
-  return el.some(e=> /^\d+$/.test(e) ? e===String(v) : (e.includes(".") ? inCidr(String(v),e) : e===String(v)));
+  /* an element is a port, an address or a prefix, or a name — and only the
+     middle kind is a containment question */
+  return el.some(e => looksLikeAddr(e) ? inCidr(String(v), e) : e === String(v));
 }
 export function matchVal(v, tok){
   if(!v && v!==0) return false;
   if(tok.startsWith("@")) return inSet(v, tok.slice(1));
-  if(tok.startsWith("{")) return tok.slice(1,-1).split(",").map(s=>s.trim()).includes(String(v));
-  if(tok.includes("/"))  return inCidr(String(v),tok);
+  if(tok.startsWith("{"))
+    return tok.slice(1,-1).split(",").map(s=>s.trim())
+      .some(e => looksLikeAddr(e) ? inCidr(String(v), e) : e === String(v));
+  if(tok.includes("/") || looksLikeAddr(tok)) return inCidr(String(v),tok);
   return String(v)===tok;
 }
 
@@ -35,6 +36,18 @@ function matchIface(v, tok){
   if(tok.startsWith("{"))
     return tok.slice(1,-1).split(",").map(s=>unquote(s.trim())).filter(Boolean).includes(String(v));
   return String(v ?? "") === unquote(tok);
+}
+
+const ADDR_RE = dir => new RegExp(`\\b(ip6?)\\s+${dir}\\s+(!=\\s*)?(\\{[^}]*\\}|\\S+)`);
+/* A rule that names one family cannot match a packet of the other, whatever
+   the address says — nftables resolves that at load time from the family
+   keyword, not from the value. */
+function matchAddr(expr, dir, value){
+  const m = expr.match(ADDR_RE(dir));
+  if(!m) return true;
+  if((m[1] === "ip6" ? 6 : 4) !== family(value)) return false;
+  const hit = matchVal(value, m[3]);
+  return m[2] ? !hit : hit;
 }
 
 export function matches(r,p){
@@ -60,8 +73,12 @@ export function matches(r,p){
   }
   if((m=e.match(IFACE_RE("iif")))){ const hit = matchIface(p.iif, m[2]); if(m[1]?hit:!hit) return false; }
   if((m=e.match(IFACE_RE("oif")))){ const hit = matchIface(p.oif, m[2]); if(m[1]?hit:!hit) return false; }
-  if((m=e.match(/ip saddr (!= )?(\S+)/))){ const hit = matchVal(p.saddr,m[2]); if(m[1]?hit:!hit) return false; }
-  if((m=e.match(/ip daddr (!= )?(\S+)/))){ const hit = matchVal(p.daddr,m[2]); if(m[1]?hit:!hit) return false; }
+  /* `ip saddr` and `ip6 saddr` are different matches, and in an inet table
+     that is the whole reason both exist. `ip6` was not recognised as an address
+     match at all, so `ip6 saddr 2001:db8::/32 drop` dropped a packet from
+     8.8.8.8 — the filter doing something far larger than it said. */
+  if(!matchAddr(e, "saddr", p.saddr)) return false;
+  if(!matchAddr(e, "daddr", p.daddr)) return false;
   if((m=e.match(/meta l4proto \{([^}]*)\}/)) && !m[1].split(",").map(s=>s.trim()).includes(p.proto)) return false;
   if((m=e.match(/\b(tcp|udp)\b/)) && m[1]!==p.proto) return false;
   if((m=e.match(/dport ((?:\{[^}]*\})|\S+)/)) && !matchVal(p.dport,m[1])) return false;
@@ -79,6 +96,11 @@ export const PRESETS = {
             sport:52110, dport:443, proto:"tcp", state:"new"},
   egress:  {...BASE, dir:"out", iif:"", oif:"wan0", saddr:"198.51.100.10", daddr:"1.1.1.1",
             sport:33344, dport:53, proto:"udp", state:"new"},
+  /* An inet ruleset filters both families and they take different rules. A
+     simulator that could only describe an IPv4 packet could only ever answer
+     half the question. Documentation space, RFC 3849. */
+  v6:      {...BASE, iif:"wan0", saddr:"2001:db8:1::47", daddr:"2001:db8::10",
+            sport:49812, dport:443, proto:"tcp", state:"new"},
 };
 /* The packet under test. A live object rather than a reassignable binding, so
    the UI can mutate it in place and every reader sees the same one. */

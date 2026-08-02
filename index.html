@@ -470,6 +470,9 @@
         <button data-preset="https" data-t="HTTPS to web|HTTPS al web">HTTPS to web</button>
         <button data-preset="dnat">DNAT :8443</button>
         <button data-preset="invalid" data-t="Invalid state|Estado inválido">Invalid state</button>
+        <!-- an inet ruleset filters both families, and they take different
+             rules; there was no way to send the other kind of packet -->
+        <button data-preset="v6" data-t="HTTPS over IPv6|HTTPS por IPv6">HTTPS over IPv6</button>
       </div>
       <button class="btn-run" id="run-sim">
         <svg class="ico" viewBox="0 0 24 24"><path d="M5 3v18l15-9z"/></svg><span data-t="Run simulation|Ejecutar simulación">Run simulation</span><kbd style="background:rgba(0,0,0,.2);border-color:rgba(0,0,0,.2);color:rgba(4,23,27,.65)">↵</kbd>
@@ -518,7 +521,9 @@
   <aside class="set-list">
     <div class="panel-hd"><span class="lbl" data-t="Sets &amp; maps|Sets y maps">Sets &amp; maps</span>
       <span class="chip" id="set-count">0</span>
-      <button class="tb icon" id="set-new" data-tt="New set|Nuevo set"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
+      <button class="tb icon" id="set-new" data-tt="New set|Nuevo set"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <!-- maps could be imported, listed and referenced, and not made -->
+      <button class="tb icon" id="map-new" data-tt="New map|Nuevo map"><svg class="ico sm" viewBox="0 0 24 24"><path d="M5 8h6l3 4h5M5 16h6"/><path d="M12 5v14" opacity=".35"/></svg></button></div>
     <div class="body" id="set-list"></div>
   </aside>
   <div class="set-main" id="set-main"></div>
@@ -891,7 +896,17 @@
           <div class="fld"><span class="lbl">Hook</span>
             <select id="ch-hook">
               <option>prerouting</option><option>input</option><option>forward</option>
-              <option>output</option><option>postrouting</option></select></div>
+              <option>output</option><option>postrouting</option>
+              <!-- netdev chains run before netfilter sees the packet at all,
+                   which is where an ingress filter belongs; the model kept the
+                   device on import and there was no way to write one -->
+              <option>ingress</option><option>egress</option></select></div>
+        </div>
+        <div class="fld" id="ch-dev-fld" style="display:none">
+          <span class="lbl" data-t="Device|Dispositivo">Device</span>
+          <input type="text" id="ch-dev" list="dl-ifaces" placeholder="eth0" spellcheck="false">
+          <span class="lbl" style="text-transform:none;letter-spacing:0;font-size:10.5px;color:var(--t4)"
+            data-t="An ingress or egress chain attaches to a device, not to the whole machine — nft will not take one without it.|Una cadena ingress o egress se engancha a un dispositivo, no a la máquina entera — nft no la acepta sin él.">…</span>
         </div>
         <div class="row2">
           <div class="fld"><span class="lbl" data-t="Priority|Prioridad">Priority</span>

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { evaluate, matches, PRESETS } from "../src/core/simulate.js";
+import { MODEL } from "../src/core/model.js";
 import { loadFlawed } from "./fixture.js";
 
 loadFlawed();
@@ -89,6 +90,42 @@ test("a negated or listed interface behaves", () => {
   const list = { expr: 'iifname { "br-lan", "wg0" }', verdict: "accept", on: true };
   assert.ok(matches(list, { iif: "wg0", tracked: true }));
   assert.ok(!matches(list, { iif: "wan0", tracked: true }));
+});
+
+/* `ip6 saddr` was not recognised as an address match at all, so it constrained
+   nothing: a v6 prefix drop applied to every packet that reached it, IPv4
+   included. Same shape as `iif "lo"` matching every interface. */
+test("an IPv6 rule constrains IPv6, and only that", () => {
+  const r = { expr: "ip6 saddr 2001:db8::/32", verdict: "drop", on: true };
+  assert.ok(matches(r, { saddr: "2001:db8:1::5", tracked: true }));
+  assert.ok(!matches(r, { saddr: "2001:db9::5", tracked: true }), "outside the prefix");
+  assert.ok(!matches(r, { saddr: "8.8.8.8", tracked: true }),
+    "a v6 prefix matched an IPv4 packet — the rule did far more than it said");
+});
+
+test("an IPv4 rule never reaches an IPv6 packet", () => {
+  const r = { expr: "ip saddr 0.0.0.0/0", verdict: "drop", on: true };
+  assert.ok(matches(r, { saddr: "8.8.8.8", tracked: true }));
+  assert.ok(!matches(r, { saddr: "2001:db8::1", tracked: true }));
+});
+
+test("both families work in sets, lists and negations", (t) => {
+  const sets = MODEL.sets;
+  t.after(() => { MODEL.sets = sets; });
+
+  const set = { expr: "ip6 saddr @v6trusted", verdict: "accept", on: true };
+  MODEL.sets = [{ n: "v6trusted", t: "ipv6_addr", f: "interval", el: ["2001:db8::/32"] }];
+  assert.ok(matches(set, { saddr: "2001:db8::9", tracked: true }));
+  assert.ok(!matches(set, { saddr: "2001:dbe::9", tracked: true }));
+
+  const list = { expr: "ip6 daddr { 2001:db8::1, ::1 }", verdict: "accept", on: true };
+  assert.ok(matches(list, { daddr: "::1", tracked: true }));
+  assert.ok(matches(list, { daddr: "2001:0db8:0000::0001", tracked: true }), "however it is spelled");
+  assert.ok(!matches(list, { daddr: "2001:db8::2", tracked: true }));
+
+  const neg = { expr: "ip6 saddr != 2001:db8::/32", verdict: "drop", on: true };
+  assert.ok(matches(neg, { saddr: "2001:dbe::1", tracked: true }));
+  assert.ok(!matches(neg, { saddr: "2001:db8::1", tracked: true }));
 });
 
 /* the exact report: the sample ruleset's third input rule is `iif "lo"` */
