@@ -69,6 +69,11 @@ export async function boot() {
   globalThis.Element = win.Element;
   globalThis.Node = win.Node;
   globalThis.CSS = win.CSS;
+  /* Opening a project reads the picked file. Node has its own File and Blob but
+     no FileReader, and a jsdom File is not readable by a foreign reader anyway,
+     so both come from the window that produced them. */
+  globalThis.FileReader = win.FileReader;
+  globalThis.File = win.File;
   globalThis.getComputedStyle = win.getComputedStyle.bind(win);
   globalThis.matchMedia = win.matchMedia;
   globalThis.innerWidth = win.innerWidth;

@@ -2569,14 +2569,22 @@ $$(".dw-hd .tb.icon")[0]?.addEventListener("click", ()=>{
   toast(t("Ruleset copied to clipboard","Ruleset copiado al portapapeles"));
 });
 
-/* ══ SAVE / OPEN PROJECT ═══════════════════════════════════════════════ */
-$$("#bar .tb").find(b=>b.querySelector('[data-t^="Save"]'))
-  ?.addEventListener("click", ()=>{
-    download(PROJECT()+".efeflow.json",
-      JSON.stringify({app:"eFeFlow", v:1, name:PROJECT(),
-                      chains:MODEL.chains, sets:MODEL.sets}, null, 2), "application/json");
-    toast(t("Project saved","Proyecto guardado"));
-  });
+/* ══ SAVE / OPEN PROJECT ═══════════════════════════════════════════════
+   Both ends go through serialise/deserialise in core/project.js. They used to
+   inline their own JSON here, which is how the two drifted apart from the pair
+   the tests cover: the file kept the rules but silently dropped the interfaces
+   and networks you had typed, and opening one never restored its name. */
+$("#btn-save")?.addEventListener("click", async ()=>{
+  const name = PROJECT() + ".efeflow.json";
+  /* saveTextFile asks where; the browser fallback downloads. Either way it
+     returns null when the user backs out, and a cancelled save is not a save. */
+  const where = await native.saveTextFile(name, serialise(),
+    [{name:"eFeFlow project", extensions:["json"]}]);
+  if(!where) return;
+  setProject({path: where, origin: where.split(/[\\/]/).pop(), dirty:false});
+  showProject();
+  toast(t("Saved to ","Guardado en ") + where);
+});
 
 const filePick = el("input"); filePick.type = "file";
 filePick.accept = ".json,.nft,.conf,.txt";
@@ -2589,9 +2597,12 @@ filePick.addEventListener("change", ()=>{
     const text = String(rd.result);
     if(f.name.endsWith(".json")){
       try{
-        const o = JSON.parse(text);
-        if(!o.chains) throw new Error("not an eFeFlow project");
-        edit(t("open project","abrir proyecto"), ()=>{ MODEL.chains = o.chains; MODEL.sets = o.sets||[]; });
+        const o = deserialise(text);
+        edit(t("open project","abrir proyecto"), ()=>{ MODEL.chains = o.chains; MODEL.sets = o.sets; });
+        /* the name and the scratch lists are part of the project, not the
+           ruleset, so they sit outside the undo snapshot */
+        setProject({name:o.name, scratch:o.scratch, origin:f.name, dirty:false});
+        showProject();
         go("editor"); toast(t("Opened ","Abierto ")+f.name);
       }catch(err){ toast(t("Could not read that project file","No se pudo leer ese fichero de proyecto")); }
     } else {
@@ -2706,11 +2717,18 @@ go = function(id){
    thing to be shown without explanation. */
 
 function startEmpty(){
+  /* The kept names belong to the project, so a new one starts without them —
+     otherwise the interfaces of the box you just finished follow you into the
+     next. Cleared before edit() so the render inside it sees the empty lists.
+     They stay outside the undo snapshot, as everywhere else: the palette edits
+     them without going through edit(), and a snapshot that owned them would let
+     an unrelated undo quietly revert one. */
+  setProject({name:"untitled", origin:null, path:null,
+              scratch:{ifaces:[], networks:[]}});
   edit(t("new ruleset","ruleset nuevo"), ()=>{
     const e = blankRuleset();
     MODEL.chains = e.chains; MODEL.sets = e.sets;
   });
-  setProject({name:"untitled", origin:null});
   showProject();
   go("editor");
 }
@@ -2844,6 +2862,11 @@ $("#btn-new").addEventListener("click", async ()=>{
 document.addEventListener("keydown", e=>{
   if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="n" && !e.target.closest("input,textarea")){
     e.preventDefault(); $("#btn-new").click();
+  }
+  /* Ctrl+S is the one shortcut everybody tries without being told. The browser
+     would otherwise offer to save the page, which is never what was meant. */
+  if((e.ctrlKey||e.metaKey) && !e.shiftKey && e.key.toLowerCase()==="s"){
+    e.preventDefault(); $("#btn-save").click();
   }
 });
 
