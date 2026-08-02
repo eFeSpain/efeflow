@@ -143,7 +143,7 @@ puede reproducir, te dice cuál antes de que te comprometas a nada.
 ## ⚠ Beta
 
 Hace el trabajo completo hoy: importar, demostrar, analizar, simular, editar,
-aplicar y exportar. Lo respaldan 481 comprobaciones automáticas, sobre el
+aplicar y exportar. Lo respaldan 487 comprobaciones automáticas, sobre el
 parser, el analizador, el evaluador de paquetes y la propia interfaz.
 
 Lo que todavía no tiene es kilometraje. **Ningún ruleset que no sea el de su
@@ -275,7 +275,7 @@ escribes `accept`, no `aceptar`.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 481 aserciones
+npm test             # 487 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 

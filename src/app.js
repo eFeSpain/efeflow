@@ -3687,6 +3687,14 @@ function startEmpty(){
 
 
 function showProject(){
+  /* The empty state hangs off `project.open`, which is not part of MODEL and
+     therefore has no hook of its own. Opening a file set it open *after* the
+     edit() that fills the model, so the repaint inside edit() still saw a
+     closed project and nothing repainted afterwards: the ruleset loaded
+     correctly and sat behind an overlay that never came down. Every path that
+     changes the project ends here, so this is the one place that cannot be
+     forgotten by the next one. */
+  paintEmpty();
   /* With nothing open the name is empty, which left a folder icon over a gap
      that read as something failing to load. It says what it is instead. */
   const label = project.open ? project.name : t("no project","sin proyecto");
