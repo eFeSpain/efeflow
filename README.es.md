@@ -165,7 +165,7 @@ por ti.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 355 aserciones
+npm test             # 360 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 ```
 

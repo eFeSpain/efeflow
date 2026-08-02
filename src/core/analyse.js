@@ -14,7 +14,12 @@ import { escape as esc } from './html.js';
 import { t } from '../i18n.js';
 const CRIT = [
   ["proto", /\b(tcp|udp|sctp)\b/],
-  ["l4",    /meta l4proto (\{[^}]*\}|\S+)/],
+  /* `meta l4proto icmp`, `ip protocol icmp` and `ip6 nexthdr icmpv6` are the
+     same constraint spelled three ways. Reading only the first meant
+     `ip protocol icmp counter drop` produced no criteria at all — which is how
+     this file spells "matches every packet" — so every rule under it was
+     reported dead, each with a one-click Delete offered above an Apply all. */
+  ["l4",    /(?:meta l4proto|ip protocol|ip6 nexthdr) (\{[^}]*\}|\S+)/],
   ["state", /ct state ([\w,]+)/],
   ["ctst",  /ct status (\w+)/],
   ["iif",   /(?:iif|iifname) "?([\w.-]+)"?/],
