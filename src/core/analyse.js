@@ -7,7 +7,8 @@ import { MODEL, R, ruleLine, jumpTarget, UID, chainOf } from './model.js';
    rebuilds every chain and rule from JSON — left the fixes pointing at
    orphans, so the button did nothing and said nothing. Resolve on apply. */
 const at = (uid, i) => { const c = chainOf(uid); return c && c.rules[i] ? c : null; };
-import { inSet, inCidr } from './simulate.js';
+import { inSet } from './simulate.js';
+import { covers as addrCovers } from './addr.js';
 import { lintRuleset } from './lint.js';
 import { escape as esc } from './html.js';
 import { t } from '../i18n.js';
@@ -39,9 +40,13 @@ function covers(a,b){
   const A = listOf(a), B = listOf(b);
   if(B.every(x=>A.includes(x))) return true;
   if(a.startsWith("@")) return B.every(x=>inSet(x, a.slice(1)));
-  if(a.includes("/") && B.every(x=>/^[\d.]+(\/\d+)?$/.test(x)))
-    return B.every(x=>inCidr(x.split("/")[0], a));
-  return false;
+  /* Addresses and prefixes, in either family. This was gated behind a regex
+     only IPv4 could pass, so a v6 rule shadowed by a broader v6 rule went
+     unreported — and it compared network addresses without their prefix
+     lengths, which had 10.1.0.0/16 covering 10.1.0.0/8. addrCovers answers
+     false for anything that is not an address, so ports and interface names
+     can go through it untested. */
+  return B.every(x => addrCovers(a, x));
 }
 /* every packet matching b also matches a */
 export function subsumes(a,b){

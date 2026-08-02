@@ -94,6 +94,32 @@ export function inCidr(ip, spec) {
   return a >> shift === b >> shift;
 }
 
+/* Does `a` cover the whole of `b`? Both may be an address or a prefix.
+ *
+ * The analyser's question, and a different one from inCidr's: `b` is a range
+ * rather than a point, so it is not enough that b's network address falls
+ * inside a — a has to be at least as broad. Comparing the network addresses
+ * alone had 10.1.0.0/16 covering 10.1.0.0/8, which is backwards.
+ *
+ * Answers false for anything that is not an address, so a caller can hand it
+ * ports and interface names without checking first. */
+export function covers(a, b) {
+  const A = prefix(a), B = prefix(b);
+  if (!A || !B || A.fam !== B.fam || A.bits > B.bits) return false;
+  return inCidr(B.net, a);
+}
+
+function prefix(spec) {
+  const s = String(spec ?? "").trim();
+  const cut = s.lastIndexOf("/");
+  const net = cut < 0 ? s : s.slice(0, cut);
+  if (toBig(net) === null) return null;
+  const fam = family(net);
+  if (cut >= 0 && !/^\d+$/.test(s.slice(cut + 1))) return null;
+  const bits = cut < 0 ? BITS[fam] : BigInt(s.slice(cut + 1));
+  return bits < 0n || bits > BITS[fam] ? null : { fam, net, bits };
+}
+
 /* Does this token look like an address or a prefix at all? Set elements are a
    mixture of addresses, ports and names, and only the first kind is worth
    handing to inCidr. */
