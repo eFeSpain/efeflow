@@ -14,7 +14,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # playwright is here for `npm run shots`, which regenerates the README
+      # images on a maintainer's machine. Nothing in CI drives a browser, so
+      # the ~150MB of browsers its install script fetches were downloaded on
+      # every run and never opened.
       - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       - name: Core suites
         run: npm test
       - name: Frontend build
