@@ -269,9 +269,14 @@ const LIB = () => [
      return rows.length ? rows : [[t("no tables yet","aún sin tablas"), "", true]];
    })()],
   [t("Chains","Cadenas"),"CH",[[t("base chain","cadena base"),""],[t("regular chain","cadena regular"),""],["prerouting",""],["input",""],["forward",""],["output",""],["postrouting",""]]],
-  ["Sets","SE", MODEL.sets.length
-     ? MODEL.sets.map(s=>["@"+s.n, s.el.length>999 ? (s.el.length/1000).toFixed(1)+"k" : String(s.el.length)])
-     : [[t("no sets yet","aún sin sets"),"",true]]],
+  /* maps have their own category below; listing them in both put @porthost on
+     the shelf twice */
+  ["Sets","SE", (()=>{
+     const sets = MODEL.sets.filter(s=>(s.kind||"set") !== "map");
+     return sets.length
+       ? sets.map(s=>["@"+s.n, s.el.length>999 ? (s.el.length/1000).toFixed(1)+"k" : String(s.el.length)])
+       : [[t("no sets yet","aún sin sets"),"",true]];
+   })()],
   /* Sets were derived and maps were not: this listed a map called @port_fwd
      with three elements, which no ruleset here has ever contained. */
   ["Maps","MP", (()=>{
@@ -375,7 +380,35 @@ $("#lib-filter").addEventListener("input",e=>{
 });
 
 /* ══ CANVAS · chains anchored at (hook, priority) ═══════════════════════ */
-const HOOK_X = {prerouting:88, input:392, forward:696, output:1000, postrouting:1304};
+/* Left to right in the order a packet meets them. `ingress` and `egress` are
+   netdev hooks: they run on a device before netfilter has seen the packet at
+   all, and after it has finished with it, so they are the two ends of the
+   field — and without a column of their own they landed on top of prerouting.
+   They only take one when something is attached to them, the way the tables
+   and sets lists only show what the ruleset has. */
+const CORE_HOOKS = ["prerouting","input","forward","output","postrouting"];
+const COL = 304, GUT = 64;
+let HOOK_X = {};
+
+function hookColumns(){
+  const used = new Set(MODEL.chains.map(c=>c.hook).filter(Boolean));
+  return [...(used.has("ingress") ? ["ingress"] : []), ...CORE_HOOKS,
+          ...(used.has("egress")  ? ["egress"]  : [])];
+}
+
+function renderHookRail(){
+  const cols = hookColumns();
+  HOOK_X = Object.fromEntries(cols.map((h,i)=>[h, GUT + i*COL + 24]));
+  const width = GUT + cols.length*COL + 96;
+
+  const rail = $(".hookrail");
+  rail.style.width = width + "px";
+  rail.style.gridTemplateColumns = `${GUT}px repeat(${cols.length},1fr)`;
+  rail.innerHTML = `<div class="rl"><span class="lbl" style="font-size:9px">PRIO</span></div>`
+    + cols.map(h=>`<div class="hk" data-hook="${h}"><span class="hn"></span>${h}</div>`).join("");
+  $("#canvas").style.width = width + "px";
+  return cols;
+}
 /* nft prints priorities by name; both directions are needed for round-trip */
 
 const ruler = $("#ruler");
@@ -386,6 +419,7 @@ const CHAIN_POS = {};
 /* x is the hook, y is the priority — the canvas is a field, not a freeform
    board. Only the column is decided here; the rows need real heights. */
 function layout(){
+  renderHookRail();
   LANES = [...new Set(MODEL.chains.filter(c=>c.hook).map(c=>c.prio))].sort((a,b)=>a-b);
   POS = {};
   MODEL.chains.filter(c=>c.hook).forEach(ch=>{
@@ -2331,6 +2365,25 @@ function refsTo(name){
   }));
   return out;
 }
+/* A map's type reads `ipv4_addr : inet_service`. Held as one string it is
+   faithful and uneditable, so the editor splits it and puts it back. */
+const splitMapType = s => {
+  if(s.kind !== "map") return [s.t, ""];
+  const i = s.t.indexOf(":");
+  return i < 0 ? [s.t.trim(), ""] : [s.t.slice(0, i).trim(), s.t.slice(i + 1).trim()];
+};
+const joinMapType = (key, value) => (value ? `${key} : ${value}` : key);
+
+/* the declaration as nft would print it, which is what the preview shows */
+const setDecl = s => {
+  const body = [`${s.decl || "type"} ${s.t}`];
+  if(s.f) body.push(`flags ${s.f}`);
+  for(const [k, v] of Object.entries(s.attr || {}))
+    if(v) body.push(k === "auto-merge" ? "auto-merge" : `${k} ${v}`);
+  if(s.el.length) body.push("elements = { … }");
+  return `${s.kind === "map" ? "map" : "set"} ${s.n} { ${body.join(" ; ")} }`;
+};
+
 const setIcon = s => s.kind==="map"
   ? "M5 8h6l3 4h5M5 16h6"
   : (s.f||"").includes("timeout") ? "M12 8v8m-4-4h8" : "M4 7h16M4 12h16M4 17h9";
@@ -2370,6 +2423,11 @@ function renderSets(){
      read-only, which made a set you had just created impossible to correct. */
   const FLAGS = ["interval","timeout","constant","dynamic"];
   const TYPES = ["ipv4_addr","ipv6_addr","inet_service","ether_addr","inet_proto","ifname","mark"];
+  /* A map's type is `key : value`, and the value side takes what a set's key
+     side does plus the verdicts — which is what makes a verdict map. */
+  const MAP_VALUES = [...TYPES, "verdict"];
+  const ATTR_HINT = {timeout:"1h", "gc-interval":"10s", size:"65536"};
+  const [keyT, valT] = splitMapType(s);
   main.innerHTML = `
     <div class="set-hero">
       <div class="r1">
@@ -2381,15 +2439,34 @@ function renderSets(){
           <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>${t("Delete set","Eliminar set")}</button>
       </div>
       <div class="set-props">
-        <label class="fld"><span class="lbl">type</span>
+        <label class="fld"><span class="lbl">${s.kind==="map"?t("key type","tipo de clave"):"type"}</span>
           <select id="set-type">${TYPES.map(x=>
-            `<option${x===s.t?" selected":""}>${x}</option>`).join("")}
-            ${TYPES.includes(s.t)?"":`<option selected>${esc(s.t)}</option>`}</select></label>
+            `<option${x===keyT?" selected":""}>${x}</option>`).join("")}
+            ${TYPES.includes(keyT)?"":`<option selected>${esc(keyT)}</option>`}</select></label>
+        ${s.kind==="map"?`
+        <label class="fld"><span class="lbl">${t("value type","tipo de valor")}</span>
+          <select id="set-vtype">${MAP_VALUES.map(x=>
+            `<option${x===valT?" selected":""}>${x}</option>`).join("")}
+            ${MAP_VALUES.includes(valT)?"":`<option selected>${esc(valT)}</option>`}</select></label>`:""}
         <div class="fld"><span class="lbl">flags</span>
           <div class="preset" id="set-flags">${FLAGS.map(f=>
             `<button data-flag="${f}"${(s.f||"").includes(f)?' class="on"':""}>${f}</button>`).join("")}</div></div>
       </div>
-      <div class="decl">${highlight(`${s.kind==="map"?"map":"set"} ${s.n} { type ${s.t}${s.f?" ; flags "+s.f:""} ; elements = { … } }`)}</div>
+      <!-- size, timeout, gc-interval, policy and auto-merge were read from an
+           imported set and written back out untouched, but there was no way to
+           change one or to give a set you had just made a timeout. -->
+      <div class="set-props">
+        ${["timeout","gc-interval","size"].map(k=>`
+        <label class="fld"><span class="lbl">${k}</span>
+          <input type="text" id="set-a-${k}" value="${esc(s.attr?.[k] ?? "")}"
+                 placeholder="${esc(ATTR_HINT[k])}" spellcheck="false"></label>`).join("")}
+        <label class="fld"><span class="lbl">policy</span>
+          <select id="set-a-policy">${["","performance","memory"].map(x=>
+            `<option${x===(s.attr?.policy ?? "")?" selected":""}>${x}</option>`).join("")}</select></label>
+        <div class="fld"><span class="lbl">auto-merge</span>
+          <div class="preset"><button id="set-a-automerge"${s.attr?.["auto-merge"]?' class="on"':""}>auto-merge</button></div></div>
+      </div>
+      <div class="decl">${highlight(setDecl(s))}</div>
     </div>
     <div class="elem-toolbar">
       <span class="lbl" style="flex:1">${s.el.length} ${t("elements","elementos")} · ${
@@ -2433,6 +2510,13 @@ document.addEventListener("click", e=>{
     edit(t("set flags","flags del set"), ()=>{ s.f = next.join(", "); });
     return;
   }
+  if(e.target.closest("#set-a-automerge")){
+    const s = MODEL.sets[SETSEL];
+    edit(t("auto-merge","auto-merge"), ()=>{
+      s.attr = {...s.attr, "auto-merge": !s.attr?.["auto-merge"]};
+    });
+    return;
+  }
   if(e.target.closest("#set-del")){
     const s = MODEL.sets[SETSEL];
     if(refsTo(s.n).length){
@@ -2445,9 +2529,21 @@ document.addEventListener("click", e=>{
     renderSets();
     return;
   }
-  if(e.target.closest("#set-new")){
-    edit(t("new set","nuevo set"), ()=>{
-      MODEL.sets.push({n:"new_set_"+(MODEL.sets.length+1), table:MODEL.chains[0]?.table||"inet fw", t:"ipv4_addr", f:"interval", el:[]});
+  /* A map could be imported, listed and referenced, and not made: this button
+     produced a set whatever you meant. Maps are how a ruleset says "this port
+     goes to that host" or "this source gets that verdict", so not being able
+     to write one left a whole shape of ruleset out of reach. */
+  const nw = e.target.closest("#set-new, #map-new");
+  if(nw){
+    const map = nw.id === "map-new";
+    const kind = map ? "map" : "set";
+    const n = `new_${kind}_${MODEL.sets.filter(x=>(x.kind||"set")===kind).length + 1}`;
+    edit(t(`new ${kind}`, `${kind} nuevo`), ()=>{
+      MODEL.sets.push({
+        n, kind, table: MODEL.chains[0]?.table || "inet fw",
+        t: map ? "ipv4_addr : inet_service" : "ipv4_addr",
+        f: map ? "" : "interval", el: [], attr: {},
+      });
     });
     SETSEL = MODEL.sets.length-1; renderSets();
     return;
@@ -2471,8 +2567,22 @@ document.addEventListener("change", e=>{
   const s = MODEL.sets[SETSEL];
   if(!s) return;
 
-  if(e.target.id === "set-type"){
-    edit(t("set type","tipo del set"), ()=>{ s.t = e.target.value; });
+  /* a map's type is `key : value`, and both halves are edited separately */
+  if(e.target.id === "set-type" || e.target.id === "set-vtype"){
+    const [keyT, valT] = splitMapType(s);
+    const next = e.target.id === "set-type"
+      ? joinMapType(e.target.value, valT)
+      : joinMapType(keyT, e.target.value);
+    edit(t("set type","tipo del set"), ()=>{ s.t = next; });
+    return;
+  }
+  if(e.target.id.startsWith("set-a-")){
+    const key = e.target.id.slice(6);
+    const v = e.target.value.trim();
+    edit(t(`set ${key}`, `${key} del set`), ()=>{
+      s.attr = {...s.attr};
+      if(v) s.attr[key] = v; else delete s.attr[key];
+    });
     return;
   }
   if(e.target.id === "set-name"){
@@ -3525,10 +3635,20 @@ function chDraft(){
     kind: $("#ch-kind .on")?.dataset.kind || "base",
     type: $("#ch-type").value,
     hook: $("#ch-hook").value,
+    dev: $("#ch-dev").value.trim(),
     prio: $("#ch-prio").value.trim(),
     policy: $("#ch-policy").value,
   };
 }
+
+/* The two hooks that sit on a device rather than on the machine. */
+const ON_DEVICE = h => h === "ingress" || h === "egress";
+/* `device "eth0"`, or `devices = { eth0, eth1 }` for more than one */
+const deviceClause = dev => {
+  const names = dev.split(",").map(x=>x.trim().replace(/^"|"$/g,"")).filter(Boolean);
+  if(!names.length) return "";
+  return names.length === 1 ? `device "${names[0]}"` : `devices = { ${names.join(", ")} }`;
+};
 
 function chSync(){
   const d = chDraft(), base = d.kind === "base";
@@ -3539,16 +3659,21 @@ function chSync(){
     : t("Reached only by jump or goto from another chain.",
         "Solo se alcanza con jump o goto desde otra cadena.");
 
+  const onDev = base && ON_DEVICE(d.hook);
+  $("#ch-dev-fld").style.display = onDev ? "" : "none";
+
   const prio = /^-?\d+$/.test(d.prio) ? +d.prio : (PRIO_NAME[d.prio] ?? 0);
+  const dev = onDev ? deviceClause(d.dev) : "";
   $("#ch-preview").innerHTML = highlight(
     `table ${d.table || "?"} { chain ${d.id || "?"} { ` +
-    (base ? `type ${d.type} hook ${d.hook} priority ${prio} ; policy ${d.policy} ; ` : "") + "} }");
+    (base ? `type ${d.type} hook ${d.hook} ${dev ? dev + " " : ""}priority ${prio} ; policy ${d.policy} ; ` : "") + "} }");
 
-  /* nftables allows one chain name per table, and nat chains only on the
-     hooks that can translate */
+  /* nftables allows one chain name per table, nat chains only on the hooks
+     that can translate, and an ingress or egress chain only on a device */
   const clash = MODEL.chains.some(c => c.table === d.table && c.id === d.id && UID(c) !== chEditing);
   const badHook = base && d.type === "nat" &&
     !["prerouting","input","output","postrouting"].includes(d.hook);
+  const badFamily = onDev && !/^netdev\s/.test(d.table);
   const warn = $("#ch-warn");
   const msg = !d.id || !d.table
     ? t("A chain needs a name and a table.","Una cadena necesita nombre y tabla.")
@@ -3556,6 +3681,10 @@ function chSync(){
                 `${d.table} ya tiene una cadena llamada ${d.id}.`)
     : badHook ? t("nat chains cannot attach to the forward hook.",
                   "Las cadenas nat no pueden engancharse al hook forward.")
+    : badFamily ? t(`The ${d.hook} hook only exists in a netdev table — try "netdev ${d.table.split(" ").pop()}".`,
+                    `El hook ${d.hook} solo existe en una tabla netdev — prueba "netdev ${d.table.split(" ").pop()}".`)
+    : onDev && !dev ? t(`An ${d.hook} chain has to name the device it attaches to.`,
+                        `Una cadena ${d.hook} tiene que nombrar el dispositivo al que se engancha.`)
     : "";
   warn.style.display = msg ? "" : "none";
   warn.textContent = msg;
@@ -3578,6 +3707,10 @@ function openChain(uid){
   $("#ch-table").value = ch ? ch.table : (tables[0] || "inet filter");
   $("#ch-type").value  = ch?.type && ch.type !== "regular" ? ch.type : "filter";
   $("#ch-hook").value  = ch?.hook || "prerouting";
+  /* the device clause is held verbatim, so it is unwrapped for the field and
+     wrapped again on save */
+  $("#ch-dev").value = (ch?.dev || "").replace(/^device\s+/, "")
+    .replace(/^devices\s*=\s*\{\s*|\s*\}$/g, "").replace(/"/g, "");
   $("#ch-prio").value  = ch && ch.prio !== null ? String(ch.prio) : "0";
   $("#ch-policy").value = ch?.policy || "accept";
   $$("#ch-kind button").forEach(b=>
@@ -3606,6 +3739,7 @@ $("#ch-save").addEventListener("click", ()=>{
     Object.assign(ch, {
       id:d.id, table:d.table,
       hook: base ? d.hook : null,
+      dev: base && ON_DEVICE(d.hook) ? deviceClause(d.dev) : null,
       prio: base ? prio : null,
       type: base ? d.type : "regular",
       policy: base ? d.policy : null,

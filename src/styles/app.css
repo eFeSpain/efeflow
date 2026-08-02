@@ -404,6 +404,8 @@ select{appearance:none;cursor:pointer;padding-right:26px;
 /* the Hook Rail — x-axis is the packet's real path through netfilter */
 .hookrail{
   position:sticky;top:0;z-index:12;height:38px;display:grid;
+  /* the columns and the width are set from the hooks in use — five normally,
+     seven when something is attached to ingress or egress */
   grid-template-columns:64px repeat(5,1fr);
   background:linear-gradient(180deg,rgba(12,16,21,.97),rgba(12,16,21,.82));
   backdrop-filter:blur(10px);border-bottom:1px solid var(--line-2);width:1680px;

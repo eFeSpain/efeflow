@@ -172,6 +172,20 @@ function readSetLine(s, line){
     return;
   }
   if((m = line.match(/^flags\s+(.+?)\s*;?$/))){ s.f = m[1]; s.body.push({ k: "flags" }); return; }
+  /* The attributes the editor can offer as fields. Everything else still falls
+     through to `raw` and is carried untouched — the point is that a set you
+     imported with a timeout can have its timeout changed, not that this list
+     is nftables' complete set grammar. */
+  if((m = line.match(/^(timeout|gc-interval|size|policy)\s+(.+?)\s*;?$/))){
+    s.attr = { ...s.attr, [m[1]]: m[2] };
+    s.body.push({ k: "attr", n: m[1] });
+    return;
+  }
+  if(/^auto-merge\s*;?$/.test(line)){
+    s.attr = { ...s.attr, "auto-merge": true };
+    s.body.push({ k: "attr", n: "auto-merge" });
+    return;
+  }
   if((m = line.match(/^elements\s*=\s*\{(.*)\}\s*$/))){
     s.el = m[1].split(",").map(x => x.trim()).filter(Boolean);
     s.body.push({ k: "elements" });

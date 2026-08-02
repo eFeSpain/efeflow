@@ -26,6 +26,7 @@ function setBody(s){
     let line = null;
     if(slot.k === "type")     line = `${s.decl || "type"} ${s.t}`;
     else if(slot.k === "flags"){ if(s.f) line = `flags ${s.f}`; }
+    else if(slot.k === "attr")  line = attrLine(s, slot.n);
     else if(slot.k === "elements"){ if(s.el.length) line = `elements = { ${s.el.join(", ")} }`; }
     else line = slot.v;
     if(line === null) continue;
@@ -34,10 +35,27 @@ function setBody(s){
     if(slot.join && out.length) out[out.length - 1] += ` ; ${line}`;
     else out.push(line);
   }
-  /* flags or elements added in the editor to a set that was read without them */
+  /* flags, attributes or elements added in the editor to a set read without
+     them; nft wants them all before the elements */
   if(s.f && !seen.has("flags")) out.splice(1, 0, `flags ${s.f}`);
+  const had = new Set(body.filter(x => x.k === "attr").map(x => x.n));
+  const at = out.findIndex(l => l.startsWith("elements"));
+  for(const n of Object.keys(s.attr || {})){
+    if(had.has(n)) continue;
+    const line = attrLine(s, n);
+    if(line === null) continue;
+    if(at >= 0) out.splice(at, 0, line); else out.push(line);
+  }
   if(s.el.length && !seen.has("elements")) out.push(`elements = { ${s.el.join(", ")} }`);
   return out;
+}
+
+/* `auto-merge` is a flag with no value; the rest carry one. Either way an
+   attribute the editor has cleared is an attribute that is not emitted. */
+function attrLine(s, n){
+  const v = s.attr?.[n];
+  if(v === undefined || v === null || v === "" || v === false) return null;
+  return n === "auto-merge" ? "auto-merge" : `${n} ${v}`;
 }
 
 /**
