@@ -10,6 +10,7 @@
    and put back where it was. */
 import { ruleLine } from './model.js';
 import { generate } from './generate.js';
+import { diffLines } from './diff.js';
 import { PRIO_NAME } from './priority.js';
 
 const count = (s, ch) => (s.match(ch === "{" ? /\{/g : /\}/g) || []).length;
@@ -261,11 +262,53 @@ export function roundTrip(text, parsed){
   const emitted = parsed.chains.flatMap(ch=>ch.rules.map(r=>
     normalise(ruleLine(r) + (r.cmt ? ` comment "${r.cmt}"` : ""))));
 
+  return compare(srcRules, emitted);
+}
+
+/* ── lining the two files up ────────────────────────────────────────────
+   By index, a source line that produced no output shifted every line after
+   it: each then compared against its neighbour and reported as changed, so
+   one lost line out of ten read as nine broken ones and named none of them.
+   Align first, then report — a line that vanished is a line that vanished,
+   and a line that came back different is its own, separate thing. */
+function compare(src, out){
+  /* the common case is two identical lists, and that needs no matrix */
+  if(src.length === out.length && src.every((l, i) => l === out[i]))
+    return { total: src.length, ok: src.length, diffs: [] };
+
+  /* diffLines is O(n·m) in time and memory. Rulesets are lines, not bytes —
+     a set of ten thousand elements is one line — so this is small in every
+     real case; the cap is here so that a pathological one degrades to the old
+     positional answer instead of asking for a gigabyte. */
+  if(src.length > 4000 || out.length > 4000) return byIndex(src, out);
+
   const diffs = [];
-  const n = Math.max(srcRules.length, emitted.length);
+  const rows = diffLines(src, out);
+  let i = 0;
+  for(let k = 0; k < rows.length; k++){
+    const [sign, text] = rows[k];
+    if(sign === " "){ i++; continue; }
+    if(sign === "-"){
+      /* a removal answered by an addition is one line that came back changed */
+      const next = rows[k + 1];
+      if(next && next[0] === "+"){ diffs.push({ i, src: text, out: next[1] }); k++; }
+      else diffs.push({ i, src: text, out: "—" });
+      i++;
+    } else {
+      diffs.push({ i, src: "—", out: text });
+    }
+  }
+  /* `ok` counts source lines that came back as themselves */
+  const lost = diffs.filter(d => d.src !== "—").length;
+  return { total: src.length, ok: src.length - lost, diffs };
+}
+
+function byIndex(src, out){
+  const diffs = [];
+  const n = Math.max(src.length, out.length);
   for(let i=0;i<n;i++)
-    if(srcRules[i] !== emitted[i]) diffs.push({i, src:srcRules[i]??"—", out:emitted[i]??"—"});
-  return {total:srcRules.length, ok:srcRules.length-diffs.length, diffs};
+    if(src[i] !== out[i]) diffs.push({i, src:src[i]??"—", out:out[i]??"—"});
+  return {total:src.length, ok:src.length-diffs.length, diffs};
 }
 
 /* ── the honest version of the same question ──────────────────────────────
@@ -284,8 +327,5 @@ export function verify(text){
   const src = meaningful(logicalLines(text));
   const out = meaningful(generate(parsed));
 
-  const diffs = [];
-  for(let i = 0; i < Math.max(src.length, out.length); i++)
-    if(src[i] !== out[i]) diffs.push({ i, src: src[i] ?? "—", out: out[i] ?? "—" });
-  return { total: src.length, ok: src.length - diffs.length, diffs, parsed };
+  return { ...compare(src, out), parsed };
 }
