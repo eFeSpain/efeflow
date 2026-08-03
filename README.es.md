@@ -153,7 +153,7 @@ puede reproducir, te dice cuál antes de que te comprometas a nada.
 ## ⚠ Beta
 
 Hace el trabajo completo hoy: importar, demostrar, analizar, simular, editar,
-aplicar y exportar. Lo respaldan 885 comprobaciones automáticas, sobre el
+aplicar y exportar. Lo respaldan 889 comprobaciones automáticas, sobre el
 parser, el analizador, el evaluador de paquetes y la propia interfaz.
 
 Lo que todavía no tiene es kilometraje. **Ningún ruleset que no sea el de su
@@ -182,7 +182,7 @@ sobreviva al round-trip— son la vía más rápida hasta ahí.
    distinto del de hace un minuto.
 5. **Exporta**, o **aplica** con un rollback de 60 segundos armado en la máquina.
 
-<img src="docs/editor.es.png" width="885" alt="El lienzo: cadenas colocadas a lo largo de los hooks de netfilter, en orden de prioridad">
+<img src="docs/editor.es.png" width="889" alt="El lienzo: cadenas colocadas a lo largo de los hooks de netfilter, en orden de prioridad">
 
 El lienzo coloca cada cadena en el hook de netfilter al que está enganchada —de
 izquierda a derecha, en el orden en que un paquete los encuentra— y en su
@@ -327,7 +327,7 @@ escribes `accept`, no `aceptar`.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 885 aserciones
+npm test             # 889 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 
 node bin/efeflow.mjs lint fw.nft    # el linter, directo desde el clon

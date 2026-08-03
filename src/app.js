@@ -4466,6 +4466,9 @@ let tgDraft = {...loadTarget()};
 /* The chip shows where nft is configured to run — a setting, which exists
    whether or not it is reachable right now. Reachability is the colour and
    the tooltip, not a replacement for the answer. */
+/* `null` is not a failure, it is a question nobody has asked. Painting the two
+   the same way is how a tool that has never contacted anything ends up
+   reporting that nothing answered. */
 function paintTargetChip(state){
   const chip = $("#tb-target"), label = $("#tb-target-t");
   if(!chip) return;
@@ -4478,6 +4481,9 @@ function paintTargetChip(state){
   if(state?.ok){
     chip.classList.add(target.kind === "ssh" ? "remote" : "live");
     chip.title = t(`nft reachable — ${state.version}`, `nft accesible — ${state.version}`);
+  } else if(state === null){
+    chip.title = t(`${describe()} — not contacted yet. Click to check, or just use it.`,
+                   `${describe()} — sin contactar. Pulsa para comprobar, o úsalo sin más.`);
   } else {
     chip.title = (state?.why ? state.why + " · " : "")
       + t("click to choose where nft runs", "pulsa para elegir dónde se ejecuta nft");
@@ -4503,12 +4509,15 @@ function paintHostStatus(state){
       + t("click to choose where nft runs", "pulsa para elegir dónde se ejecuta nft");
   }
 
-  /* the same answer, wherever it is asked for */
+  /* the same answer, wherever it is asked for — and "nobody has asked" is not
+     the same answer as "nothing replied" */
   const said = state?.ok
     ? t(`${describe()} · nft ${state.version}${state.kernel ? ` · kernel ${state.kernel}` : ""}`,
         `${describe()} · nft ${state.version}${state.kernel ? ` · kernel ${state.kernel}` : ""}`)
-    : t(`No host answering — ${state?.why || "not reached"}`,
-        `Ninguna máquina responde — ${state?.why || "sin contactar"}`);
+    : state === null
+      ? t(`${describe()} · not contacted`, `${describe()} · sin contactar`)
+      : t(`No host answering — ${state?.why || "not reached"}`,
+          `Ninguna máquina responde — ${state?.why || "sin contactar"}`);
   const ex = $("#ex-target");
   if(ex) ex.textContent = said;
   const ab = $("#about-target");
@@ -4570,6 +4579,9 @@ function openTarget(){
   renderHosts();
   syncTargetForm();
   $("#scrim-target").classList.add("on");
+  /* Opening the dialog that asks where nft runs is asking whether it does.
+     Not awaited: the dialog is usable while the answer is on its way. */
+  if(REACH === null && native.isDesktop()) refreshTarget();
 }
 
 $("#tb-target").addEventListener("click", openTarget);
@@ -4758,6 +4770,9 @@ function openApply(){
   showApplyStage(false);
   paintApplyForm();
   $("#scrim-apply").classList.add("on");
+  /* About to write to a firewall is the moment to know whether it answers and
+     whether it already has a rollback counting down. */
+  if(REACH === null && native.isDesktop()) refreshTarget();
   warnOnDrift();
 }
 
@@ -4906,7 +4921,29 @@ async function toggleWatch(){
 $("#cv-watch")?.addEventListener("click", toggleWatch);
 
 loadTarget();
-refreshTarget();
+/* Read where nft is configured to run, and do not go and knock.
+ *
+ * This called refreshTarget() here, which is two ssh connections — is the host
+ * reachable, and is a rollback pending — before the window had settled. On a
+ * firewall that is slow or away that is sixteen seconds of timeout, and on any
+ * firewall at all it is an application that reaches into production because
+ * somebody opened an editor. The README's first promise is that nothing
+ * reaches a live host unless you ask.
+ *
+ * So the chip shows the destination and says it has not been contacted. It
+ * finds out when something needs the answer, which is a short list: opening
+ * the target dialog, and opening the apply dialog. Everything else that talks
+ * to a host — validate, import, counters, watch — asks on its own account and
+ * reports for itself. */
+REACH = null;
+paintTargetChip(null);
+paintHostStatus(null);
+/* Except in a browser, where the answer costs nothing: probe() settles that
+   from isDesktop() alone and never reaches for a socket. Leaving it unknown
+   there would only mean the apply dialog offering a button it knows cannot
+   work. Not knowing and not asking are different things; so are not knowing
+   and knowing already. */
+if(!native.isDesktop()) refreshTarget();
 
 /* the header follows the ruleset: chains, rules and tables all live there */
 MODEL_HOOKS.push(showProject);

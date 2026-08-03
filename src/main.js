@@ -37,9 +37,17 @@ $("#titlebar").addEventListener("dblclick", (e) => {
   if (!e.target.closest("button")) native.windowAction("maximize");
 });
 
-/* Where nft will actually run. On Linux we look for a local binary; anywhere
-   else the SSH transport is the design, not a fallback. */
-async function detectTarget() {
+/* Where nft will run, said without asking anybody.
+ *
+ * This used to probe on the way up. It is a designer, not a firewall manager,
+ * and the README's first promise is that nothing reaches a live host unless
+ * you ask — so opening the editor and having it ssh into a production firewall
+ * was the application contradicting its own argument. It was also two
+ * connections at eight seconds of timeout each before the window settled.
+ *
+ * So the chip says what it is pointed at, and finds out whether that answers
+ * the first time something needs the answer. */
+function detectTarget() {
   const chip = $("#tb-target");
   const label = $("#tb-target-t");
   if (!native.isDesktop()) {
@@ -50,24 +58,8 @@ async function detectTarget() {
     );
     return;
   }
-  /* `nftVersion` stopped existing when nft's version and the kernel's started
-     coming back in one round trip. Nothing failed the build: rollup warned
-     that the name was not exported and carried on, so the call survived into
-     a shipped bundle as `undefined()` — on the one platform that reaches it. */
-  if (native.platform.local_nft_possible) {
-    const p = await probe({ kind: "local" });
-    if (p.ok) {
-      chip.classList.add("live");
-      label.textContent = `nft ${p.version}`;
-      chip.title = [p.banner, p.uname].filter(Boolean).join("\n");
-      return;
-    }
-  }
-  label.textContent = t("no local nft", "sin nft local");
-  chip.title = t(
-    "This platform has no nft. Add an SSH target to validate against a real firewall.",
-    "Esta plataforma no tiene nft. Añade un destino SSH para validar contra un firewall real.",
-  );
+  /* app.js owns the chip from here: it knows which target is configured, and
+     it is the one that will ask when somebody wants to know. */
 }
 
 /* ── ambient flow ──────────────────────────────────────────────────────
