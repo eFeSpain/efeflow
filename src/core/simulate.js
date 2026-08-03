@@ -102,6 +102,8 @@ function matchAddr(m, value){
    subtracted from the expression, so what the evaluator reads and what it
    admits to reading cannot drift apart. */
 const negated = (neg, hit) => (neg ? !hit : hit);
+/* `new,established` and `{ new, established }` name the same two states */
+const states = tok => tok.replace(/^\{|\}$/g, "").split(",").map(x => x.trim()).filter(Boolean);
 const inList = (tok, v) => tok.startsWith("{")
   ? tok.slice(1,-1).split(",").map(s=>s.trim()).includes(String(v))
   : String(v) === tok;
@@ -109,11 +111,26 @@ const inList = (tok, v) => tok.startsWith("{")
 const MATCHERS = [
   /* an untracked packet has no conntrack entry: `ct state` can only match it
      through the untracked keyword, and `ct status` never matches */
-  { re: /\bct\s+state\s+(!=\s*)?([\w,]+)/,
-    ok: (m,p) => { const want = m[2].split(",");
+  /* `ct state { new, established }` is the same constraint as the comma form
+     and nft prints both. And the negative lookahead is load-bearing: with
+     `ct state vmap { established : accept, invalid : drop }` — the shape most
+     modern rulesets open a chain with — this read `vmap` as the name of a
+     state, found the packet was not in it, and made the rule a certain miss.
+     A miss is never reported as a guess, because unmodelled() is only asked
+     about rules that matched, so nothing on the screen said anything at all.
+     Left unread it becomes what it is: something this cannot evaluate. */
+  { re: /\bct\s+state\s+(?!vmap\b)(!=\s*)?(\{[^}]*\}|[\w,]+)/,
+    ok: (m,p) => { const want = states(m[2]);
                    return negated(m[1], p.tracked ? want.includes(p.state)
                                                   : want.includes("untracked")); } },
-  { re: /\bct\s+status\s+(!=\s*)?\w+/, ok: (m,p) => negated(m[1], !!(p.tracked && p.dnat)) },
+  /* Only the two statuses this can answer for. `confirmed`, `assured`,
+     `seen-reply` and the rest are conntrack bookkeeping nothing here models,
+     and answering them with "was this packet DNATed" was an invention: it
+     made `ct status snat` true for a DNATed packet and `ct status confirmed`
+     true for anything at all. Unmatched, they reach unmodelled() and are named
+     under the verdict as assumed, which is the honest answer. */
+  { re: /\bct\s+status\s+(!=\s*)?(snat|dnat)\b/,
+    ok: (m,p) => negated(m[1], !!(p.tracked && (m[2] === "dnat" ? p.dnat : p.snat))) },
   /* tcp flags syn / tcp flags & (syn|ack) == syn */
   { re: /\btcp\s+flags\s+(!=\s*)?&?\s*\(?([\w|,]+)\)?(?:\s*==\s*\(?([\w|,]+)\)?)?/,
     ok: (m,p) => { const has = f => (p.flags||[]).includes(f);
@@ -324,7 +341,9 @@ export function evaluate(p){
         hop.nat = r.to || r.verdict;
         return {stop:"chain", settled:true};
       }
-      if(r.verdict==="snat"){ hop.nat = r.to; return {stop:"chain", settled:true}; }
+      /* `ct status snat` can only be answered for a packet something has
+         actually translated the source of */
+      if(r.verdict==="snat"){ p.snat = true; hop.nat = r.to; return {stop:"chain", settled:true}; }
 
       /* jump remembers where it came from and goto does not — which is the
          whole reason nftables has both. A goto whose target settles nothing

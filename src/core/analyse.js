@@ -8,7 +8,7 @@ import { MODEL, R, ruleLine, jumpTarget, UID, chainOf, expand } from './model.js
    orphans, so the button did nothing and said nothing. Resolve on apply. */
 const at = (uid, i) => { const c = chainOf(uid); return c && c.rules[i] ? c : null; };
 import { inSet, readable } from './simulate.js';
-import { covers as addrCovers } from './addr.js';
+import { covers as addrCovers, toBig, looksLikeAddr } from './addr.js';
 import { lintRuleset } from './lint.js';
 import { dormantTables, isDormant, readTable, writeTable } from './tables.js';
 import { escape as esc } from './html.js';
@@ -102,12 +102,44 @@ function memberOf(token, name){
   return hit;
 }
 
+/* A range covers what falls inside it, and a wider range covers a narrower
+   one — in ports and in addresses alike. Only prefixes were understood here,
+   so a rule sitting under `tcp dport 9000-9100` was never reported as
+   shadowed by it, and two overlapping DNAT ranges never conflicted. Missing a
+   finding is the safe direction to be wrong in, which is why this outlived
+   the evaluator's version of the same gap. */
+const RANGE = /^([^\s-]+)\s*-\s*([^\s-]+)$/;
+const point = t => /^\d+$/.test(t) ? BigInt(t) : (looksLikeAddr(t) ? toBig(t) : null);
+function span(tok){
+  const t = String(tok).trim();
+  const m = t.match(RANGE);
+  if(m){
+    const lo = point(m[1]), hi = point(m[2]);
+    return lo !== null && hi !== null ? [lo, hi] : null;
+  }
+  const p = point(t);
+  return p === null ? null : [p, p];
+}
+function spanCovers(a, b){
+  const A = span(a), B = span(b);
+  return !!A && !!B && A[0] <= B[0] && A[1] >= B[1];
+}
+/* Two ranges can share packets without either containing the other, which is
+   the one case where overlaps() cannot be built out of covers(): 9000-9100 and
+   9050-9200 are a conflict and neither covers the other. Prefixes never do
+   this — CIDR is a tree — so this only had to be said once ranges existed. */
+function spanOverlaps(a, b){
+  const A = span(a), B = span(b);
+  return !!A && !!B && A[0] <= B[1] && B[0] <= A[1];
+}
+
 /* does criterion value A cover value B? */
 function covers(a,b){
   if(a===b) return true;
   const A = listOf(a), B = listOf(b);
   if(B.every(x=>A.includes(x))) return true;
   if(a.startsWith("@")) return B.every(x=>memberOf(x, a.slice(1)));
+  if(B.every(x => A.some(y => spanCovers(y, x)))) return true;
   /* Addresses and prefixes, in either family. This was gated behind a regex
      only IPv4 could pass, so a v6 rule shadowed by a broader v6 rule went
      unreported — and it compared network addresses without their prefix
@@ -145,6 +177,7 @@ export function overlaps(a,b){
   if(a._opaque || b._opaque) return false;
   return CRIT.every(([k])=>{
     if(a[k]===undefined || b[k]===undefined) return true;
+    if(listOf(a[k]).some(x => listOf(b[k]).some(y => spanOverlaps(x, y)))) return true;
     return covers(a[k],b[k]) || covers(b[k],a[k]);
   });
 }
