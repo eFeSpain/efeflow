@@ -100,3 +100,30 @@ test("the bundler is told to fail on it rather than warn", () => {
   assert.match(conf, /MISSING_EXPORT/, "rollup's warning has to be fatal, not yellow");
   assert.match(conf, /throw new Error/);
 });
+
+/* A regex that can never match anything, because `\b` was saved as the byte it
+ * escapes.
+ *
+ * `/^flags\b.*\boffload\b/` was written into app.js with three actual
+ * backspace characters in place of the escapes, so the offload toggle stayed
+ * off on every imported chain that had the flag — and saving the panel then
+ * took `flags offload` out of the chain. The switch moved and the rule did
+ * not, with hardware offload quietly turned off on the way.
+ *
+ * Nothing shows it. The file opens, the line reads correctly in most editors,
+ * every test passes, and a diff of it looks like the code somebody meant to
+ * write. A byte is what it takes to find it, so a byte is what looks. */
+test("no source file carries a control character", () => {
+  const bad = [];
+  for (const url of FILES) {
+    const src = text.get(url.href);
+    for (const [i, line] of src.split("\n").entries()) {
+      /* tab is a character people type; the rest are not */
+      const at = [...line].findIndex((c) => c < " " && c !== "\t");
+      if (at >= 0)
+        bad.push(`${url.pathname.split("/").pop()}:${i + 1} holds 0x${
+          line.charCodeAt(at).toString(16).padStart(2, "0")} at column ${at + 1}`);
+    }
+  }
+  assert.deepEqual(bad, []);
+});

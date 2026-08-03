@@ -73,7 +73,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 770 assertions.
+`npm test` — 781 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across
@@ -94,6 +94,8 @@ running app:
 | `ui-layout` | layout deriving a card's height from a rule count |
 | `ui-panels` | a grid child with no column, which moves when a sibling hides |
 | `release` | three files carrying the version, disagreeing |
+| `imports` (control chars) | a `\b` saved as the byte it escapes, in a pattern that then matches nothing |
+| `ui-roundtrip-panel` | a panel that rewrites what it was opened to read |
 | `ssh-target` | a way to reach a host that does not validate where it is going |
 | `rollback-script` | the arm script losing the copy it exists to protect |
 

@@ -4139,6 +4139,37 @@ function chDraft(){
 /* The two hooks that sit on a device rather than on the machine. */
 const ON_DEVICE = h => h === "ingress" || h === "egress";
 /* `device "eth0"`, or `devices = { eth0, eth1 }` for more than one */
+/* `comment` and `flags offload` are the two chain statements this panel owns.
+   Rebuilding the list as "everything else, and then ours" moved them to the
+   end of a chain that had written them first — a diff produced by a dialog
+   nobody changed anything in. Each keeps the place it had; only one that was
+   not there before is appended. */
+function chainExtra(was, d){
+  const comment = d.comment ? `comment "${d.comment.replace(/"/g, "")}"` : null;
+  const out = [];
+  let hadComment = false, hadOffload = false;
+  for(const l of was){
+    if(/^comment\s/.test(l)){
+      hadComment = true;
+      if(comment) out.push(comment);
+      continue;
+    }
+    if(/^flags\b.*\boffload\b/.test(l)){
+      hadOffload = true;
+      /* kept verbatim while it is on, so a flag sharing the line survives */
+      if(d.offload){ out.push(l); continue; }
+      const rest = l.replace(/^flags\s+/, "").split(",")
+        .map(x => x.trim()).filter(x => x && x !== "offload");
+      if(rest.length) out.push(`flags ${rest.join(",")}`);
+      continue;
+    }
+    out.push(l);
+  }
+  if(comment && !hadComment) out.push(comment);
+  if(d.offload && !hadOffload) out.push("flags offload");
+  return out;
+}
+
 const deviceClause = dev => {
   const names = dev.split(",").map(x=>x.trim().replace(/^"|"$/g,"")).filter(Boolean);
   if(!names.length) return "";
@@ -4213,8 +4244,20 @@ function openChain(uid){
   $("#ch-prio").value  = ch?.prioName ?? (ch && ch.prio !== null ? String(ch.prio) : "0");
   $("#ch-policy").value = ch?.policy || "accept";
   /* both live in ch.extra, the verbatim list of chain statements that are not rules */
-  $("#ch-comment").value = ((ch?.extra||[]).find(l=>/^comment /.test(l))||"").replace(/^comments+"?|"$/g, "");
-  $("#ch-offload").classList.toggle("on", (ch?.extra||[]).some(l=>/^flags.*offload/.test(l)));
+  /* `comments+` is `comment` followed by one or more `s`, which is a lost
+     backslash. The prefix was therefore never stripped: the field showed
+     `comment "the front door` — opening quote and all — and saving wrote that
+     back inside another comment. Twice through the dialog and it had grown
+     two prefixes, on a panel nobody had changed anything in. */
+  $("#ch-comment").value = ((ch?.extra||[]).find(l=>/^comment\s/.test(l))||"")
+    .replace(/^comment\s+"?|"$/g, "");
+  /* `\b` written as an actual backspace character, so this pattern could
+     never match anything: the toggle stayed off on every imported chain
+     that had the flag, and saving the panel then took `flags offload`
+     out of the chain. The switch moved and the rule did not — with
+     hardware offload quietly turned off on the way. */
+  $("#ch-offload").classList.toggle("on",
+    (ch?.extra||[]).some(l=>/^flags\b.*\boffload\b/.test(l)));
   $$("#ch-kind button").forEach(b=>
     b.classList.toggle("on", b.dataset.kind === (ch && !ch.hook ? "regular" : "base")));
 
@@ -4254,11 +4297,7 @@ $("#ch-save").addEventListener("click", ()=>{
       type: base ? d.type : "regular",
       policy: base ? d.policy : null,
       /* everything else in extra is kept as it came; only these two are ours */
-      extra: [
-        ...((ch.extra || []).filter(l => !/^(comment |flags\b.*\boffload\b)/.test(l))),
-        ...(d.offload ? ["flags offload"] : []),
-        ...(d.comment ? [`comment "${d.comment.replace(/"/g, "")}"`] : []),
-      ],
+      extra: chainExtra(ch.extra || [], d),
     });
     if(!uid) MODEL.chains.push(ch);
   });
