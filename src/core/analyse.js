@@ -396,7 +396,14 @@ export function analyse(){
   });
 
   /* ── sets loaded into the kernel that no rule consumes ── */
-  const allExpr = MODEL.chains.flatMap(c=>c.rules.filter(r=>r.on).map(r=>r.expr)).join(" ");
+  /* A rule names a set in two places, and this read only one of them.
+     `dnat to tcp dport map @port_fwd` keeps the map in the verdict target, not
+     in the expression — so a map that the whole port-forwarding scheme depends
+     on was reported as declared and never referenced, under a button offering
+     to delete it. nft refuses a ruleset naming a set that is not there, so
+     taking that offer breaks the file. */
+  const allExpr = MODEL.chains.flatMap(c=>c.rules.filter(r=>r.on)
+    .map(r=>`${r.expr || ""} ${r.to || ""}`)).join(" ");
   MODEL.sets.forEach(s=>{
     if(allExpr.includes("@"+s.n)) return;
     out.push(F("hint","unused",{

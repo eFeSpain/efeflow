@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { MODEL, ruleLine } from "../src/core/model.js";
 import { analyse, worstCase, subsumes, criteria } from "../src/core/analyse.js";
+import { parseNft } from "../src/core/parse.js";
 import { loadFlawed } from "./fixture.js";
 
 /* every assertion here is about the flawed fixture, not about what the app
@@ -104,4 +105,55 @@ test("worst case is measured over hooks, not chain names", () => {
   const before = n;
   MODEL.chains.forEach((c) => c.rules.forEach((r) => (r.on = false)));
   assert.ok(worstCase() < before, "disabling every rule must lower the cost");
+});
+
+/* A rule names a set in two places. `dnat to tcp dport map @port_fwd` keeps
+   the map in the verdict target, not the expression — and the unused check
+   read only the expression, so the map the whole port-forwarding scheme runs
+   on was reported as never referenced, under a button offering to delete it.
+   nft refuses a ruleset naming a set that is not there, so taking that offer
+   breaks the file. */
+test("a map used only as a NAT target is not unused", () => {
+  const p = parseNft(`table ip nat {
+	map port_fwd {
+		type inet_service : ipv4_addr
+		elements = { 80 : 10.20.0.10, 443 : 10.20.0.10 }
+	}
+
+	set hairpin {
+		type ipv4_addr
+		elements = { 10.20.0.10 }
+	}
+
+	chain nat_pre {
+		type nat hook prerouting priority dstnat; policy accept;
+		iifname "wan0" tcp dport { 80, 443 } dnat to tcp dport map @port_fwd
+	}
+
+	chain nat_post {
+		type nat hook postrouting priority srcnat; policy accept;
+		ip daddr @hairpin counter masquerade
+	}
+}`);
+  Object.assign(MODEL, { chains: p.chains, sets: p.sets, objects: p.objects,
+                         tables: p.tables, prelude: p.prelude });
+  const unused = analyse().filter((f) => f.kind === "unused").map((f) => f.set);
+  assert.deepEqual(unused, [], "both are referenced, one of them from the target");
+});
+
+test("and a set nothing names at all still is", () => {
+  const p = parseNft(`table inet fw {
+	set orphan {
+		type ipv4_addr
+		elements = { 10.0.0.1 }
+	}
+
+	chain input {
+		type filter hook input priority filter; policy drop;
+		tcp dport 22 accept
+	}
+}`);
+  Object.assign(MODEL, { chains: p.chains, sets: p.sets, objects: p.objects,
+                         tables: p.tables, prelude: p.prelude });
+  assert.deepEqual(analyse().filter((f) => f.kind === "unused").map((f) => f.set), ["orphan"]);
 });
