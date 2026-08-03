@@ -430,8 +430,10 @@ export function analyse(){
     if(!info.chains) return;   /* an empty parked table is a note, not a risk */
     out.push(F("warn","dormant",{
       at:"table", table:name,
-      title:[`Table ${name} is dormant — its ${info.rules} rule${info.rules===1?"":"s"} are not running`,
-             `La tabla ${name} está dormant — sus ${info.rules} regla${info.rules===1?"":"s"} no se están aplicando`],
+      /* the verb agrees too: `its 1 rule are not running` was half of a
+         plural, on a finding whose whole job is to be read carefully */
+      title:[`Table ${name} is dormant — ${info.rules===1?"its 1 rule is":`its ${info.rules} rules are`} not running`,
+             `La tabla ${name} está dormant — ${info.rules===1?"su 1 regla no se está":`sus ${info.rules} reglas no se están`} aplicando`],
       where:`${name} · ${t("table","tabla")}`,
       detail:[`<code>flags dormant</code> unregisters every base chain in the table, so nothing in it ever sees a packet. The ruleset still loads and nft reports nothing wrong — this is the state a firewall is parked in, and it looks identical to a working one everywhere it is not read out loud.`,
               `<code>flags dormant</code> desregistra todas las cadenas base de la tabla, así que nada dentro de ella llega a ver un paquete. El ruleset sigue cargando y nft no informa de nada — es el estado en el que se aparca un firewall, y es idéntico a uno en marcha en todos los sitios donde no se dice en voz alta.`],
