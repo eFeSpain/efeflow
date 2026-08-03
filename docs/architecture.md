@@ -190,6 +190,20 @@ counters say which of them matched it; the simulator is asked about the same
 packet, described the same way. Four go through: a TCP SYN, a UDP datagram,
 that SYN again over IPv6, and a byte on an established connection.
 
+It runs in two phases. The first asks whether an expression matches a packet;
+the second asks which rules the packet reached and where it stopped — jump
+coming back and goto not, accept ending a chain and not the packet, the next
+base chain on a hook still running, a policy having the last word. Every one of
+those was tested against a reading of netfilter and none of them against
+netfilter.
+
+Two of those scenarios are written on the output side deliberately. On loopback
+the packet is generated here, so it meets output before prerouting: conntrack
+and NAT have already decided by the time prerouting sees it, and a DNAT or a
+`notrack` written there reaches nothing. The first run of them disagreed, and
+the disagreement was the test bed rather than the evaluator — which is worth
+knowing before reading any other disagreement it reports.
+
 It earned its place immediately. `ip saddr . tcp dport @pairs` matched a UDP
 packet, because a concatenation key was being read as a field rather than as
 what it is — the destination port *of a TCP packet*. The standalone matcher had

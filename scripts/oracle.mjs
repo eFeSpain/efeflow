@@ -30,7 +30,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const { MODEL } = await import("../src/core/model.js");
-const { matches, unmodelled } = await import("../src/core/simulate.js");
+const { matches, unmodelled, evaluate } = await import("../src/core/simulate.js");
+const { parseNft } = await import("../src/core/parse.js");
 
 
 const REQUIRE = argv.slice(2).includes("--require");
@@ -315,6 +316,312 @@ for (const kind of ["tcp", "udp", "tcp6", "established", "icmp", "output"]) {
   const r = runOne(kind);
   bad += r.bad; seen += r.seen;
 }
+
+/* ── and the walk ────────────────────────────────────────────────────────────
+   The phase above asks whether one expression matches one packet. This asks
+   the harder half: which rules the packet reached, and where it stopped. Jump
+   comes back and goto does not, accept ends a chain and not the packet, the
+   next base chain on the hook still runs, a policy has the last word. All of
+   it was tested against a reading of netfilter and none of it against
+   netfilter.
+
+   Every probe rule matches our packet and only ours, counts, and decides
+   nothing — so a counter of 1 says the packet got there and 0 says it did not.
+
+   Two scenarios are written on the output side on purpose. On loopback the
+   packet is generated here, so it meets output before prerouting: conntrack
+   and NAT have already decided by the time prerouting sees it, and a DNAT or a
+   `notrack` written there reaches nothing. That is netfilter being right and a
+   test bed being wrong, which took a disagreement to notice. */
+const WRULES = join(WORK, "walk.nft");
+
+/* the packet every scenario below sends, said once here and once to python */
+const WPKT = {
+  dir: "in", iif: "lo", oif: "", saddr: "127.0.0.1", daddr: "127.0.0.1",
+  sport: SPORT, dport: DPORT, proto: "tcp", state: "new", tracked: true,
+  nat: true, flags: ["syn"],
+};
+const WGATE = `tcp sport ${SPORT} tcp dport ${DPORT}`;
+
+
+/* Each scenario is a whole ruleset. `mark(n)` is a rule that matches our
+   packet and only our packet, counts, and decides nothing. */
+const mark = (n) => `${WGATE} counter comment "${n}"`;
+
+const WALKS = {
+  "jump comes back": `
+table inet t {
+	chain input {
+		type filter hook input priority 0; policy accept;
+		${mark("before")}
+		${WGATE} jump helper
+		${mark("after-jump")}
+	}
+	chain helper {
+		${mark("in-helper")}
+		${WGATE} return
+		${mark("after-return")}
+	}
+}`,
+
+  "goto does not": `
+table inet t {
+	chain input {
+		type filter hook input priority 0; policy accept;
+		${WGATE} goto helper
+		${mark("after-goto")}
+	}
+	chain helper {
+		${mark("in-helper")}
+		${WGATE} return
+	}
+}`,
+
+  "accept ends the chain, not the packet": `
+table inet t {
+	chain early {
+		type filter hook input priority 10; policy accept;
+		${mark("early-first")}
+		${WGATE} accept
+		${mark("early-after-accept")}
+	}
+	chain late {
+		type filter hook input priority 20; policy accept;
+		${mark("late-still-runs")}
+	}
+}`,
+
+  "drop ends the packet": `
+table inet t {
+	chain early {
+		type filter hook input priority 10; policy accept;
+		${WGATE} drop
+		${mark("early-after-drop")}
+	}
+	chain late {
+		type filter hook input priority 20; policy accept;
+		${mark("late-after-drop")}
+	}
+}`,
+
+  "prerouting runs before input": `
+table inet t {
+	chain pre {
+		type filter hook prerouting priority -300; policy accept;
+		${mark("in-prerouting")}
+	}
+	chain input {
+		type filter hook input priority 0; policy accept;
+		${mark("in-input")}
+	}
+}`,
+
+  "a jump that accepts ends the chain that jumped": `
+table inet t {
+	chain input {
+		type filter hook input priority 0; policy accept;
+		${WGATE} jump helper
+		${mark("after-jump")}
+	}
+	chain helper {
+		${WGATE} accept
+		${mark("after-accept")}
+	}
+}`,
+
+  "jumps nest and unwind": `
+table inet t {
+	chain input {
+		type filter hook input priority 0; policy accept;
+		${WGATE} jump a
+		${mark("back-in-input")}
+	}
+	chain a {
+		${mark("in-a")}
+		${WGATE} jump b
+		${mark("back-in-a")}
+	}
+	chain b {
+		${mark("in-b")}
+		${WGATE} return
+	}
+}`,
+
+  /* On loopback the packet is generated here, so it meets the output side
+     first: conntrack and NAT have already decided by the time prerouting sees
+     it. DNAT for locally generated traffic belongs in the output hook, which
+     is where this asks about it — and where eFeFlow walks it too, for a packet
+     described as going out. */
+  "a redirect rewrites the port before the filter sees it": { dir: "out", nft: `
+table ip nat {
+	chain out {
+		type nat hook output priority -100; policy accept;
+		${WGATE} counter redirect to :19999 comment "redirect-fired"
+	}
+}
+table inet t {
+	chain output {
+		type filter hook output priority 0; policy accept;
+		tcp sport ${SPORT} tcp dport 19999 counter comment "saw-new-port"
+		${mark("saw-old-port")}
+	}
+}` },
+
+  "a policy has the last word when nothing decides": `
+table inet t {
+	chain early {
+		type filter hook input priority 10; policy drop;
+		${mark("early-ran")}
+	}
+	chain late {
+		type filter hook input priority 20; policy accept;
+		${mark("late-after-policy-drop")}
+	}
+}`,
+
+  "a return in a base chain leaves it to the policy": `
+table inet t {
+	chain early {
+		type filter hook input priority 10; policy drop;
+		${mark("before-return")}
+		${WGATE} return
+		${mark("after-return")}
+	}
+	chain late {
+		type filter hook input priority 20; policy accept;
+		${mark("late-after-return")}
+	}
+}`,
+
+  /* Same reason: conntrack runs at -200 on the way out, so a notrack that is
+     to reach this packet has to be earlier than that on the same side. */
+  "notrack takes the packet out of conntrack": { dir: "out", nft: `
+table inet t {
+	chain raw {
+		type filter hook output priority -300; policy accept;
+		${WGATE} notrack
+	}
+	chain output {
+		type filter hook output priority 0; policy accept;
+		${WGATE} ct state new counter comment "still-tracked"
+		${WGATE} ct state untracked counter comment "untracked"
+	}
+}` },
+
+  "a dormant table is not walked at all": `
+table inet parked {
+	flags dormant
+	chain input {
+		type filter hook input priority 0; policy accept;
+		${mark("in-dormant")}
+	}
+}
+table inet awake {
+	chain input {
+		type filter hook input priority 10; policy accept;
+		${mark("in-awake")}
+	}
+}`,
+
+  "netdev ingress runs before prerouting": `
+table netdev wire {
+	chain ing {
+		type filter hook ingress device "lo" priority -500; policy accept;
+		${mark("in-ingress")}
+	}
+}
+table inet t {
+	chain pre {
+		type filter hook prerouting priority -300; policy accept;
+		${mark("in-prerouting")}
+	}
+	chain input {
+		type filter hook input priority 0; policy accept;
+		${mark("in-input")}
+	}
+}`,
+
+  "a dropping table of the wrong family is not on the path": `
+table ip6 six {
+	chain input {
+		type filter hook input priority 0; policy accept;
+		${mark("in-ip6-table")}
+	}
+}
+table ip four {
+	chain input {
+		type filter hook input priority 0; policy accept;
+		${mark("in-ip-table")}
+	}
+}`,
+};
+
+function kernelWalk(ruleset) {
+  writeFileSync(WRULES, ruleset);
+  const script = `
+set -e
+ip link set lo up
+nft -f ${WRULES}
+python3 - <<'PY'
+import socket
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", ${SPORT}))
+s.settimeout(0.3)
+try: s.connect(("127.0.0.1", ${DPORT}))
+except Exception: pass
+PY
+nft list ruleset
+`;
+  const r = spawnSync(BOX.cmd[0], [...BOX.cmd.slice(1), "sh", "-c", script], { encoding: "utf8" });
+  const out = (r.stdout || "") + (r.stderr || "");
+  if (/Error:/.test(out)) return { err: out.split("\n").find((l) => /Error/.test(l)) };
+  const hit = new Map();
+  for (const line of out.split("\n")) {
+    const m = line.match(/counter packets (\d+) bytes \d+ comment "([^"]+)"/);
+    if (m) hit.set(m[2], +m[1] > 0);
+  }
+  return { hit };
+}
+
+function efeflowWalk(ruleset, dir = "in") {
+  const p = parseNft(ruleset);
+  Object.assign(MODEL, {
+    chains: p.chains, sets: p.sets, objects: p.objects,
+    tables: p.tables, prelude: p.prelude,
+  });
+  const out = dir === "out";
+  const r = evaluate({ ...WPKT, dir, iif: out ? "" : "lo", oif: out ? "lo" : "" });
+  const hit = new Map();
+  for (const c of MODEL.chains)
+    for (const rule of c.rules)
+      if (rule.cmt) hit.set(rule.cmt, false);
+  for (const step of r.steps)
+    for (const ev of step.evs)
+      if (ev.st === "match" && ev.r.cmt) hit.set(ev.r.cmt, true);
+  return { hit, verdict: r.final.v };
+}
+
+let wbad = 0, wran = 0;
+for (const [name, scenario] of Object.entries(WALKS)) {
+  const ruleset = typeof scenario === "string" ? scenario : scenario.nft;
+  const dir = typeof scenario === "string" ? "in" : (scenario.dir ?? "in");
+  const k = kernelWalk(ruleset);
+  if (k.err) { stdout.write(`  --   ${name}: ${k.err.trim()}` + "\n"); continue; }
+  const e = efeflowWalk(ruleset, dir);
+  wran++;
+  const marks = [...k.hit.keys()];
+  const wrong = marks.filter((m) => k.hit.get(m) !== (e.hit.get(m) ?? false));
+  if (!wrong.length) { stdout.write(`  ok   ${name}` + "\n"); continue; }
+  wbad++;
+  stdout.write(`  XX   ${name}` + "\n");
+  for (const m of wrong)
+    stdout.write(`       ${m}: kernel=${k.hit.get(m)}  eFeFlow=${e.hit.get(m) ?? false}` + "\n");
+}
+
+stdout.write(`  ${wran} walks compared, ${wbad} disagree` + "\n");
+bad += wbad; seen += wran;
+
 rmSync(WORK, { recursive: true, force: true });
 stdout.write(`\n  ${seen} compared against the kernel, ${bad} disagree\n` + "\n");
 if (REQUIRE && seen === 0) {
