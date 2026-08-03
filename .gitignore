@@ -6,12 +6,12 @@ dist-ssr/
 src-tauri/target/
 src-tauri/gen/
 
-# Every icon here is derived from assets/app.png by `npm run icons`, which the
-# app scripts run when the set is missing. Only the master is kept: the derived
-# copies were drifting from what the generator produces, and since CI
-# regenerates them before bundling, the ones committed were never the ones that
-# shipped.
-src-tauri/icons/
+# `tauri::generate_context!()` opens the icons at compile time, so they are an
+# input to `cargo check` and not just to the bundler. Everything the desktop
+# build reads is committed, .icns included. Only the mobile sets that
+# `npm run icons` also emits are left out — nothing here targets them.
+src-tauri/icons/android/
+src-tauri/icons/ios/
 
 .DS_Store
 Thumbs.db

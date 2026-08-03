@@ -71,10 +71,11 @@ jobs:
 
       - run: npm ci
 
-      # The icon set is derived from assets/app.png and is not in the repository.
-      # tauri-action runs `tauri build` directly rather than `npm run app:build`,
-      # so it never reaches the guard that generates them — this step is what
-      # puts them there, and without it the bundle has no icons to package.
+      # The icon set is committed, because `tauri::generate_context!()` opens it
+      # at compile time and a clean clone has to be able to run `cargo check`.
+      # This regenerates it anyway, so that what ships is derived from
+      # assets/app.png even if somebody changed the artwork and did not run
+      # `npm run icons` — the master is the one file worth trusting here.
       - name: Icons
         run: npx tauri icon assets/app.png
 
