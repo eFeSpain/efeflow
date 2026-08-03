@@ -26,6 +26,29 @@ jobs:
       - name: Frontend build
         run: npm run build
 
+  # Everything else here is this project checking its own reading of nftables.
+  # This asks nftables: each ruleset is loaded into a network namespace of its
+  # own, before and after eFeFlow re-emits it, and the two are compared as nft
+  # itself lists them back. A round trip that keeps the text and changes the
+  # meaning fails here and nowhere else.
+  differ:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      - name: The authority
+        run: sudo apt-get update && sudo apt-get install -y nftables
+      # --require, because a skip that reports success is a green tick that
+      # only means nobody checked
+      - name: Round-trip against nft
+        run: npm run differ -- --require
+
   rust:
     runs-on: ubuntu-22.04
     steps:

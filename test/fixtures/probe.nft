@@ -45,6 +45,8 @@ table inet probe {
 
 	set ifaces {
 		type ifname
+		# a wildcard is a prefix element, and nft refuses the set without this
+		flags interval
 		elements = { "veth*", wan0 }
 	}
 

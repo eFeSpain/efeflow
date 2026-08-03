@@ -161,6 +161,33 @@ refuse to carry server traffic from a port with no business answering, so that
 is what the sample claims. In a firewall tool a mislabelled example gets copied
 and deployed.
 
+## Asking nftables instead of ourselves
+
+`npm test` checks this project against its own reading of nftables. Every table
+of cases in `test/` says what nft would do, and the saying is still ours —
+which is exactly how a matcher can be confidently wrong for a year.
+
+`npm run differ` asks nft. For each ruleset it loads the original, has eFeFlow
+parse and re-emit it, loads that too, and compares what `nft list ruleset`
+gives back for each. Those are nft's own canonical forms, so the question it
+answers is whether the round trip changed what the ruleset *means* — a stronger
+claim than verify() makes about the text, and the one worth having. A file that
+comes back with different text and identical netlink lost nothing; a file whose
+text matched while its netlink moved lost everything and told nobody.
+
+Each load happens inside a network namespace of its own — an empty netfilter
+instance that does not exist a moment later — so nothing it does can reach the
+firewall of the machine running it. `unshare -rn` where unprivileged user
+namespaces are allowed, a plain network namespace under sudo where they are
+not; without either, or without `nft`, it says so and stops.
+
+CI runs it with `--require`, which turns "could not run" into a failure. A skip
+that reports success is the green tick that only means nobody checked.
+
+`test/fixtures/flawed.nft` is reported as skipped there and always will be:
+its element list is abbreviated to a comment, so nft refuses it. That is
+recorded in its own commit and is not a regression.
+
 ## The Rust half
 
 CI runs `cargo fmt --check` and `cargo clippy -D warnings` over `src-tauri`,
