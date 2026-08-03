@@ -1,0 +1,141 @@
+#!/usr/sbin/nft -f
+#
+# A ruleset written to be got wrong.
+#
+# Not a firewall anybody would run: every chain here exists to put one shape of
+# the language in front of the evaluator and see whether it comes back with an
+# answer, a refusal, or a confident mistake. The third is the only one that
+# matters, and it is the one nothing else catches — a construct the matcher
+# recognises and then compares wrongly leaves nothing over for unmodelled() to
+# report, so the trace reads as certain.
+#
+# test/probe.test.js states what each of these should do. Addresses are RFC
+# 5737 and RFC 3849 documentation space; nothing here describes a real network.
+
+define WAN   = wan0
+define LAN   = "br-lan"
+define MGMT  = 10.10.0.0/24
+define HIGH  = 32768-60999
+define GUEST = $LAN
+
+table inet probe {
+	set pairs {
+		type ipv4_addr . inet_service
+		elements = { 203.0.113.48 . 9038, 10.0.0.1 . 22 }
+	}
+
+	set nets {
+		type ipv4_addr
+		flags interval, timeout
+		timeout 1h
+		elements = { 203.0.113.0/24 timeout 30m, 198.51.100.7 }
+	}
+
+	set ifaces {
+		type ifname
+		elements = { "veth*", wan0 }
+	}
+
+	# ── chain headers ───────────────────────────────────────────────────
+	# A priority written as an offset is ordinary nftables and the shape a
+	# chain gets when it has to sit just after a well-known one.
+	chain offset_hook {
+		type filter hook input priority filter + 10; policy drop;
+		tcp dport 19001 accept
+	}
+
+	chain offset_negative {
+		type filter hook prerouting priority raw - 10; policy accept;
+		tcp dport 19002 accept
+	}
+
+	chain named_priority {
+		type filter hook input priority filter; policy drop;
+		tcp dport 19003 accept
+	}
+
+	# ── values the matchers accept ──────────────────────────────────────
+	chain values {
+		type filter hook input priority 20; policy drop;
+
+		# concatenation: two keys looked up as one
+		ip saddr . tcp dport @pairs accept
+
+		# a protocol named by its number
+		meta l4proto 6 tcp dport 19011 accept
+
+		# a range that arrived through a define
+		tcp sport $HIGH tcp dport 19012 accept
+
+		# an interface set holding a wildcard
+		iifname @ifaces tcp dport 19013 accept
+
+		# a set element the kernel has timestamped
+		ip saddr @nets tcp dport 19014 accept
+
+		# negation of a list, which is two constraints and not one
+		tcp dport != { 19015, 19016 } tcp dport 19017 accept
+
+		# a define naming a define
+		iifname $GUEST tcp dport 19018 accept
+	}
+
+	# ── traversal ───────────────────────────────────────────────────────
+	chain entry {
+		type filter hook forward priority filter; policy drop;
+		tcp dport 19021 jump helper
+		tcp dport 19022 goto helper
+		tcp dport 19023 accept
+	}
+
+	# `return` leaves the chain having decided nothing, so a jump carries on
+	# below it and a goto falls through to the base chain's policy.
+	chain helper {
+		tcp dport 19024 accept
+		return
+		tcp dport 19021 drop
+	}
+
+	# ── conntrack ───────────────────────────────────────────────────────
+	chain track {
+		type filter hook input priority 30; policy drop;
+		ct state vmap { established : accept, invalid : drop }
+		ct state { new, related } tcp dport 19031 accept
+		ct status dnat tcp dport 19032 accept
+		ct status confirmed tcp dport 19033 accept
+	}
+
+	# ── things nothing here models, which must be said rather than guessed ──
+	chain opaque {
+		type filter hook input priority 40; policy drop;
+		meta mark 0x1 tcp dport 19041 accept
+		fib saddr . iif oif missing tcp dport 19042 drop
+		meta skuid 1000 tcp dport 19043 accept
+	}
+}
+
+table ip probe_nat {
+	chain nat_pre {
+		type nat hook prerouting priority dstnat; policy accept;
+		iifname $WAN tcp dport 19051 dnat to 10.20.0.10:8443
+		iifname $WAN tcp dport 19052 dnat to 10.20.0.11
+		iifname $WAN tcp dport 19053 dnat to 10.20.0.12:8000-8010
+		iifname $WAN tcp dport 19054 redirect to :8080
+		iifname $WAN tcp dport 19055 redirect
+	}
+
+	chain nat_post {
+		type nat hook postrouting priority srcnat + 5; policy accept;
+		oifname $WAN ip saddr $MGMT snat to 198.51.100.10
+		oifname $WAN masquerade
+	}
+}
+
+table ip6 probe6 {
+	chain input6 {
+		type filter hook input priority filter; policy drop;
+		ip6 saddr 2001:db8::/32 tcp dport 19061 accept
+		ip6 saddr 2001:db8::1-2001:db8::ff tcp dport 19062 accept
+		ip6 nexthdr ipv6-icmp icmpv6 type echo-request accept
+	}
+}

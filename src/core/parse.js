@@ -11,7 +11,7 @@
 import { ruleLine, UID } from './model.js';
 import { generate } from './generate.js';
 import { diffLines } from './diff.js';
-import { PRIO_NAME } from './priority.js';
+import { readPriority } from './priority.js';
 
 /* A block opener is `chain foo {`, not `elements = {`. nft wraps a long
    element list across lines, so the two shapes have to be told apart before
@@ -239,15 +239,19 @@ export function parseNft(text){
 
     const cur = f.chain;
     /* chain header: type filter hook input [device "eth0"] priority filter; policy drop; */
-    if((m = line.match(/^type\s+(\w+)\s+hook\s+(\w+)\s+(.*?)priority\s+(-?\w+)\s*;(?:\s*policy\s+(\w+)\s*;?)?/))){
+    /* `priority filter + 10` is a priority too, and requiring a bare word here
+       did not merely lose the offset: the line missed this branch entirely,
+       reached parseRule() below, and came back as a rule whose verdict was the
+       `drop` out of `policy drop;`. */
+    if((m = line.match(/^type\s+(\w+)\s+hook\s+(\w+)\s+(.*?)priority\s+(-?\w+(?:\s*[+-]\s*\d+)?)\s*;(?:\s*policy\s+(\w+)\s*;?)?/))){
       cur.type = m[1];
       cur.hook = m[2];
       /* a netdev chain names the device it is attached to, and without it the
          chain is not one nft will accept back */
       cur.dev = m[3].trim() || null;
-      const p = m[4];
-      cur.prio = /^-?\d+$/.test(p) ? +p : (PRIO_NAME[p] ?? 0);
-      cur.prioName = /^-?\d+$/.test(p) ? null : p;
+      const { prio, name } = readPriority(m[4]);
+      cur.prio = prio;
+      cur.prioName = name;
       cur.policy = m[5] || "accept";
       continue;
     }

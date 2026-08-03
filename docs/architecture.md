@@ -73,7 +73,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 649 assertions.
+`npm test` — 691 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across
@@ -110,6 +110,22 @@ must never open on a firewall its user did not write.
 
 UI tests load it through the import dialog rather than assigning to `MODEL`, so
 they exercise the path a real ruleset arrives by.
+
+`test/fixtures/probe.nft` is the other kind: not a firewall anybody would run,
+but one shape of the language per chain, written to be got wrong. It exists
+because of what the `$WAN` bug implied rather than what it was. The evaluator
+has two ways of not understanding something — where it does not recognise a
+construct, `unmodelled()` reports it and the verdict is marked as a guess, and
+that path works; where a matcher recognises the shape and then decides wrongly,
+nothing is left over to report and the screen is confidently wrong. There is no
+net under the second one, so the fixture goes looking for it.
+
+`test/probe.test.js` asks three things of it, in the order in which getting
+them wrong is dangerous: is the model the ruleset that was written, does each
+construct decide what nftables would decide, and does what it cannot decide
+still get said out loud. The third is not a formality — every fix narrows what
+goes unread, and the temptation each time is to widen a matcher until it
+swallows something it cannot actually evaluate.
 
 ## The samples, and why they are in `core/`
 
