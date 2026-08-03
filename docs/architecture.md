@@ -77,6 +77,7 @@ running app:
 | `ui-layout` | layout deriving a card's height from a rule count |
 | `ui-panels` | a grid child with no column, which moves when a sibling hides |
 | `release` | three files carrying the version, disagreeing |
+| `ssh-target` | a way to reach a host that does not validate where it is going |
 
 The interface layer exists because a green core suite is not evidence that the
 product works. The packet simulator once shipped broken while all 18 core tests

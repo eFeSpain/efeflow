@@ -52,6 +52,40 @@ impl Outcome {
     }
 }
 
+impl Target {
+    /// Is this somewhere we are willing to point `ssh` at?
+    ///
+    /// Nothing here reaches a shell — every command is argv — so the danger is
+    /// not quoting, it is that `ssh` reads its own destination with getopt. A
+    /// host of `-oProxyCommand=…` is not a host, it is an option, and the
+    /// option it is happens to run a command. The `--` below closes that on
+    /// its own; this refuses as well, because a destination beginning with a
+    /// dash is a mistake or an attack in every case and neither deserves a
+    /// connection attempt.
+    fn check(&self) -> Result<(), String> {
+        let Target::Ssh { host, user, .. } = self else {
+            return Ok(());
+        };
+        if host.trim().is_empty() {
+            return Err("no host to connect to".into());
+        }
+        for (what, v) in [
+            ("host", host.as_str()),
+            ("user", user.as_deref().unwrap_or("")),
+        ] {
+            if v.starts_with('-') {
+                return Err(format!(
+                    "refusing an ssh {what} that begins with a dash: {v}"
+                ));
+            }
+            if v.contains(|c: char| c.is_whitespace() || c == '\0') {
+                return Err(format!("refusing an ssh {what} with whitespace in it: {v}"));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Build the argv for a command against a target, without a shell in the way.
 fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
     match target {
@@ -75,6 +109,9 @@ fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
                 args.push("-p".into());
                 args.push(p.to_string());
             }
+            /* everything after this is a destination and a command, never an
+            option, whatever it begins with */
+            args.push("--".into());
             args.push(match user {
                 Some(u) => format!("{u}@{host}"),
                 None => host.clone(),
@@ -99,6 +136,9 @@ fn shell(target: &Target, script: &str) -> Outcome {
 }
 
 fn run(target: &Target, cmd: &[&str], stdin: Option<&str>) -> Outcome {
+    if let Err(e) = target.check() {
+        return Outcome::failed(e);
+    }
     let (program, args) = argv(target, cmd);
     let mut child = match Command::new(&program)
         .args(&args)
@@ -318,6 +358,9 @@ static WATCH: Mutex<Option<Child>> = Mutex::new(None);
 
 #[tauri::command]
 pub fn nft_watch(app: AppHandle, target: Target) -> Outcome {
+    if let Err(e) = target.check() {
+        return Outcome::failed(e);
+    }
     nft_unwatch();
 
     let (program, args) = argv(&target, &["nft", "monitor", "ruleset"]);
