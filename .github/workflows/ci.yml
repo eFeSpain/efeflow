@@ -31,8 +31,11 @@ jobs:
   # own, before and after eFeFlow re-emits it, and the two are compared as nft
   # itself lists them back. A round trip that keeps the text and changes the
   # meaning fails here and nowhere else.
+  # ubuntu-latest rather than 22.04: that image ships nft 1.0.2, which will not
+  # parse a concatenated set lookup at all — a construct these rulesets use and
+  # every nft since takes.
   differ:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

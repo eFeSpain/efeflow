@@ -189,9 +189,61 @@ const COMMON = [
   "ct mark 0x1", "ip dscp cs1",
 ];
 
+/* Which of the expressions this nft will take.
+ *
+ * They go in one file, so one it refuses takes the other sixty-nine with it —
+ * and versions differ about what they will parse: 1.0.2 will not have a
+ * concatenated set lookup at all ("Byteorder mismatch"), which is fixed later.
+ * nft names the line it objects to, so the line comes out and it is asked
+ * again, and what it would not take is reported rather than passed over. */
+function accepted(cases, kind) {
+  let live = cases.map((e, i) => ({ e, i }));
+  const refused = [];
+  for (let attempt = 0; attempt < cases.length; attempt++) {
+    writeFileSync(RULES, rulesetFor(live, kind));
+    const r = spawnSync(BOX.cmd[0], [...BOX.cmd.slice(1), "sh", "-c", `nft -c -f ${RULES} 2>&1`],
+      { encoding: "utf8" });
+    const out = (r.stdout || "") + (r.stderr || "");
+    if (!/Error:/.test(out)) return { live, refused };
+    const m = out.match(/probe\.nft:(\d+):/);
+    if (!m) return { live: [], refused };
+    /* the rules start after the sets and the header; find the one on that line */
+    const line = rulesetFor(live, kind).split("\n")[+m[1] - 1] ?? "";
+    const c = line.match(/comment "c(\d+)"/);
+    if (!c) return { live: [], refused };
+    refused.push(+c[1]);
+    live = live.filter((x) => x.i !== +c[1]);
+  }
+  return { live, refused };
+}
+
+function rulesetFor(live, kind) {
+  const rules = live.map(({ e, i }) => `\t\t${e} counter comment "c${i}"`).join("\n");
+  return `table inet probe {
+${SETS_NFT}
+	chain input {
+		type filter hook ${HOOK[kind] ?? "input"} priority 0; policy accept;
+		${GATE[kind]} jump probe
+	}
+
+	chain probe {
+${rules}
+	}
+}
+`;
+}
+
 function runOne(kind) {
   const cases = COMMON;
-  const rules = cases.map((e, i) => `\t\t${e} counter comment "c${i}"`).join("\n");
+  const { live, refused } = accepted(cases, kind);
+  if (!live.length) {
+    stdout.write(`  ${kind}: this nft would not take the probe at all` + "\n");
+    return { bad: 0, seen: 0 };
+  }
+  if (refused.length)
+    stdout.write(`  ${kind.padEnd(12)} this nft refuses ${refused.length}: `
+      + refused.map((i) => JSON.stringify(cases[i])).join(", ") + "\n");
+  const rules = live.map(({ e, i }) => `\t\t${e} counter comment "c${i}"`).join("\n");
   const ruleset = `table inet probe {
 ${SETS_NFT}
 	chain input {
