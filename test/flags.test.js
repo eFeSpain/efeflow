@@ -51,6 +51,12 @@ const CASES = [
   ["tcp flags syn,ack / syn,ack", ["syn", "ack"], true],
   ["tcp flags syn,ack / syn,ack", ["syn"], false],
 
+  /* `== 0` names no bits at all: the null-scan check, and it was being
+     compared against a flag called "0" */
+  ["tcp flags & (fin|syn|rst|psh|ack|urg) == 0", [], true],
+  ["tcp flags & (fin|syn|rst|psh|ack|urg) == 0", ["syn"], false],
+  ["tcp flags & (fin|syn|rst|psh|ack|urg) == 0", ["urg"], false],
+
   /* negated */
   ["tcp flags != syn", ["ack"], true],
   ["tcp flags != syn", ["syn"], false],

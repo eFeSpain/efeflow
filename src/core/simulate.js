@@ -219,7 +219,10 @@ const MATCHERS = [
   { re: /\btcp\s+flags\s+(!=\s*)?(?:&\s*)?\(?([\w|,]+)\)?\s*(?:(==|\/)\s*\(?([\w|,]+)\)?)?/,
     ok: (m,p) => {
       const set = new Set(p.flags || []);
-      const bits = t => t.split(/[|,]/).map(x=>x.trim()).filter(Boolean);
+      /* `== 0` names no bits at all — the null-scan check, and a bit called
+         "0" is what it used to be compared against */
+      const bits = t => /^(0|0x0+|none)$/i.test(t.trim())
+        ? [] : t.split(/[|,]/).map(x=>x.trim()).filter(Boolean);
       const want = m[3] === "==" ? bits(m[4]) : bits(m[2]);
       const mask = m[3] === "==" ? bits(m[2]) : m[3] === "/" ? bits(m[4]) : want;
       return negated(m[1], want.every(f => set.has(f))
@@ -235,6 +238,27 @@ const MATCHERS = [
      `meta l4proto sctp accept` matched a tcp packet */
   { re: /\bmeta\s+l4proto\s+(!=\s*)?(\{[^}]*\}|\S+)/,
     ok: (m,p) => negated(m[1], inList(m[2], p.proto)) },
+  /* A packet described in this simulator is one whole packet: it is given
+     ports and TCP flags, which a later fragment does not carry. Its fragment
+     offset is therefore zero, and `ip frag-off & 0x1fff != 0` — the usual
+     first line of an ingress chain, and the first line of the one that turned
+     this up — does not match it.
+     Left unread the rule was taken as matching, so a `drop` on that line
+     swallowed every packet before the chain below it was ever reached: an
+     answer nobody could use, in the one chain that had just become visible. */
+  { re: /\bip\s+frag-off\s+(?:&\s*(\S+)\s+)?(!=\s*)?(\S+)/,
+    ok: (m) => {
+      const num = t => /^0x/i.test(t) ? parseInt(t, 16) : Number(t);
+      const mask = m[1] === undefined ? 0x1fff : num(m[1]);
+      const want = num(m[3]);
+      /* anything this cannot read a number out of is left to unmodelled() */
+      if(!Number.isFinite(mask) || !Number.isFinite(want)) return true;
+      return negated(m[2], (0 & mask) === want);
+    } },
+  /* which family the packet is, which the addresses already say */
+  { re: /\bmeta\s+nfproto\s+(!=\s*)?(\{[^}]*\}|\S+)/,
+    ok: (m,p) => negated(m[1],
+      inList(m[2], family(p.saddr ?? p.daddr) === 6 ? "ipv6" : "ipv4")) },
   /* `ip protocol icmp` is how a v4 rule says it, and `ip6 nexthdr` the v6 one.
      Neither was read, so both matched every packet. */
   { re: /\b(ip|ip6)\s+(?:protocol|nexthdr)\s+(!=\s*)?(\{[^}]*\}|\S+)/,
@@ -263,10 +287,13 @@ const OPAQUE = [
      reported whole by unmodelled() rather than half read. */
   new RegExp(CONCAT_RE.source, "g"),
   /\bfib\s+\w+(?:\s*\.\s*\w+)*\s+(?:oif(?:name)?|type|check)(?:\s+(?:!=\s*)?\S+)?/g,
-  /* `icmp type echo-request` is a match on the message, not on the protocol.
-     Left unmasked, the bare-protocol matcher took the `icmp` off the front and
-     the leftover read as a headless `type echo-request`. */
-  /\b(?:icmp|icmpv6|igmp)\s+(?:type|code)\s+(!=\s*)?(?:\{[^}]*\}|\S+)/g,
+  /* `icmp type echo-request` is two claims, and only one of them is beyond
+     this: which message it is. That it is ICMP at all is knowable, and masking
+     the keyword along with the type threw it away — so the rule matched a TCP
+     packet, admitted only that it had not read something, and was believed.
+     The lookbehind leaves the protocol for the matcher above and strikes out
+     the part nothing here can answer. */
+  /(?<=\b(?:icmp|icmpv6|igmp)\s)(?:type|code)\s+(!=\s*)?(?:\{[^}]*\}|\S+)/g,
 ];
 
 /* the expression with the opaque statements struck out, so nothing reads into
@@ -383,9 +410,29 @@ export const packet = { ...PRESETS.ssh, flags: [...PRESETS.ssh.flags] };
 /* the direction the user picked is the path the packet takes — the kernel's
    own routing decision, not something we infer from the address */
 export const PATHS = {
-  in:  [["prerouting"],["input"]],
-  fwd: [["prerouting"],["forward"],["postrouting"]],
-  out: [["output"],["postrouting"]],
+  /* netdev `ingress` runs before prerouting and `egress` after postrouting,
+     and neither was in this list — so a netdev chain was never walked at all.
+     A bridge filtering rogue DHCP, which is one of the scenarios this ships as
+     a sample, dropped the packet on the real firewall and accepted it here. */
+  in:  [["ingress"],["prerouting"],["input"]],
+  fwd: [["ingress"],["prerouting"],["forward"],["postrouting"],["egress"]],
+  out: [["output"],["postrouting"],["egress"]],
+};
+
+/* Which devices a netdev chain is attached to. The header keeps the phrase as
+   written — `device "wan0"`, or `devices = { eth0, br0 }` — because that is
+   what has to go back out. */
+export const chainDevices = ch => [...String(ch.dev || "").matchAll(/"([^"]*)"|[\w.*-]+/g)]
+  .map(m => m[1] ?? m[0])
+  .filter(d => d && d !== "device" && d !== "devices" && d !== "=");
+
+/* Only packets on that device enter it: `hook ingress device "wan0"` says
+   nothing about traffic arriving on br-lan. */
+const onDevice = (ch, p) => {
+  const ds = chainDevices(ch);
+  if(!ds.length) return true;
+  const name = ch.hook === "egress" ? p.oif : p.iif;
+  return ds.some(d => nameAtom(name, d));
 };
 
 /* Where a NAT verdict sends the packet. The target is an address, a port, or
@@ -394,6 +441,44 @@ export const PATHS = {
    port is only read when the address is bracketed or holds no colon of its
    own. Splitting on ":" unconditionally set the port to NaN for every
    `dnat to <address>`, and a packet with no port matches nothing downstream. */
+/**
+ * `dnat to tcp dport map @port_fwd` — the target is a lookup, not an address.
+ *
+ * Applied as written, the whole expression became the packet's destination: a
+ * string no address matcher recognises, so every rule below a port-forwarding
+ * map missed, silently, on the single most common way of writing one.
+ *
+ * A failed lookup is not a translation to nowhere either. The map is part of
+ * the expression, so a key that is not in it means the rule does not fire at
+ * all, and the packet carries on to the next one.
+ *
+ * @returns {{to: string|null, missed: boolean, assumed: string[]}} — `missed`
+ *   is the key not being there; `to === null` without it is a key this cannot
+ *   read, which is assumed rather than answered.
+ */
+export function natLookup(spec, p){
+  const m = String(spec ?? "").match(/^(.*?)\s+map\s+(@\w+|\{[^}]*\})$/);
+  if(!m) return { to: String(spec ?? ""), missed: false, assumed: [] };
+
+  const keys = m[1].trim().split(/\s+\.\s+/).map(k => k.trim().replace(/\s+/g, " "));
+  const parts = keys.map(k => CONCAT_KEY[k]);
+  if(parts.some(x => !x))
+    return { to: null, missed: false,
+             assumed: [`the target is a map on ${m[1].trim()}, which this cannot read`] };
+
+  const vals = parts.map(x => x.of(p));
+  for(const e of (m[2].startsWith("@") ? setOf(m[2].slice(1)) : items(m[2]))){
+    /* nft prints an element as `8443 : 10.20.0.31:443`, and the separator has
+       spaces around it — which is what tells it from the colon in the port */
+    const at = String(e).split(/\s+:\s+/);
+    if(at.length !== 2) continue;
+    const ks = at[0].split(/\s+\.\s+/);
+    if(ks.length === keys.length && ks.every((kv, i) => parts[i].cmp(vals[i], kv)))
+      return { to: at[1].trim(), missed: false, assumed: [] };
+  }
+  return { to: null, missed: true, assumed: [] };
+}
+
 export function natTarget(spec){
   const s = String(spec ?? "").trim();
   const m = s.match(/^(\[[^\]]*\]|[^:]*)(?::(\d+)(?:-(\d+))?)?$/);
@@ -466,8 +551,18 @@ export function evaluate(p){
 
       /* NAT terminates the chain, and the packet that walks on to the next
          hook is the translated one. */
+      /* a map target is also a constraint: a key the map does not hold means
+         the rule never fires, so the packet walks on to the next one */
+      let target = r.to;
+      if(/\s+map\s+/.test(String(r.to || ""))){
+        const look = natLookup(r.to, p);
+        if(look.missed){ hop.evs.push({r, i, st:"miss", note:"map"}); continue; }
+        guessed.push(...look.assumed);
+        target = look.to ?? "";
+      }
+
       if(r.verdict==="dnat" || r.verdict==="redirect"){
-        const {host, port, assumed} = natTarget(r.to);
+        const {host, port, assumed} = natTarget(target);
         guessed.push(...assumed);
         p.dnat = true;
         if(host) p.daddr = host;
@@ -477,7 +572,7 @@ export function evaluate(p){
       }
       /* `ct status snat` can only be answered for a packet something has
          actually translated the source of */
-      if(r.verdict==="snat"){ p.snat = true; hop.nat = r.to; return {stop:"chain", settled:true}; }
+      if(r.verdict==="snat"){ p.snat = true; hop.nat = target; return {stop:"chain", settled:true}; }
 
       /* jump remembers where it came from and goto does not — which is the
          whole reason nftables has both. A goto whose target settles nothing
@@ -514,6 +609,7 @@ export function evaluate(p){
      path alone decides */
   const byHook = h => MODEL.chains
     .filter(c=>c.hook===h && (p.nat || c.type!=="nat"))
+    .filter(c=>onDevice(c, p))
     .filter(c=>{ if(!isDormant(MODEL, c.table)) return true; parked.add(c.table); return false; })
     .sort((a,b)=>a.prio-b.prio).map(c=>UID(c));
 
