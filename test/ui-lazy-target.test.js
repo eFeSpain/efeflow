@@ -60,7 +60,10 @@ test("a browser is answered without a socket, because it can be", async () => {
 test("the chip distinguishes unasked from unanswered", () => {
   const paint = APP.slice(APP.indexOf("function paintTargetChip"), APP.indexOf("function paintHostStatus"));
   assert.match(paint, /state === null/, "null is a question nobody asked, not a failure");
-  assert.match(paint, /not contacted yet|sin contactar/i);
+  /* and the label may not be a hostname: one up there reads as a connection to
+     it, which is what it looked like on every launch */
+  assert.match(paint, /t\("not connected", "sin conectar"\)/,
+    "the chip has to say it has not connected, not name a host as though it had");
 
   const host = APP.slice(APP.indexOf("function paintHostStatus"), APP.indexOf("function paintHostStatus") + 1600);
   assert.match(host, /state === null/,
@@ -113,4 +116,31 @@ test("the one that reads this machine is the import dialog's, not the boot's", (
   assert.match(handler, /addEventListener\("click"/, "it is a click, not something on the way up");
   assert.match(handler, /native\.nftList\(asTauriTarget\(\)\)/,
     "and it reads whatever target is configured — this machine, when that is the target");
+});
+
+/* Reported from the running app: "as soon as it starts, efe@192.168.109.137
+   appears top right, and it should not — if that label is there on launch it
+   gives the impression it is connected." The saved host is remembered; it is
+   simply not claimed until something has answered. */
+test("the chip names no host until one has answered", async () => {
+  await boot();
+  const { saveTarget } = await import("../src/target.js");
+  const { paintTargetChip } = await import("../src/app.js").catch(() => ({}));
+  saveTarget({ kind: "ssh", host: "fw01.example.net", user: "ana", port: "", sudo: true });
+
+  /* not contacted */
+  if (paintTargetChip) paintTargetChip(null);
+  await settle(30);
+  const label = $("#tb-target-t").textContent;
+  assert.doesNotMatch(label, /fw01\.example\.net/,
+    "a hostname on the chip reads as a live connection to it");
+  assert.match(label, /not connected|sin conectar/i);
+  assert.match($("#tb-target").title, /fw01\.example\.net/,
+    "and the destination is still there to be seen, in the tooltip");
+
+  /* once it has answered, it may say so */
+  if (paintTargetChip) paintTargetChip({ ok: true, version: "1.1.3", kernel: "6.12", banner: "", uname: "" });
+  await settle(30);
+  assert.match($("#tb-target-t").textContent, /fw01\.example\.net/);
+  assert.ok($("#tb-target").classList.contains("remote"));
 });

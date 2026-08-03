@@ -4469,21 +4469,26 @@ let tgDraft = {...loadTarget()};
 /* `null` is not a failure, it is a question nobody has asked. Painting the two
    the same way is how a tool that has never contacted anything ends up
    reporting that nothing answered. */
-function paintTargetChip(state){
+export function paintTargetChip(state){
   const chip = $("#tb-target"), label = $("#tb-target-t");
   if(!chip) return;
   chip.classList.remove("live","remote");
 
-  label.textContent = target.kind === "ssh"
-    ? describe()
-    : state?.ok ? state.version : t("no local nft","sin nft local");
+  /* A hostname up there reads as a connection to it. Until one has answered,
+     the chip says it has not connected and keeps the destination in the
+     tooltip — the saved host is remembered, it is simply not being claimed. */
+  label.textContent = state === null
+    ? t("not connected", "sin conectar")
+    : target.kind === "ssh"
+      ? describe()
+      : state?.ok ? state.version : t("no local nft","sin nft local");
 
   if(state?.ok){
     chip.classList.add(target.kind === "ssh" ? "remote" : "live");
     chip.title = t(`nft reachable — ${state.version}`, `nft accesible — ${state.version}`);
   } else if(state === null){
-    chip.title = t(`${describe()} — not contacted yet. Click to check, or just use it.`,
-                   `${describe()} — sin contactar. Pulsa para comprobar, o úsalo sin más.`);
+    chip.title = t(`Will use ${describe()} when something needs it. Click to connect or change it.`,
+                   `Usará ${describe()} cuando algo lo necesite. Pulsa para conectar o cambiarlo.`);
   } else {
     chip.title = (state?.why ? state.why + " · " : "")
       + t("click to choose where nft runs", "pulsa para elegir dónde se ejecuta nft");
