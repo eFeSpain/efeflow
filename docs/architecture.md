@@ -78,6 +78,7 @@ running app:
 | `ui-panels` | a grid child with no column, which moves when a sibling hides |
 | `release` | three files carrying the version, disagreeing |
 | `ssh-target` | a way to reach a host that does not validate where it is going |
+| `rollback-script` | the arm script losing the copy it exists to protect |
 
 The interface layer exists because a green core suite is not evidence that the
 product works. The packet simulator once shipped broken while all 18 core tests
@@ -133,8 +134,15 @@ everything locally and fail on push. `npm run rust:check` is the same pair;
 `npm run rust:fmt` fixes the formatting half.
 
 Take rustfmt's output rather than configuring around it. It is the convention
-CI enforces, and there are under two hundred lines of Rust here to have an
-opinion about.
+CI enforces, and there are five hundred lines of Rust here to have an opinion
+about.
+
+One of them is not Rust. `nft_arm` is a shell script living inside a Rust
+string, and neither `cargo fmt` nor `cargo clippy` has an opinion about shell —
+which is how it came to lose the copy it exists to protect, and to keep it in
+`/tmp`. `test/rollback-script.test.js` extracts that script from this file and
+runs it against a fake `nft`, so the one part of the safety net that no
+compiler checks is at least executed by something.
 
 ## Screenshots and GIFs
 
