@@ -151,7 +151,7 @@ be reproduced, it tells you which one before you commit to anything.
 ## ⚠ Beta
 
 It does the whole job today: import, prove, analyse, simulate, edit, apply,
-export. 880 automated assertions stand behind it, across the parser, the
+export. 883 automated assertions stand behind it, across the parser, the
 analyser, the packet evaluator and the interface itself.
 
 What it does not have yet is mileage. **No ruleset but its author's has ever
@@ -180,7 +180,7 @@ round-trip — are the fastest way there.
    verdict than it did a minute ago.
 5. **Export**, or **apply** with a 60-second rollback armed on the host.
 
-<img src="docs/editor.png" width="880" alt="The canvas: chains laid out along the netfilter hooks, in priority order">
+<img src="docs/editor.png" width="883" alt="The canvas: chains laid out along the netfilter hooks, in priority order">
 
 The canvas puts each chain at the netfilter hook it is attached to — left to
 right in the order a packet meets them — and at its priority, top to bottom.
@@ -323,7 +323,7 @@ write `accept`, not `aceptar`.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 880 assertions
+npm test             # 883 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 
 node bin/efeflow.mjs lint fw.nft    # the linter, straight from the clone

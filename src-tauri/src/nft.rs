@@ -86,6 +86,36 @@ impl Target {
     }
 }
 
+/// Where nft actually lives, which is not where a login shell looks for it.
+///
+/// `nft` is in /usr/sbin. A non-interactive ssh command gets
+/// `/usr/local/bin:/usr/bin:/bin:/usr/games` on Debian — no sbin at all — so
+/// `ssh fw nft list ruleset` answers "nft: command not found", which reads as
+/// *you have not installed nftables* on a machine where it is installed and
+/// working. It only ever worked because sudo replaces the PATH with its own
+/// `secure_path`, so turning the sudo toggle off broke the connection and
+/// blamed the host. This is that same list, said out loud.
+const SBIN_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+
+/// The inherited PATH with the sbin directories added, and nothing removed.
+///
+/// Adding rather than replacing: on Windows and macOS the inherited one is the
+/// only thing that finds `ssh` at all, and on Linux somebody may keep nft
+/// somewhere this list has never heard of.
+fn local_path() -> String {
+    match std::env::var("PATH") {
+        Ok(p) if !p.is_empty() => {
+            let sep = if cfg!(windows) { ';' } else { ':' };
+            if cfg!(windows) {
+                p
+            } else {
+                format!("{p}{sep}{SBIN_PATH}")
+            }
+        }
+        _ => SBIN_PATH.to_string(),
+    }
+}
+
 /// Build the argv for a command against a target, without a shell in the way.
 fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
     match target {
@@ -119,6 +149,12 @@ fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
             if *sudo {
                 args.push("sudo".into());
             }
+            /* `env` and not a shell assignment: this is handed to the remote
+            login shell as one string, and a bare `PATH=… nft …` would be a
+            shell builtin's problem rather than ours the moment somebody's
+            login shell is not POSIX. */
+            args.push("env".into());
+            args.push(format!("PATH={SBIN_PATH}"));
             args.extend(cmd.iter().map(|s| s.to_string()));
             ("ssh".to_string(), args)
         }
@@ -142,6 +178,11 @@ fn run(target: &Target, cmd: &[&str], stdin: Option<&str>) -> Outcome {
     let (program, args) = argv(target, cmd);
     let mut child = match Command::new(&program)
         .args(&args)
+        /* The same gap on this side of the wire: a desktop launcher hands an
+        application the session PATH, which on Linux is a normal user's and so
+        has no sbin in it either. Harmless where the target is ssh — the
+        program being run is ssh, and it is not in sbin. */
+        .env("PATH", local_path())
         .stdin(if stdin.is_some() {
             Stdio::piped()
         } else {
