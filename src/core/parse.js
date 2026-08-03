@@ -13,14 +13,108 @@ import { generate } from './generate.js';
 import { diffLines } from './diff.js';
 import { PRIO_NAME } from './priority.js';
 
-const count = (s, ch) => (s.match(ch === "{" ? /\{/g : /\}/g) || []).length;
-/* how much deeper this line leaves you: `elements = { a,` is +1, `}` is -1 */
-const net = s => count(s, "{") - count(s, "}");
-
 /* A block opener is `chain foo {`, not `elements = {`. nft wraps a long
    element list across lines, so the two shapes have to be told apart before
-   anything else looks at them. */
+   anything else looks at them.
+
+   The head is the text since the current statement began, and it has to be the
+   whole of a declaration and nothing else: a keyword and the name it declares.
+   `counter ip saddr { … }` is a rule that happens to start with the word
+   `counter`, and reading its anonymous set as the body of a named counter
+   would be the same class of mistake this whole file is about. */
+const BLOCK_HEAD = new RegExp(
+  "(?:^|;)\\s*(?:" +
+  "table\\s+[^\\s;]+(?:\\s+[^\\s;]+)?" +           /* table inet filter — or table filter */
+  "|(?:chain|set|map|flowtable|synproxy|counter|quota|limit|secmark)\\s+[^\\s;]+" +
+  "|ct\\s+(?:helper|timeout|expectation)\\s+[^\\s;]+" +
+  ")\\s*$");
+
+/* The older, looser rule, kept for the kinds nftables has and this list does
+   not: a `{` with nothing after it on the line, and no `=` before it, opens a
+   block whatever it is called. Preserve by default is the governing rule here,
+   and an object kind nobody has heard of yet must still keep its body. */
 const isOpener = line => /\{$/.test(line) && !line.includes("=");
+
+/* Cut a physical line at the braces that open and close *blocks*, leaving the
+   ones that carry values alone.
+ *
+ * nft never prints a block on one line, so for a long time nothing here had
+ * to: everything arrived as `chain foo {`, a body, and a `}` of its own. But
+ * this reads files people write as well as files nft prints, and both
+ * `chain empty { }` and a whole base chain on one line are legal — and both
+ * used to fall through every branch below into the table's keep-as-text
+ * bucket. The text came back out untouched, so the round-trip check reported
+ * 100% while a chain carrying `hook input` and `policy drop` was not in the
+ * model at all: not on the canvas, not analysed, not walked by the simulator,
+ * and named as missing by anything that jumped to it. A number that says
+ * everything survived, on a file where a base chain did not, is the one
+ * failure this application cannot have. */
+function splitBlocks(text){
+  const pieces = [];
+  let buf = "", depth = 0, str = false;
+  for(let i = 0; i < text.length; i++){
+    const c = text[i];
+    if(str){ buf += c; if(c === '"' && text[i-1] !== "\\") str = false; continue; }
+    if(c === '"'){ str = true; buf += c; continue; }
+    if(c === "{" && depth === 0
+       && (BLOCK_HEAD.test(buf) || (!text.slice(i + 1).trim() && !buf.includes("=")))){
+      pieces.push((buf + c).trim());
+      buf = "";
+      continue;
+    }
+    if(c === "{"){ depth++; buf += c; continue; }
+    if(c === "}" && depth === 0){
+      if(buf.trim()) pieces.push(buf.trim());
+      pieces.push("}");
+      buf = "";
+      continue;
+    }
+    if(c === "}"){ depth--; buf += c; continue; }
+    buf += c;
+  }
+  if(buf.trim()) pieces.push(buf.trim());
+  /* a value brace still open is a statement nft has wrapped: read on */
+  return { pieces, open: depth > 0 };
+}
+
+/* Top-level `;`, keeping the separator — `priority 0` is not `priority 0;`,
+   and the chain-header pattern below wants the one it was written with. */
+function statements(text){
+  const out = [];
+  let buf = "", depth = 0, str = false;
+  for(let i = 0; i < text.length; i++){
+    const c = text[i];
+    if(str){ buf += c; if(c === '"' && text[i-1] !== "\\") str = false; continue; }
+    if(c === '"'){ str = true; buf += c; continue; }
+    if(c === "{"){ depth++; buf += c; continue; }
+    if(c === "}"){ depth--; buf += c; continue; }
+    if(c === ";" && depth === 0){ if(buf.trim()) out.push(buf.trim() + ";"); buf = ""; continue; }
+    buf += c;
+  }
+  if(buf.trim()) out.push(buf.trim());
+  return out;
+}
+
+/* A body that arrived on one line is a run of statements sharing it. Read
+   whole, `type filter hook input priority 0; policy drop; tcp dport 22 accept`
+   is a chain header with a rule stuck to the end of it that nothing would ever
+   see. Split, each piece is what it would have been had somebody pressed
+   Return — except `policy`, which goes back onto the header it belongs to,
+   because that is the one place nft prints two statements on a line and it is
+   how generate.js emits them. Putting it back is what keeps the round-trip
+   from reading the expansion as a change. */
+function expand(pieces){
+  const out = [];
+  for(const p of pieces){
+    if(p === "}" || p.endsWith("{")){ out.push(p); continue; }
+    for(const s of statements(p)){
+      const prev = out[out.length - 1];
+      if(/^policy\b/.test(s) && prev && /^type\b.*\bpriority\b/.test(prev)) out[out.length - 1] = `${prev} ${s}`;
+      else out.push(s);
+    }
+  }
+  return out;
+}
 
 /* Comment-stripped, brace-balanced lines. nft prints a set's elements over as
    many lines as it needs, and reading them one at a time is how a blocklist
@@ -28,9 +122,12 @@ const isOpener = line => /\{$/.test(line) && !line.includes("=");
 export function logicalLines(text){
   const out = [];
   let pending = null;
-  const flush = () => {
-    out.push({ text: pending.text, ln: pending.ln, raw: pending.text, handle: pending.handle });
-    pending = null;
+  /* One physical line in, the logical lines it holds out. A line carrying no
+     block brace is one logical line and goes through untouched — which is
+     every line of anything nft printed, so the common path is unchanged. */
+  const emit = (pieces, ln, raw, handle) => {
+    const lines = pieces.length > 1 ? expand(pieces) : pieces;
+    for(const text of lines) out.push({ text, ln, raw, handle });
   };
   text.split("\n").forEach((raw, ln) => {
     /* `nft -a list ruleset` prints the handle of every rule as a trailing
@@ -42,18 +139,21 @@ export function logicalLines(text){
     const line = raw.replace(/#\s*handle\s+\d+\s*$/, "").trim();
     if(pending){
       pending.text += " " + line;
-      pending.depth += net(line);
       pending.handle ??= handle;
-      if(pending.depth <= 0) flush();
+      const r = splitBlocks(pending.text);
+      if(r.open) return;
+      emit(r.pieces, pending.ln, pending.text, pending.handle);
+      pending = null;
       return;
     }
     if(!line || line.startsWith("#")) return;
-    /* a line that opens a brace it does not close, and is not a block header,
-       is a statement nft has wrapped: read on until it closes */
-    if(net(line) > 0 && !isOpener(line)){ pending = { text: line, ln, depth: net(line), handle }; return; }
-    out.push({ text: line, ln, raw: raw.trim(), handle });
+    const r = splitBlocks(line);
+    /* a value brace this line opens and does not close is a statement nft has
+       wrapped: read on until it closes */
+    if(r.open){ pending = { text: line, ln, handle }; return; }
+    emit(r.pieces, ln, raw.trim(), handle);
   });
-  if(pending) flush();
+  if(pending) emit(splitBlocks(pending.text).pieces, pending.ln, pending.text, pending.handle);
   return out;
 }
 
@@ -126,6 +226,14 @@ export function parseNft(text){
     if(!f){ if(!OUR_PREAMBLE.test(line)) prelude.push(line); continue; }
     if(f.kind === "object"){ f.obj.body.push(line); continue; }
     if(f.kind === "set"){ readSetLine(f.set, line); continue; }
+    /* The backstop under the keep-as-text bucket. Preserving what we cannot
+       model is right for an object kind nobody has heard of; it is wrong for a
+       chain, a set or a map, which the model must see or the whole screen is a
+       lie. Kept — losing it on export would be worse — but reported, because a
+       declaration nothing opened is the one thing that can round-trip at 100%
+       and still be missing from everywhere that matters. */
+    if(f.kind === "table" && /^(?:chain|set|map|table)\b/.test(line))
+      errors.push({ ln: ln + 1, line: raw });
     /* directly inside a table: `flags dormant`, `comment "…"` */
     if(f.kind === "table"){ (f.extra ||= []).push(line); continue; }
 
@@ -360,14 +468,26 @@ function byIndex(src, out){
    100% on a ruleset whose netdev chain had lost its device. This compares the
    whole file — parse it, emit it, and diff what we get against what we were
    given, line for line. */
+const keep = l => l && l !== "flush ruleset" && !l.startsWith("#");
 const meaningful = lines => lines
   .map(l => normalise(typeof l === "string" ? l : l.text))
-  .filter(l => l && l !== "flush ruleset" && !l.startsWith("#"));
+  .filter(keep);
 
 export function verify(text){
   const parsed = parseNft(text);
-  const src = meaningful(logicalLines(text));
+  /* Line numbers are carried alongside, because a diff nobody can point at is
+     a bug report nobody can act on. The README promises this file will say
+     which line it could not reproduce, and for a long time the only thing that
+     kept that promise was the import dialog, which has the source on screen
+     next to the answer. The CLI printed the same finding with no line and no
+     text at all — it was reading fields this function has never returned. */
+  const rows = logicalLines(text)
+    .map(l => ({ text: normalise(l.text), ln: l.ln + 1 }))
+    .filter(r => keep(r.text));
   const out = meaningful(generate(parsed));
 
-  return { ...compare(src, out), parsed };
+  const r = compare(rows.map(x => x.text), out);
+  /* `i` indexes the source side: for a line that changed or vanished it is the
+     line itself, and for one that appeared it is where it appeared. */
+  return { ...r, diffs: r.diffs.map(d => ({ ...d, ln: rows[d.i]?.ln ?? null })), parsed };
 }

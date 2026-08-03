@@ -47,6 +47,23 @@ now.** Fixes resolve their target by identity when applied, not by holding an
 object reference. Undo rebuilds every chain and rule from JSON, so a captured
 reference becomes an orphan and the fix silently mutates nothing.
 
+## What the analyser deliberately does not answer
+
+Subsumption is computed **within a chain**. Two rules are only ever weighed
+against each other if they sit in the same one, so a rule made unreachable by a
+terminal rule in the chain that jumped to it is not reported.
+
+That is a choice, not an oversight. Reaching across a `jump` means reasoning
+about every path into the target chain — several callers, each with its own
+constraints, `goto` not returning where `jump` does — and the cost of getting
+it wrong is not a missed finding. It is a Delete button under a rule that
+fires. `subsumes()` already refuses on a rate limit, on a negation and on
+anything it could not read whole, for the same reason; this is the same refusal
+one level up.
+
+Worth knowing before widening it: the finding is only as good as the offer
+attached to it, and every finding here carries a fix.
+
 ## Emission carries provenance
 
 `generateWithMap()` returns the lines and a parallel array saying which rule
@@ -56,7 +73,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 543 assertions.
+`npm test` — 568 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across
@@ -77,6 +94,8 @@ running app:
 | `ui-layout` | layout deriving a card's height from a rule count |
 | `ui-panels` | a grid child with no column, which moves when a sibling hides |
 | `release` | three files carrying the version, disagreeing |
+| `ssh-target` | a way to reach a host that does not validate where it is going |
+| `rollback-script` | the arm script losing the copy it exists to protect |
 
 The interface layer exists because a green core suite is not evidence that the
 product works. The packet simulator once shipped broken while all 18 core tests
@@ -132,8 +151,15 @@ everything locally and fail on push. `npm run rust:check` is the same pair;
 `npm run rust:fmt` fixes the formatting half.
 
 Take rustfmt's output rather than configuring around it. It is the convention
-CI enforces, and there are under two hundred lines of Rust here to have an
-opinion about.
+CI enforces, and there are five hundred lines of Rust here to have an opinion
+about.
+
+One of them is not Rust. `nft_arm` is a shell script living inside a Rust
+string, and neither `cargo fmt` nor `cargo clippy` has an opinion about shell —
+which is how it came to lose the copy it exists to protect, and to keep it in
+`/tmp`. `test/rollback-script.test.js` extracts that script from this file and
+runs it against a fake `nft`, so the one part of the safety net that no
+compiler checks is at least executed by something.
 
 ## Screenshots and GIFs
 

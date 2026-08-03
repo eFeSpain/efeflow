@@ -125,6 +125,13 @@ Most carry a one-click fix. Everything is undoable.
 And where it cannot read a rule whole, **it refuses to judge it** and says how
 many it left alone, rather than calling a live rule dead.
 
+Shadowing is weighed **within a chain**, never across a `jump`. A rule made
+unreachable by a terminal rule in the chain that jumped to it is not reported,
+because deciding that safely means knowing every way into the chain — and being
+wrong about it means offering to delete a rule that fires. The same
+conservatism as everywhere else here: the findings you get are ones it can
+stand behind, not every one there is.
+
 ## You do not start from nothing
 
 Paste `nft list ruleset`, or read it straight from a host.
@@ -144,7 +151,7 @@ be reproduced, it tells you which one before you commit to anything.
 ## ⚠ Beta
 
 It does the whole job today: import, prove, analyse, simulate, edit, apply,
-export. 543 automated assertions stand behind it, across the parser, the
+export. 568 automated assertions stand behind it, across the parser, the
 analyser, the packet evaluator and the interface itself.
 
 What it does not have yet is mileage. **No ruleset but its author's has ever
@@ -316,7 +323,7 @@ write `accept`, not `aceptar`.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 543 assertions
+npm test             # 568 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 
 node bin/efeflow.mjs lint fw.nft    # the linter, straight from the clone

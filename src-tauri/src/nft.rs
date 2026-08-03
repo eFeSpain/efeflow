@@ -52,6 +52,40 @@ impl Outcome {
     }
 }
 
+impl Target {
+    /// Is this somewhere we are willing to point `ssh` at?
+    ///
+    /// Nothing here reaches a shell — every command is argv — so the danger is
+    /// not quoting, it is that `ssh` reads its own destination with getopt. A
+    /// host of `-oProxyCommand=…` is not a host, it is an option, and the
+    /// option it is happens to run a command. The `--` below closes that on
+    /// its own; this refuses as well, because a destination beginning with a
+    /// dash is a mistake or an attack in every case and neither deserves a
+    /// connection attempt.
+    fn check(&self) -> Result<(), String> {
+        let Target::Ssh { host, user, .. } = self else {
+            return Ok(());
+        };
+        if host.trim().is_empty() {
+            return Err("no host to connect to".into());
+        }
+        for (what, v) in [
+            ("host", host.as_str()),
+            ("user", user.as_deref().unwrap_or("")),
+        ] {
+            if v.starts_with('-') {
+                return Err(format!(
+                    "refusing an ssh {what} that begins with a dash: {v}"
+                ));
+            }
+            if v.contains(|c: char| c.is_whitespace() || c == '\0') {
+                return Err(format!("refusing an ssh {what} with whitespace in it: {v}"));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Build the argv for a command against a target, without a shell in the way.
 fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
     match target {
@@ -75,6 +109,9 @@ fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
                 args.push("-p".into());
                 args.push(p.to_string());
             }
+            /* everything after this is a destination and a command, never an
+            option, whatever it begins with */
+            args.push("--".into());
             args.push(match user {
                 Some(u) => format!("{u}@{host}"),
                 None => host.clone(),
@@ -99,6 +136,9 @@ fn shell(target: &Target, script: &str) -> Outcome {
 }
 
 fn run(target: &Target, cmd: &[&str], stdin: Option<&str>) -> Outcome {
+    if let Err(e) = target.check() {
+        return Outcome::failed(e);
+    }
     let (program, args) = argv(target, cmd);
     let mut child = match Command::new(&program)
         .args(&args)
@@ -239,8 +279,44 @@ unless the sentinel has been removed first. Confirming removes it.
 
 Routers have called this commit-confirm for thirty years, and this is why. */
 
-const ROLLBACK: &str = "/tmp/efeflow-rollback.nft";
-const SENTINEL: &str = "/tmp/efeflow-armed";
+/* These lived in /tmp, which is the wrong place for either of them.
+`nft list ruleset > /tmp/efeflow-rollback.nft` is a redirect performed by
+root at a path any local user can guess and, in a sticky directory, can
+create ahead of it as a symlink pointing anywhere it likes. `umask 077`
+fixes the mode of a file we create; it does nothing about a file that is
+already there. And the far end of it is `nft -f` on that same path, as
+root — so whoever wins the race chooses the firewall.
+
+/run is root-owned, on tmpfs, and cleared on reboot. The last of those is
+worth having on its own account: after a reboot the ruleset comes back from
+/etc, and a rollback copy that outlived the kernel it was taken from would
+restore something nobody asked for. */
+const DIR: &str = "/run/efeflow";
+const ROLLBACK: &str = "/run/efeflow/rollback.nft";
+const SENTINEL: &str = "/run/efeflow/armed";
+
+/// Every arm gets a token, and the timer it starts only fires while the
+/// sentinel still holds that token.
+///
+/// Without one, arming twice was the way to lose the thing being kept safe.
+/// Apply a ruleset that breaks something, do not confirm it, fix it and apply
+/// again — and the second arm copied the *broken* ruleset aside as the one to
+/// go back to. The net then restored the breakage, which is worse than having
+/// had no net at all, because the whole point of it is to be the thing you did
+/// not have to think about.
+///
+/// So the copy is taken once and kept until it is used or the arming ends, and
+/// re-arming replaces the token instead — which retires the previous timer
+/// rather than leaving it to fire early against a window somebody has since
+/// extended.
+fn token() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!("{t:x}-{:x}", N.fetch_add(1, Ordering::Relaxed))
+}
 
 /// Copy the running ruleset aside and schedule its restoration in `seconds`.
 ///
@@ -249,14 +325,24 @@ const SENTINEL: &str = "/tmp/efeflow-armed";
 pub fn nft_arm(target: Target, seconds: u32) -> Outcome {
     // clamped here rather than trusted: this number is spliced into a script
     let secs = seconds.clamp(10, 3600);
+    let tok = token();
     let script = format!(
         "set -e\n\
          umask 077\n\
-         nft list ruleset > {ROLLBACK}\n\
-         : > {SENTINEL}\n\
+         mkdir -p -m 700 {DIR}\n\
+         \
+         # the copy is the ruleset as it was before eFeFlow touched anything,\n\
+         # so an arm that finds one already armed keeps it rather than\n\
+         # photographing whatever it has just been asked to replace\n\
+         if [ ! -s {SENTINEL} ] || [ ! -s {ROLLBACK} ]; then\n\
+           nft list ruleset > {ROLLBACK}\n\
+         fi\n\
+         printf '%s' '{tok}' > {SENTINEL}\n\
+         \
          nohup sh -c 'sleep {secs}; \
-           if [ -f {SENTINEL} ]; then nft -f {ROLLBACK}; rm -f {SENTINEL}; fi' \
-           </dev/null >/dev/null 2>&1 &\n\
+           if [ \"$(cat {SENTINEL} 2>/dev/null)\" = \"{tok}\" ]; then \
+             nft -f {ROLLBACK}; rm -f {SENTINEL}; \
+           fi' </dev/null >/dev/null 2>&1 &\n\
          cat {ROLLBACK}\n"
     );
     shell(&target, &script)
@@ -273,16 +359,31 @@ pub fn nft_disarm(target: Target) -> Outcome {
 /// window that was closed, or an editor that was restarted, can find out.
 #[tauri::command]
 pub fn nft_armed(target: Target) -> Outcome {
+    /* `-s` and not `-f`: the sentinel carries the token of the arming that owns
+    it, and an empty one belongs to nobody */
     shell(
         &target,
-        &format!("if [ -f {SENTINEL} ]; then echo armed; else echo clear; fi\n"),
+        &format!("if [ -s {SENTINEL} ]; then echo armed; else echo clear; fi\n"),
     )
 }
 
 /// Put the copy back now, without waiting for the timer.
+///
+/// The sentinel goes first, so the pending timer finds its token gone and
+/// stays out of the way of a restore already in progress.
 #[tauri::command]
 pub fn nft_rollback(target: Target) -> Outcome {
-    shell(&target, &format!("rm -f {SENTINEL}\nnft -f {ROLLBACK}\n"))
+    shell(
+        &target,
+        &format!(
+            "rm -f {SENTINEL}\n\
+             if [ ! -s {ROLLBACK} ]; then\n\
+               echo 'there is no rollback copy on this host to go back to' >&2\n\
+               exit 1\n\
+             fi\n\
+             nft -f {ROLLBACK}\n"
+        ),
+    )
 }
 
 /// Apply atomically. Refuses unless the caller has confirmed, because this is
@@ -318,6 +419,9 @@ static WATCH: Mutex<Option<Child>> = Mutex::new(None);
 
 #[tauri::command]
 pub fn nft_watch(app: AppHandle, target: Target) -> Outcome {
+    if let Err(e) = target.check() {
+        return Outcome::failed(e);
+    }
     nft_unwatch();
 
     let (program, args) = argv(&target, &["nft", "monitor", "ruleset"]);

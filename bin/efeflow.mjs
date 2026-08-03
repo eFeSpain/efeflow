@@ -164,12 +164,18 @@ function inspect(name, src) {
   /* the claim the import dialog makes to a user, made to a pipeline */
   const v = verify(src);
   const trip = { lines: v.total, reproduced: v.ok, lost: v.total - v.ok };
+  /* Naming the line is the whole of this finding's value. "Something did not
+     reproduce" is not a bug report — it is the absence of one, and it was what
+     this printed: no line, no text, twice, for one line that moved. */
   for (const d of v.diffs || [])
     out.push({
       file: name, line: d.ln ?? null, severity: "error", kind: "round-trip",
       where: name, rule: null,
-      message: "this line could not be reproduced — please report it",
-      text: d.mine ?? d.theirs ?? d.line ?? null,
+      message: d.out === "—" ? "this line was not reproduced — please report it"
+             : d.src === "—" ? "this line came out of nowhere — please report it"
+             : "this line came back changed — please report it",
+      text: d.src === "—" ? null : d.src,
+      became: d.out === "—" ? null : d.out,
     });
 
   let nft = null;
@@ -211,14 +217,23 @@ function human(r) {
     const at = f.line ? `${f.file}:${f.line}` : f.file;
     L.push(`${C.bold(at)}  ${C[f.severity](f.severity.padEnd(5))} ${C.dim(f.kind.padEnd(10))} ${f.message}`);
     if (f.text) L.push(`      ${C.dim(f.text)}`);
+    /* what came back instead, where a line came back as something else */
+    if (f.became) L.push(`      ${C.dim("→ " + f.became)}`);
   }
   if (!opt.quiet) {
     const t = r.roundTrip;
     const pct = t.lines ? Math.round((t.reproduced / t.lines) * 100) : 100;
     L.push("");
-    L.push(`  ${r.rules} rules in ${r.chains} chains across ${r.tables} table${r.tables === 1 ? "" : "s"}` +
+    /* `1 chains across 1 table` was half right, which reads worse than being
+       wrong twice. A tool whose argument is that it is precise about what it
+       found cannot be sloppy about how it says it. */
+    const plural = (count, one, more) => `${count} ${count === 1 ? one : more}`;
+    L.push(`  ${plural(r.rules, "rule", "rules")} in ${plural(r.chains, "chain", "chains")}` +
+           ` across ${plural(r.tables, "table", "tables")}` +
            `  ·  round-trip ${t.reproduced}/${t.lines} = ${pct}%` +
-           (r.unparsed ? `  ·  ${C.warn(r.unparsed + " lines not understood")}` : ""));
+           (r.unparsed
+             ? `  ·  ${C.warn(plural(r.unparsed, "line", "lines") + " not understood")}`
+             : ""));
     const n = (s) => r.findings.filter((f) => f.severity === s).length;
     const many = (k, word) => `${n(k)} ${word}${n(k) === 1 ? "" : "s"}`;
     L.push(`  ${C.error(many("error", "error"))}  ${C.warn(many("warn", "warning"))}  ${C.hint(many("hint", "hint"))}`);
