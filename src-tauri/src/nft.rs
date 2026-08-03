@@ -97,6 +97,24 @@ impl Target {
 /// blamed the host. This is that same list, said out loud.
 const SBIN_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
+/// Spawn without giving the child a console of its own.
+///
+/// `windows_subsystem = "windows"` makes *this* process windowless and says
+/// nothing about what it starts. `ssh.exe` is a console application, so
+/// Windows obligingly builds it a console — and a conhost window appears
+/// behind the app, for every call. Two of them at launch, because the boot
+/// asks the host twice: once whether it is reachable and once whether a
+/// rollback is pending. Nothing was wrong with the firewall; the flashing was
+/// the tool talking to it.
+#[cfg(windows)]
+fn no_console(c: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    /* CREATE_NO_WINDOW */
+    c.creation_flags(0x0800_0000);
+}
+#[cfg(not(windows))]
+fn no_console(_: &mut Command) {}
+
 /// The inherited PATH with the sbin directories added, and nothing removed.
 ///
 /// Adding rather than replacing: on Windows and macOS the inherited one is the
@@ -176,7 +194,8 @@ fn run(target: &Target, cmd: &[&str], stdin: Option<&str>) -> Outcome {
         return Outcome::failed(e);
     }
     let (program, args) = argv(target, cmd);
-    let mut child = match Command::new(&program)
+    let mut cmdline = Command::new(&program);
+    cmdline
         .args(&args)
         /* The same gap on this side of the wire: a desktop launcher hands an
         application the session PATH, which on Linux is a normal user's and so
@@ -189,9 +208,9 @@ fn run(target: &Target, cmd: &[&str], stdin: Option<&str>) -> Outcome {
             Stdio::null()
         })
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
+        .stderr(Stdio::piped());
+    no_console(&mut cmdline);
+    let mut child = match cmdline.spawn() {
         Ok(c) => c,
         Err(e) => {
             return Outcome::failed(format!(
@@ -477,12 +496,15 @@ pub fn nft_watch(app: AppHandle, target: Target) -> Outcome {
     nft_unwatch();
 
     let (program, args) = argv(&target, &["nft", "monitor", "ruleset"]);
-    let child = Command::new(&program)
+    let mut cmdline = Command::new(&program);
+    cmdline
         .args(&args)
+        .env("PATH", local_path())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
+        .stderr(Stdio::piped());
+    no_console(&mut cmdline);
+    let child = cmdline.spawn();
 
     let mut child = match child {
         Ok(c) => c,

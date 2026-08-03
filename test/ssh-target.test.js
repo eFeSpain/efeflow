@@ -123,3 +123,31 @@ test("the local PATH is added to, never replaced", () => {
   assert.match(fn, /format!\("\{p\}\{sep\}\{SBIN_PATH\}"\)/, "and append rather than overwrite");
   assert.match(fn, /cfg!\(windows\)/, "on Windows the sbin list means nothing and must not be added");
 });
+
+/* ── the windows nobody asked for ────────────────────────────────────────
+ *
+ * `windows_subsystem = "windows"` makes this process windowless and says
+ * nothing about what it starts. `ssh.exe` is a console application, so Windows
+ * builds it a console — and a conhost window flashes up behind the app on
+ * every call. Two of them at launch, because the boot asks the host twice:
+ * once whether it is reachable, once whether a rollback is pending.
+ *
+ * Reported as "it slows down and a couple of cmd windows open behind it".
+ * Nothing was wrong with the firewall; the flashing was the tool talking to
+ * it. Measured after the fix: zero console windows across a whole launch. */
+
+test("nothing spawned gets a console window of its own", () => {
+  assert.match(RS, /#\[cfg\(windows\)\]\s*\nfn no_console/,
+    "nft.rs no longer has a windows-only console suppressor");
+  assert.match(RS, /creation_flags\(0x0800_0000\)/,
+    "CREATE_NO_WINDOW is what keeps conhost from drawing a window");
+  assert.match(RS, /#\[cfg\(not\(windows\)\)\]\s*\nfn no_console/,
+    "and it has to be a no-op elsewhere, or the crate stops building");
+});
+
+test("every spawn goes through it, not just the one that was noticed", () => {
+  const spawns = [...RS.matchAll(/Command::new\(/g)].length;
+  const guarded = [...RS.matchAll(/no_console\(&mut \w+\)/g)].length;
+  assert.equal(guarded, spawns,
+    `${spawns} places spawn a process and ${guarded} suppress the console`);
+});
