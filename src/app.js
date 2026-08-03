@@ -13,7 +13,7 @@ import { parseNft, parseRule, verify, normalise } from "./core/parse.js";
 import { analyse, worstCase, criteria } from "./core/analyse.js";
 import { evaluate, matches, inSet, inCidr, PRESETS, PATHS, packet } from "./core/simulate.js";
 import { diffLines } from "./core/diff.js";
-import { PRIO_NAME, NAME_PRIO } from "./core/priority.js";
+import { PRIO_NAME, NAME_PRIO, readPriority } from "./core/priority.js";
 import { PROJECT, project, setProject, serialise, deserialise } from "./core/project.js";
 import { SAMPLES, sampleById } from "./core/samples.js";
 import { TOUR, tourStep } from "./core/tour.js";
@@ -612,8 +612,25 @@ renderChains();
 RERENDER.push(()=>{ renderChains(); drawWires(); });
 
 /* connectors follow the real packet path + explicit jumps, both derived */
-const HOOK_FLOW = [["prerouting","input"],["prerouting","forward"],
-                   ["forward","postrouting"],["output","postrouting"]];
+/* The packet path, drawn — and it is the same path core/simulate.js walks, so
+   the screen and the trace cannot come to order the hooks differently.
+ *
+ * Two things were wrong with the pairs this replaces. `ingress` and `egress`
+ * had columns of their own but nothing joining them to anything, so a netdev
+ * chain sat beside the path rather than on it. And a pair only drew a wire
+ * when both its hooks had chains, so an empty hook in the middle broke the
+ * line: a ruleset with input and forward and no prerouting — which is most of
+ * them — showed no wire between hooks at all. Consecutive here means the next
+ * hook that has a chain, not the next one on the list. */
+function hookFlow(){
+  const has = h => MODEL.chains.some(c => c.hook === h);
+  const out = new Set();
+  for(const path of Object.values(PATHS)){
+    const live = path.flat().filter(has);
+    for(let i = 1; i < live.length; i++) out.add(live[i-1] + ">" + live[i]);
+  }
+  return [...out].map(k => k.split(">"));
+}
 function links(){
   const out = [];
   const inHook = h => MODEL.chains.filter(c=>c.hook===h).sort((a,b)=>a.prio-b.prio);
@@ -623,7 +640,7 @@ function links(){
     for(let i=1;i<cs.length;i++) out.push([UID(cs[i-1]), UID(cs[i]), false]);
   });
   /* between hooks, the last chain of one feeds the first of the next */
-  HOOK_FLOW.forEach(([a,b])=>{
+  hookFlow().forEach(([a,b])=>{
     const A = inHook(a).at(-1), B = inHook(b)[0];
     if(A && B) out.push([UID(A), UID(B), false]);
   });
@@ -4140,7 +4157,9 @@ function chSync(){
   const onDev = base && ON_DEVICE(d.hook);
   $("#ch-dev-fld").style.display = onDev ? "" : "none";
 
-  const prio = /^-?\d+$/.test(d.prio) ? +d.prio : (PRIO_NAME[d.prio] ?? 0);
+  /* what generate.js will write, which is the text when there is one */
+  const p = readPriority(d.prio);
+  const prio = p.name ?? p.prio;
   const dev = onDev ? deviceClause(d.dev) : "";
   $("#ch-preview").innerHTML = highlight(
     `table ${d.table || "?"} { chain ${d.id || "?"} { ` +
@@ -4189,7 +4208,9 @@ function openChain(uid){
      wrapped again on save */
   $("#ch-dev").value = (ch?.dev || "").replace(/^device\s+/, "")
     .replace(/^devices\s*=\s*\{\s*|\s*\}$/g, "").replace(/"/g, "");
-  $("#ch-prio").value  = ch && ch.prio !== null ? String(ch.prio) : "0";
+  /* nft prints a priority by name, so every imported chain carries one and
+     showing the number instead threw away the text the file has to keep */
+  $("#ch-prio").value  = ch?.prioName ?? (ch && ch.prio !== null ? String(ch.prio) : "0");
   $("#ch-policy").value = ch?.policy || "accept";
   /* both live in ch.extra, the verbatim list of chain statements that are not rules */
   $("#ch-comment").value = ((ch?.extra||[]).find(l=>/^comment /.test(l))||"").replace(/^comments+"?|"$/g, "");
@@ -4216,7 +4237,11 @@ $("#ch-offload").addEventListener("click", ()=>chSync());
 $("#ch-save").addEventListener("click", ()=>{
   const d = chDraft();
   const base = d.kind === "base";
-  const prio = /^-?\d+$/.test(d.prio) ? +d.prio : (PRIO_NAME[d.prio] ?? 0);
+  /* Both halves, or the two disagree: the panel wrote the number and left the
+     text alone, so moving an imported chain from `priority filter` to 50 moved
+     it on the canvas and changed nothing in the export. Typing a number is how
+     the name comes off. */
+  const { prio, name: prioName } = readPriority(d.prio);
   const uid = chEditing;
   edit(uid ? t("edit chain","editar cadena") : t("new chain","cadena nueva"), ()=>{
     const ch = uid ? chainOf(uid) : {rules:[]};
@@ -4225,6 +4250,7 @@ $("#ch-save").addEventListener("click", ()=>{
       hook: base ? d.hook : null,
       dev: base && ON_DEVICE(d.hook) ? deviceClause(d.dev) : null,
       prio: base ? prio : null,
+      prioName: base ? prioName : null,
       type: base ? d.type : "regular",
       policy: base ? d.policy : null,
       /* everything else in extra is kept as it came; only these two are ours */
