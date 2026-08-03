@@ -1,25 +1,76 @@
 /* Evaluates a synthetic packet against the same model the code is
    emitted from, so a verdict here is the verdict the export produces. */
 import { MODEL, UID, chainOf, jumpTarget, expand } from './model.js';
-import { inCidr, family, looksLikeAddr } from './addr.js';
+import { inCidr, family, looksLikeAddr, toBig } from './addr.js';
 import { isDormant } from './tables.js';
 export { inCidr };
 
 const setOf = n => (MODEL.sets.find(s=>s.n===n)||{el:[]}).el;
-export function inSet(v,name){
-  const el = setOf(name);
-  /* an element is a port, an address or a prefix, or a name — and only the
-     middle kind is a containment question */
-  return el.some(e => looksLikeAddr(e) ? inCidr(String(v), e) : e === String(v));
+
+const unquote = s => String(s ?? "").trim().replace(/^"([^"]*)"$/, "$1");
+
+/* An element of a set carries its own attributes when the kernel is keeping
+   them: `elements = { 203.0.113.0/24 timeout 30m, 198.51.100.7 }`, which is
+   the shape fail2ban and friends write and exactly what a live host prints
+   back. Compared whole, the element never matched anything again. */
+const bare = e => unquote(String(e ?? "").trim()
+  .replace(/\s+(timeout|expires|comment)\s+\S+.*$/, "").trim());
+
+/* `9000-9100`, `10.0.0.1-10.0.0.9`: nftables writes an inclusive range with a
+   dash, and both ends have to be the same kind of thing for it to be one.
+   Without this test an interface called `wan0-guest` reads as a range. */
+const isRange = (a, b) =>
+  (/^\d+$/.test(a) && /^\d+$/.test(b)) || (looksLikeAddr(a) && looksLikeAddr(b));
+
+function between(v, lo, hi){
+  if(/^\d+$/.test(lo)) return /^\d+$/.test(v) && +v >= +lo && +v <= +hi;
+  const n = toBig(v), a = toBig(lo), b = toBig(hi);
+  if(n === null || a === null || b === null) return false;
+  /* an address of one family is never inside a range of the other */
+  return family(v) === family(lo) && n >= a && n <= b;
 }
-export function matchVal(v, tok){
+
+/**
+ * One value against one thing the language can compare it to: a port, an
+ * address, a prefix, a range, a name.
+ *
+ * Sets, braced lists and bare tokens each used to carry their own half of
+ * this, and none of the three halves knew about ranges — so `udp dport
+ * 5060-5070` was a certain miss, in a rule the matcher was confident it had
+ * understood. Recognising the shape and then comparing it wrongly is the one
+ * failure mode `unmodelled()` cannot catch, because nothing was left over to
+ * report. One function, so a shape learned once is learned everywhere.
+ */
+export function atom(v, tok){
+  const t = bare(tok);
+  if(!t) return false;
+  const s = String(v);
+  const dash = t.match(/^([^\s-]+)\s*-\s*([^\s-]+)$/);
+  if(dash && isRange(dash[1], dash[2])) return between(s, dash[1], dash[2]);
+  if(t.includes("/") || looksLikeAddr(t)) return inCidr(s, t);
+  return s === t;
+}
+
+/* An interface name, which is the one place nftables takes a wildcard: a
+   trailing `*` is a prefix match, and it is how a single rule covers veth0,
+   veth1 and every container that does not exist yet. Compared as text it
+   matched nothing at all. */
+export function nameAtom(v, tok){
+  const t = bare(tok);
+  const s = String(v ?? "");
+  return t.endsWith("*") ? s.startsWith(t.slice(0, -1)) : s === t;
+}
+
+const items = tok => tok.slice(1, -1).split(",").map(s => s.trim()).filter(Boolean);
+
+export function inSet(v, name, cmp = atom){
+  return setOf(name).some(e => cmp(v, e));
+}
+export function matchVal(v, tok, cmp = atom){
   if(!v && v!==0) return false;
-  if(tok.startsWith("@")) return inSet(v, tok.slice(1));
-  if(tok.startsWith("{"))
-    return tok.slice(1,-1).split(",").map(s=>s.trim())
-      .some(e => looksLikeAddr(e) ? inCidr(String(v), e) : e === String(v));
-  if(tok.includes("/") || looksLikeAddr(tok)) return inCidr(String(v),tok);
-  return String(v)===tok;
+  if(tok.startsWith("@")) return inSet(v, tok.slice(1), cmp);
+  if(tok.startsWith("{")) return items(tok).some(e => cmp(v, e));
+  return cmp(v, tok);
 }
 
 /* An interface constraint has four spellings and they all mean the same thing
@@ -34,13 +85,8 @@ export function matchVal(v, tok){
    names iif as a key of the lookup, not as a constraint on the interface, and
    reading it as one compared the packet's iif against the string "oif". */
 const IFACE_RE = dir => new RegExp(`(?<!\\.\\s)\\b(?:meta\\s+)?${dir}(?:name)?\\s+(!=\\s*)?("[^"]*"|\\{[^}]*\\}|@?\\S+)`);
-const unquote = s => s.replace(/^"([^"]*)"$/, "$1");
-function matchIface(v, tok){
-  if(tok.startsWith("@")) return inSet(v, tok.slice(1));
-  if(tok.startsWith("{"))
-    return tok.slice(1,-1).split(",").map(s=>unquote(s.trim())).filter(Boolean).includes(String(v));
-  return String(v ?? "") === unquote(tok);
-}
+/* names, not values: an interface is never a range and may carry a wildcard */
+const matchIface = (v, tok) => matchVal(v ?? "", tok, nameAtom);
 
 const ADDR_RE = dir => new RegExp(`\\b(ip6?)\\s+${dir}\\s+(!=\\s*)?(\\{[^}]*\\}|\\S+)`);
 /* A rule that names one family cannot match a packet of the other, whatever

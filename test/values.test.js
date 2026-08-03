@@ -1,0 +1,126 @@
+/* Every shape nftables can write a value in, against a packet that should or
+ * should not match it.
+ *
+ * This file exists because of how the `$WAN` bug was found and what it implied.
+ * The evaluator has two ways of not understanding something. If it does not
+ * recognise the construct, `unmodelled()` reports it and the verdict is marked
+ * as a guess — that path is honest and it works. But if a matcher *does*
+ * recognise the shape and then compares the value wrongly, nothing is left
+ * over to report, so the screen shows a confident wrong answer. There is no
+ * net under that one.
+ *
+ * So the question worth asking was not "is there another bug" but "what else
+ * does a matcher accept and then compare as text". The answer was four things,
+ * and they were all in production rulesets:
+ *
+ *   udp dport 5060-5070            a port range never matched
+ *   ip saddr 10.0.0.1-10.0.0.9     nor an address range
+ *   iifname "veth*"                nor a wildcard, on any host running containers
+ *   elements = { 1.1.1.1 timeout 30m }   nor a set element the kernel timestamps
+ *
+ * Sets, braced lists and bare tokens each carried their own half of the
+ * comparison and no half knew about any of it. They go through one function
+ * now, so a shape learned once is learned everywhere.
+ *
+ * The negative cases are the point as much as the positive ones: a range that
+ * matches everything is not a fix, it is the same bug facing the other way. */
+import test from "node:test";
+import assert from "node:assert/strict";
+import { MODEL } from "../src/core/model.js";
+import { matches, unmodelled } from "../src/core/simulate.js";
+
+const PKT = {
+  dir: "in", iif: "wan0", oif: "", saddr: "203.0.113.48", daddr: "198.51.100.10",
+  sport: 49812, dport: 9038, proto: "tcp", state: "new", tracked: true, nat: true,
+  flags: ["syn"],
+};
+
+const SETS = [
+  { n: "ports", el: ["9000-9100"] },
+  { n: "nets", el: ["203.0.113.0/24 timeout 30m", "198.51.100.7"] },
+  { n: "ifs", el: ["veth*", "wan0"] },
+  { n: "plain", el: ["9038", "22"] },
+];
+
+const load = () =>
+  Object.assign(MODEL, { chains: [], sets: SETS, objects: [], tables: [], prelude: [] });
+
+/** true/false, and whether anything was left unread while deciding. */
+function check(expr, packet = PKT) {
+  load();
+  return { hit: matches({ expr }, packet), unread: unmodelled(expr) };
+}
+
+const hits = (expr, want, packet) =>
+  test(`${want ? "matches" : "misses"}: ${expr}`, () => {
+    const { hit, unread } = check(expr, packet);
+    assert.equal(hit, want,
+      unread.length ? `decided while not reading ${JSON.stringify(unread)}` : "wrong answer");
+  });
+
+/* ── port ranges ─────────────────────────────────────────────────────────── */
+
+hits("tcp dport 9038", true);
+hits("tcp dport 9000-9100", true);
+hits("tcp dport { 80, 9000-9100 }", true);
+hits("tcp dport 1-65535", true);
+hits("tcp dport @ports", true);
+hits("tcp dport 9100-9200", false);
+hits("tcp dport 9039-9100", false);
+hits("tcp dport != 9000-9100", false);
+/* the boundaries are inclusive, which is what nft means by a range */
+hits("tcp dport 9038-9038", true);
+hits("udp dport 9000-9100", false, { ...PKT, proto: "tcp" });
+
+/* ── address ranges ──────────────────────────────────────────────────────── */
+
+hits("ip saddr 203.0.113.1-203.0.113.99", true);
+hits("ip saddr 203.0.113.60-203.0.113.99", false);
+hits("ip saddr { 1.1.1.1, 203.0.113.1-203.0.113.99 }", true);
+/* a range of one family is never a constraint on the other */
+hits("ip6 saddr 2001:db8::1-2001:db8::ff", false);
+hits("ip6 saddr 2001:db8::1-2001:db8::ff", true,
+  { ...PKT, saddr: "2001:db8::42", daddr: "2001:db8::1" });
+
+/* ── interface wildcards ─────────────────────────────────────────────────── */
+
+hits('iifname "wan*"', true);
+hits('iifname "w*"', true);
+hits('iifname "lan*"', false);
+hits('iifname "wan01*"', false);
+hits('iifname { "veth*", "wan*" }', true);
+hits('iifname { "veth*", "lan0" }', false);
+hits('iifname != "veth*"', true);
+hits("iifname @ifs", true);
+hits("iifname @ifs", true, { ...PKT, iif: "veth7a3f" });
+hits("iifname @ifs", false, { ...PKT, iif: "eth0" });
+
+/* A name is not a range. `wan0-guest` is one interface, and reading the dash
+   as nftables' range syntax would have made it two things and matched
+   neither. */
+hits('iifname "wan0-guest"', true, { ...PKT, iif: "wan0-guest" });
+hits('iifname "wan0-guest"', false);
+
+/* ── elements the kernel has attached its own bookkeeping to ─────────────── */
+
+/* `elements = { 203.0.113.0/24 timeout 30m }` is what a live host prints back
+   for any set with timeouts, and the shape fail2ban writes. Compared whole,
+   the element stopped matching the moment the kernel touched it. */
+test("a set element carrying a timeout still matches", () => {
+  assert.equal(check("ip saddr @nets").hit, true);
+  assert.equal(check("ip saddr @nets", { ...PKT, saddr: "10.0.0.1" }).hit, false);
+});
+
+/* ── and the honest path is still honest ─────────────────────────────────── */
+
+/* None of the above may come at the cost of the other half of the bargain:
+   what the evaluator cannot read, it still says it cannot read. */
+test("a construct nothing models is still reported rather than guessed at", () => {
+  const { unread } = check("meta mark 0x1 tcp dport 9038");
+  assert.deepEqual(unread, ["meta mark 0x1"]);
+});
+
+test("a value shape that is understood leaves nothing unread", () => {
+  for (const e of ["tcp dport 9000-9100", 'iifname "wan*"', "ip saddr @nets"])
+    assert.deepEqual(check(e).unread, [], e);
+});
