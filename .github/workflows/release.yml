@@ -71,8 +71,10 @@ jobs:
 
       - run: npm ci
 
-      # Regenerate the full icon set, including the .icns we cannot produce
-      # on Windows.
+      # The icon set is derived from assets/app.png and is not in the repository.
+      # tauri-action runs `tauri build` directly rather than `npm run app:build`,
+      # so it never reaches the guard that generates them — this step is what
+      # puts them there, and without it the bundle has no icons to package.
       - name: Icons
         run: npx tauri icon assets/app.png
 
