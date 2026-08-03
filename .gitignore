@@ -21,3 +21,8 @@ Thumbs.db
 
 # left behind only if the GIF recorder crashes mid-run
 .gif-tmp/
+
+# scratch harnesses: dotfiles are not covered by the rules above, and one
+# swept eight of them into a commit along with the address of a test machine
+.*.mjs
+.vm*
