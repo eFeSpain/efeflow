@@ -64,6 +64,24 @@ one level up.
 Worth knowing before widening it: the finding is only as good as the offer
 attached to it, and every finding here carries a fix.
 
+Because that Delete button is the one place a finding can destroy something,
+`subsumes()` is checked twice over. Every `shadowed` finding this repo can
+produce — five, across the samples, both fixtures and a real edge firewall —
+was stood up in a network namespace, given a packet built from the dead rule's
+own criteria, and watched: none fired, and a witness chain on the same hook
+proved the packet arrived rather than dying somewhere upstream. Five is not
+many, and that is the limit of asking a kernel: real rulesets are not written
+to trip an analyser.
+
+So `test/subsumption.test.js` asks the same question of a grid built to trip
+it. `subsumes()` and `matches()` are separate modules that never speak, and the
+claim "A catches everything of B" has a consequence the evaluator can be held
+to: no packet matches B without matching A. Eight hundred-odd claims, three
+hundred packets each, all seeded so a counterexample is reproducible from its
+message. The second test in that file points the same fuzzer at pairs that are
+*not* subsumptions and requires it to refute every one — a lens that cannot see
+a defect agrees with everything.
+
 ## Emission carries provenance
 
 `generateWithMap()` returns the lines and a parallel array saying which rule
@@ -73,7 +91,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 840 assertions.
+`npm test` — 877 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across
@@ -98,6 +116,7 @@ running app:
 | `ui-roundtrip-panel` | a panel that rewrites what it was opened to read |
 | `ssh-target` | a way to reach a host that does not validate where it is going |
 | `rollback-script` | the arm script losing the copy it exists to protect |
+| `names` | a chain called `log`, which parses, round-trips, and will not load |
 
 The interface layer exists because a green core suite is not evidence that the
 product works. The packet simulator once shipped broken while all 18 core tests
@@ -210,6 +229,62 @@ what it is — the destination port *of a TCP packet*. The standalone matcher ha
 always checked the protocol; the concatenation table, added later, did not. No
 test here would have found it, because every one of them is this project
 stating what nftables does.
+
+### Lenses, for the half a kernel cannot reach
+
+Asking nftables works where a packet can be built and a counter read. It does
+not scale: the oracle compares a few hundred answers, and the bug family it
+exists for — a matcher that recognises a shape and compares it wrongly — has no
+natural boundary to sweep.
+
+`test/lens.test.js` asks a different kind of question, one the evaluator can be
+held to without a kernel, because it is about the evaluator agreeing with
+itself:
+
+- **conjunction** — `A B` must be `A` and `B`. Two matches on different header
+  fields have no other meaning available to them, so a disagreement is one
+  regex reading the other's tokens.
+- **order** — `A B` must be `B A`. nft accepts either; a matcher anchored on
+  what happened to precede it does not.
+- **spelling** — one value written bare, braced and as a set is one value.
+
+That third one is where four bugs lived at once: a port range, an address
+range, an interface wildcard and a set element the kernel had timestamped, each
+compared as text by a different code path, none of which knew about the others.
+
+Both bugs the kernel found were the first kind. `meta l4proto != tcp` had the
+bare-protocol matcher reading `tcp` out of the middle of somebody else's match
+and demanding the packet be TCP, which turned the negation into its opposite;
+`fib saddr . iif oif missing` had the interface matcher comparing the packet's
+`oif` against the literal string `"oif"`. Both cost a kernel, a namespace and a
+veth pair to find. Both would have fallen out of a conjunction check in
+milliseconds.
+
+Each lens ends with a test that fails the lens rather than the code: cases a
+matcher built from independent regexes gets wrong, which must come out false.
+A lens with nothing behind it agrees with everything and passes forever.
+
+### Fragments, measured
+
+Worth writing down because nothing about it is guessable, and it decides
+whether a port filter filters:
+
+| where | what arrives |
+|---|---|
+| `input`, any family | one whole datagram — the IP stack reassembles before local delivery, always |
+| `prerouting` / `forward`, no conntrack anywhere | every fragment, separately |
+| `prerouting` / `forward`, with any `ct` rule | one whole datagram — conntrack registers defrag at priority −400 |
+| `netdev` `ingress` | every fragment, always; it runs before all of it |
+
+The middle two rows are the ones that matter. On the bench, a 4000-byte UDP
+datagram over a 1500-byte link arrived as three fragments, and `udp dport 9999`
+at `forward` matched one of four packets — three crossed a port filter written
+to stop them. One `ct state` rule anywhere in the ruleset closed it.
+
+None of this changes what the evaluator answers, because the packet the
+interface describes is a whole datagram: it carries ports and flags, so its
+fragment offset is zero and it is not a later fragment. Saying so is definite
+and correct. `test/forward.test.js` holds it there.
 
 `test/fixtures/flawed.nft` is reported as skipped there and always will be:
 its element list is abbreviated to a comment, so nft refuses it. That is
