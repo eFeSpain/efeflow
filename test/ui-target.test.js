@@ -48,8 +48,14 @@ test("a saved target is remembered and described in the chip", async () => {
 
   assert.equal(target.kind, "ssh");
   assert.equal(target.host, "edge.example.net");
-  assert.match($("#tb-target-t").textContent, /edge\.example\.net/);
   assert.match(localStorage.getItem("efeflow.target") || "", /edge\.example\.net/);
+
+  /* Saving contacts it, and here nothing answers — a browser has no nft. So
+     the chip may not name the host: on the real app that reading was
+     indistinguishable from a host that was up. It is remembered, and it is in
+     the tooltip; it is simply not claimed until it has answered. */
+  assert.doesNotMatch($("#tb-target-t").textContent, /edge\.example\.net/);
+  assert.match($("#tb-target").title, /edge\.example\.net/);
 });
 
 test("testing a target reports why it failed instead of doing nothing", async () => {

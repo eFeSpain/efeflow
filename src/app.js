@@ -3512,7 +3512,9 @@ async function exportChecked(){
   /* only the nft formats are something nft can be asked about */
   const nftSource = /\.nft$/.test(p.name);
   if(wanted && nftSource && REACH?.ok){
-    const r = await native.nftCheck(p.text, asTauriTarget());
+    const r = await reaching(
+      t(`checking on ${describe()}…`, `comprobando en ${describe()}…`),
+      ()=> native.nftCheck(p.text, asTauriTarget()));
     if(!r.ok){
       toast(t(`nft -c refused it on ${describe()} — nothing was written`,
               `nft -c lo rechazó en ${describe()} — no se ha escrito nada`));
@@ -4479,9 +4481,12 @@ export function paintTargetChip(state){
      tooltip — the saved host is remembered, it is simply not being claimed. */
   label.textContent = state === null
     ? t("not connected", "sin conectar")
-    : target.kind === "ssh"
-      ? describe()
-      : state?.ok ? state.version : t("no local nft","sin nft local");
+    : !state.ok
+      /* and a host that was asked and did not answer may not be named either:
+         the only thing separating "efe@192.0.2.1" reachable from the same
+         eight seconds of timeout was the colour of a six-pixel dot */
+      ? target.kind === "ssh" ? t("no answer","sin respuesta") : t("no local nft","sin nft local")
+      : target.kind === "ssh" ? describe() : state.version;
 
   if(state?.ok){
     chip.classList.add(target.kind === "ssh" ? "remote" : "live");
@@ -4490,7 +4495,7 @@ export function paintTargetChip(state){
     chip.title = t(`Will use ${describe()} when something needs it. Click to connect or change it.`,
                    `Usará ${describe()} cuando algo lo necesite. Pulsa para conectar o cambiarlo.`);
   } else {
-    chip.title = (state?.why ? state.why + " · " : "")
+    chip.title = `${describe()} — ` + (state?.why ? state.why + " · " : "")
       + t("click to choose where nft runs", "pulsa para elegir dónde se ejecuta nft");
   }
 }
@@ -4529,8 +4534,54 @@ function paintHostStatus(state){
   if(ab) ab.textContent = said;
 }
 
+/* ── saying that a machine is being contacted ────────────────────────────
+ *
+ * Nothing here was ever quick. ssh sits out its eight-second ConnectTimeout on
+ * a host that is away, and `nft list ruleset` over a link that is merely slow
+ * takes as long as it takes. Until now all of that happened in silence, and
+ * eight seconds of an interface that says nothing is indistinguishable from
+ * one that has stopped: "connecting over ssh shows nothing and blocks
+ * everything".
+ *
+ * The blocking half was real and was in the backend — the commands were
+ * declared `fn` rather than `async fn`, which serialises them, so a probe of an
+ * unreachable host held every other call behind it (measured: 7743ms for one
+ * that answers instantly). That is fixed in nft.rs. This is the other half:
+ * the chip is where the target lives, so the chip is where it says it is being
+ * contacted, and it stays saying so until the last call in flight comes back.
+ *
+ * Counted rather than a flag, because refreshTarget is two calls and the
+ * first finishing does not mean the interface is idle. */
+let REACHING = 0;
+async function reaching(said, run){
+  const chip = $("#tb-target"), label = $("#tb-target-t");
+  if(REACHING++ === 0 && chip){
+    chip.classList.add("busy");
+    if(label) label.textContent = said;
+  }
+  try { return await run(); }
+  finally {
+    if(--REACHING === 0 && chip){
+      chip.classList.remove("busy");
+      paintTargetChip(REACH);   // whatever the answer turned out to be
+    }
+  }
+}
+
+/** Keep a button from being pressed again while its own call is still out. */
+async function whilePressed(btn, said, run){
+  if(!btn) return run();
+  const was = btn.textContent, off = btn.disabled;
+  btn.disabled = true;
+  if(said) btn.textContent = said;
+  try { return await run(); }
+  finally { btn.disabled = off; btn.textContent = was; }
+}
+
 async function refreshTarget(){
-  REACH = await probe();
+  REACH = await reaching(
+    t(`contacting ${describe()}…`, `contactando con ${describe()}…`),
+    () => probe());
   paintTargetChip(REACH);
   paintHostStatus(REACH);
   if($("#scrim-apply")?.classList.contains("on")) paintApplyForm();
@@ -4538,7 +4589,9 @@ async function refreshTarget(){
   /* A window closed mid-countdown leaves a host counting down alone. Nothing
      is broken by that — it restores, which is the point — but arriving to a
      firewall that is about to change under you deserves to be said out loud. */
-  if(REACH.ok && !APPLY.timer && await pendingRollback({target: asTauriTarget()}))
+  if(REACH.ok && !APPLY.timer && await reaching(
+      t(`asking ${describe()}…`, `preguntando a ${describe()}…`),
+      () => pendingRollback({target: asTauriTarget()})))
     toast(t(`${describe()} has a rollback pending — it will restore its previous ruleset`,
             `${describe()} tiene un rollback pendiente — restaurará su ruleset anterior`));
 }
@@ -4622,8 +4675,11 @@ $("#tg-test").addEventListener("click", async ()=>{
   const box = $("#tg-result");
   box.style.display = "";
   box.className = "tg-result busy";
-  box.textContent = t("Asking nft…","Preguntando a nft…");
-  const r = await probe(tgDraft);
+  /* named, because the wait is the host's and eight seconds of "Asking nft…"
+     against a host that is away reads as the button having done nothing */
+  box.textContent = t(`Contacting ${describe(tgDraft)}…`,
+                      `Contactando con ${describe(tgDraft)}…`);
+  const r = await whilePressed($("#tg-test"), null, ()=> probe(tgDraft));
   box.className = "tg-result " + (r.ok ? "ok" : "bad");
   box.textContent = r.ok
     ? t(`Reachable · ${r.version}`, `Accesible · ${r.version}`)
@@ -4639,18 +4695,30 @@ $("#tg-save").addEventListener("click", async ()=>{
 
 /* ── the two things a target is for ── */
 $("#imp-host")?.addEventListener("click", async ()=>{
-  const r = await native.nftList(asTauriTarget());
+  const r = await whilePressed($("#imp-host"), t("Reading…","Leyendo…"),
+    ()=> reaching(t(`reading ${describe()}…`, `leyendo ${describe()}…`),
+                  ()=> native.nftList(asTauriTarget())));
   if(!r.ok){ toast(r.stderr.trim().split("\n")[0] || t("could not read","no se pudo leer")); return; }
+  /* A machine with no firewall loaded answers with nothing, and nothing is a
+     perfectly good answer — but "Read from fw01" over an empty textarea reads
+     as a success with the result hidden somewhere, and the Import button then
+     stays disabled for a reason nobody has been told. Say which of the two it
+     was. */
+  const lines = r.stdout.split("\n").filter(l=>l.trim()).length;
+  if(!lines){
+    toast(t(`${describe()} has no ruleset loaded — there is nothing to read`,
+            `${describe()} no tiene ningún ruleset cargado — no hay nada que leer`));
+    return;
+  }
   $("#imp-text").value = r.stdout;
   $("#imp-text").dispatchEvent(new Event("input", {bubbles:true}));
-  toast(t(`Read from ${describe()}`, `Leído de ${describe()}`));
+  toast(t(`Read ${lines} lines from ${describe()}`, `Leídas ${lines} líneas de ${describe()}`));
 });
 
 $("#val-nft")?.addEventListener("click", async ()=>{
-  const btn = $("#val-nft"), was = btn.textContent;
-  btn.textContent = t("Checking…","Comprobando…");
-  const r = await native.nftCheck(generate().join("\n"), asTauriTarget());
-  btn.textContent = was;
+  const r = await whilePressed($("#val-nft"), t("Checking…","Comprobando…"),
+    ()=> reaching(t(`checking on ${describe()}…`, `comprobando en ${describe()}…`),
+                  ()=> native.nftCheck(generate().join("\n"), asTauriTarget())));
   const box = $("#val-nft-out");
   box.style.display = "";
   box.className = "nft-out " + (r.ok ? "ok" : "bad");
@@ -4790,16 +4858,15 @@ $$("#ap-window [data-secs]").forEach(b=>b.addEventListener("click", ()=>{
 }));
 
 $("#ap-go")?.addEventListener("click", async ()=>{
-  const btn = $("#ap-go"), was = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = t("Applying…","Aplicando…");
-  const r = await applyWithNet({
-    ruleset: generate(MODEL, {scope: APPLY.scope}).join("\n"),
-    target: asTauriTarget(),
-    seconds: APPLY.secs,
-  });
-  btn.disabled = false;
-  btn.textContent = was;
+  /* three round trips on a bad day — arm, check, load — and the last of them
+     is the one that can take the link out from under itself */
+  const r = await whilePressed($("#ap-go"), t("Applying…","Aplicando…"),
+    ()=> reaching(t(`applying to ${describe()}…`, `aplicando en ${describe()}…`),
+      ()=> applyWithNet({
+        ruleset: generate(MODEL, {scope: APPLY.scope}).join("\n"),
+        target: asTauriTarget(),
+        seconds: APPLY.secs,
+      })));
 
   if(!r.ok){
     const warn = $("#ap-warn");
@@ -4835,7 +4902,9 @@ $("#ap-go")?.addEventListener("click", async ()=>{
 
 $("#ap-keep")?.addEventListener("click", async ()=>{
   stopCountdown();
-  const r = await keep({target: asTauriTarget()});
+  const r = await whilePressed($("#ap-keep"), t("Keeping…","Conservando…"),
+    ()=> reaching(t(`confirming on ${describe()}…`, `confirmando en ${describe()}…`),
+                  ()=> keep({target: asTauriTarget()})));
   $("#scrim-apply").classList.remove("on");
   toast(r.ok ? t(`Kept on ${describe()}`, `Conservado en ${describe()}`)
              : t(`Could not confirm — ${r.error}`, `No se pudo confirmar — ${r.error}`));
@@ -4843,7 +4912,9 @@ $("#ap-keep")?.addEventListener("click", async ()=>{
 
 $("#ap-rollback")?.addEventListener("click", async ()=>{
   stopCountdown();
-  const r = await rollBackNow({target: asTauriTarget()});
+  const r = await whilePressed($("#ap-rollback"), t("Rolling back…","Revirtiendo…"),
+    ()=> reaching(t(`restoring ${describe()}…`, `restaurando ${describe()}…`),
+                  ()=> rollBackNow({target: asTauriTarget()})));
   $("#scrim-apply").classList.remove("on");
   toast(r.ok ? t(`${describe()} is back on its previous ruleset`,
                  `${describe()} ha vuelto a su ruleset anterior`)

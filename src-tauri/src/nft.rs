@@ -241,30 +241,52 @@ fn run(target: &Target, cmd: &[&str], stdin: Option<&str>) -> Outcome {
 ///
 /// Both answers in one round trip, because both are wanted at the same moment
 /// and one of them is over a network. Tagged rather than positional: newer
+/// Run blocking work somewhere that is not the queue every command shares.
+///
+/// A `#[tauri::command]` declared `fn` rather than `async fn` is serialised
+/// with all the others, and every one of these ends in `wait_with_output` on a
+/// child that may be an ssh sitting out an eight-second ConnectTimeout.
+/// Measured: a `platform` call issued 300ms after a probe of an unreachable
+/// host came back in 7743ms — it had been queued behind it. The window kept
+/// painting, so it did not look frozen; it simply answered nothing until the
+/// timeout expired.
+async fn detached<F>(f: F) -> Outcome
+where
+    F: FnOnce() -> Outcome + Send + 'static,
+{
+    match tauri::async_runtime::spawn_blocking(f).await {
+        Ok(o) => o,
+        Err(e) => Outcome::failed(format!("the command could not be run: {e}")),
+    }
+}
+
 /// `nft --version` prints a block of build details under the version line, so
 /// "the second line" is not the kernel on every host.
 #[tauri::command]
-pub fn host_probe(target: Target) -> Outcome {
-    shell(
-        &target,
-        "set -e\n\
-         printf 'nft\\t'; nft --version | head -n 1\n\
-         printf 'kernel\\t'; uname -sr\n",
-    )
+pub async fn host_probe(target: Target) -> Outcome {
+    detached(move || {
+        shell(
+            &target,
+            "set -e\n\
+             printf 'nft\\t'; nft --version | head -n 1\n\
+             printf 'kernel\\t'; uname -sr\n",
+        )
+    })
+    .await
 }
 
 /// Read the live ruleset. `-a` includes handles, which we strip on import but
 /// which make the source recognisable to anyone who has run the command.
 #[tauri::command]
-pub fn nft_list(target: Target) -> Outcome {
-    run(&target, &["nft", "-a", "list", "ruleset"], None)
+pub async fn nft_list(target: Target) -> Outcome {
+    detached(move || run(&target, &["nft", "-a", "list", "ruleset"], None)).await
 }
 
 /// Validate without applying. This is the check that matters: our own analyser
 /// is an approximation, `nft -c` is the authority.
 #[tauri::command]
-pub fn nft_check(target: Target, ruleset: String) -> Outcome {
-    run(&target, &["nft", "-c", "-f", "-"], Some(&ruleset))
+pub async fn nft_check(target: Target, ruleset: String) -> Outcome {
+    detached(move || run(&target, &["nft", "-c", "-f", "-"], Some(&ruleset))).await
 }
 
 /// Change one rule of a running ruleset, addressed by its handle.
@@ -277,7 +299,7 @@ pub fn nft_check(target: Target, ruleset: String) -> Outcome {
 /// rather than trusted — everything else on this side is argv, but this one
 /// composes an nft command out of what a frontend sent.
 #[tauri::command]
-pub fn nft_rule_op(
+pub async fn nft_rule_op(
     target: Target,
     op: String,
     table: String,
@@ -304,10 +326,13 @@ pub fn nft_rule_op(
     } else {
         String::new()
     };
-    shell(
-        &target,
-        &format!("nft {op} rule {table} {chain} handle {handle}{body}\n"),
-    )
+    detached(move || {
+        shell(
+            &target,
+            &format!("nft {op} rule {table} {chain} handle {handle}{body}\n"),
+        )
+    })
+    .await
 }
 
 /// Single-quote for a POSIX shell: the only character that matters inside is
@@ -382,7 +407,7 @@ fn token() -> String {
 ///
 /// Returns the copy it took, so the caller can show what it would go back to.
 #[tauri::command]
-pub fn nft_arm(target: Target, seconds: u32) -> Outcome {
+pub async fn nft_arm(target: Target, seconds: u32) -> Outcome {
     // clamped here rather than trusted: this number is spliced into a script
     let secs = seconds.clamp(10, 3600);
     let tok = token();
@@ -416,26 +441,29 @@ pub fn nft_arm(target: Target, seconds: u32) -> Outcome {
            fi' </dev/null >/dev/null 2>&1 &\n\
          cat {ROLLBACK}\n"
     );
-    shell(&target, &script)
+    detached(move || shell(&target, &script)).await
 }
 
 /// Keep what is running. The scheduled restore finds no sentinel and does
 /// nothing; the copy is left behind on purpose, as the last known-good.
 #[tauri::command]
-pub fn nft_disarm(target: Target) -> Outcome {
-    shell(&target, &format!("rm -f {SENTINEL}\n"))
+pub async fn nft_disarm(target: Target) -> Outcome {
+    detached(move || shell(&target, &format!("rm -f {SENTINEL}\n"))).await
 }
 
 /// Is a rollback still pending on this host? Answers `armed` or `clear` so a
 /// window that was closed, or an editor that was restarted, can find out.
 #[tauri::command]
-pub fn nft_armed(target: Target) -> Outcome {
+pub async fn nft_armed(target: Target) -> Outcome {
     /* `-s` and not `-f`: the sentinel carries the token of the arming that owns
     it, and an empty one belongs to nobody */
-    shell(
-        &target,
-        &format!("if [ -s {SENTINEL} ]; then echo armed; else echo clear; fi\n"),
-    )
+    detached(move || {
+        shell(
+            &target,
+            &format!("if [ -s {SENTINEL} ]; then echo armed; else echo clear; fi\n"),
+        )
+    })
+    .await
 }
 
 /// Put the copy back now, without waiting for the timer.
@@ -443,37 +471,43 @@ pub fn nft_armed(target: Target) -> Outcome {
 /// The sentinel goes first, so the pending timer finds its token gone and
 /// stays out of the way of a restore already in progress.
 #[tauri::command]
-pub fn nft_rollback(target: Target) -> Outcome {
-    shell(
-        &target,
-        &format!(
-            "rm -f {SENTINEL}\n\
+pub async fn nft_rollback(target: Target) -> Outcome {
+    detached(move || {
+        shell(
+            &target,
+            &format!(
+                "rm -f {SENTINEL}\n\
              if [ ! -s {ROLLBACK} ]; then\n\
                echo 'there is no rollback copy on this host to go back to' >&2\n\
                exit 1\n\
              fi\n\
              nft -f {ROLLBACK}\n"
-        ),
-    )
+            ),
+        )
+    })
+    .await
 }
 
 /// Apply atomically. Refuses unless the caller has confirmed, because this is
 /// the one operation that can lock someone out of a machine.
 #[tauri::command]
-pub fn nft_apply(target: Target, ruleset: String, confirmed: bool) -> Outcome {
+pub async fn nft_apply(target: Target, ruleset: String, confirmed: bool) -> Outcome {
     if !confirmed {
         return Outcome::failed("refusing to apply without explicit confirmation");
     }
-    let check = run(&target, &["nft", "-c", "-f", "-"], Some(&ruleset));
-    if !check.ok {
-        return Outcome {
-            ok: false,
-            stdout: String::new(),
-            stderr: format!("validation failed, nothing was applied:\n{}", check.stderr),
-            code: check.code,
-        };
-    }
-    run(&target, &["nft", "-f", "-"], Some(&ruleset))
+    detached(move || {
+        let check = run(&target, &["nft", "-c", "-f", "-"], Some(&ruleset));
+        if !check.ok {
+            return Outcome {
+                ok: false,
+                stdout: String::new(),
+                stderr: format!("validation failed, nothing was applied:\n{}", check.stderr),
+                code: check.code,
+            };
+        }
+        run(&target, &["nft", "-f", "-"], Some(&ruleset))
+    })
+    .await
 }
 
 /* ── watching the host ───────────────────────────────────────────────────

@@ -143,4 +143,17 @@ test("the chip names no host until one has answered", async () => {
   await settle(30);
   assert.match($("#tb-target-t").textContent, /fw01\.example\.net/);
   assert.ok($("#tb-target").classList.contains("remote"));
+
+  /* asked and did not answer is a third state, and it is not the second.
+     Measured on the running app against TEST-NET-1: after eight seconds of
+     ConnectTimeout the chip read `efe@192.0.2.1`, exactly as it does when the
+     host is up — the only difference was the colour of a six-pixel dot. */
+  if (paintTargetChip) paintTargetChip({ ok: false, why: "connection timed out" });
+  await settle(30);
+  assert.doesNotMatch($("#tb-target-t").textContent, /fw01\.example\.net/,
+    "a host that did not answer is named as though it had");
+  assert.match($("#tb-target-t").textContent, /no answer|sin respuesta/i);
+  assert.match($("#tb-target").title, /fw01\.example\.net/, "and which host it was is still there");
+  assert.match($("#tb-target").title, /timed out/, "along with why");
+  assert.ok(!$("#tb-target").classList.contains("remote"));
 });

@@ -56,8 +56,11 @@ const constOf = (name) => {
   return m[1];
 };
 
+/* `pub fn` or `pub async fn`: the commands became async so that one sitting out
+   an ssh timeout stops holding up every other call, and that is not a change to
+   the script this file is about. */
 const scriptOf = (fn) => {
-  const at = SRC.indexOf(`pub fn ${fn}(`);
+  const at = SRC.search(new RegExp(`pub (?:async )?fn ${fn}\\(`));
   assert.ok(at > 0, `nft.rs no longer declares ${fn}`);
   return literal(SRC.indexOf("format!(", at));
 };
