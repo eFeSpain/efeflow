@@ -206,13 +206,25 @@ const MATCHERS = [
      under the verdict as assumed, which is the honest answer. */
   { re: /\bct\s+status\s+(!=\s*)?(snat|dnat)\b/,
     ok: (m,p) => negated(m[1], !!(p.tracked && (m[2] === "dnat" ? p.dnat : p.snat))) },
-  /* tcp flags syn / tcp flags & (syn|ack) == syn */
-  { re: /\btcp\s+flags\s+(!=\s*)?&?\s*\(?([\w|,]+)\)?(?:\s*==\s*\(?([\w|,]+)\)?)?/,
-    ok: (m,p) => { const has = f => (p.flags||[]).includes(f);
-                   const want = (m[3]||m[2]).split(/[|,]/).map(s=>s.trim()).filter(Boolean);
-                   return negated(m[1], m[3]
-                     ? want.every(has) && (p.flags||[]).every(f=>!m[2].includes(f) || want.includes(f))
-                     : want.every(has)); } },
+  /* Three spellings of one question, and they are not the same question.
+       tcp flags syn                    the syn bit is set, whatever else is
+       tcp flags & (syn|ack) == syn     of those two bits, exactly syn
+       tcp flags syn / fin,syn,rst,ack  the same, with the operands the other
+                                        way round — and this one was read as
+                                        the bare form, so it matched a syn|ack
+                                        packet that nft would have refused.
+     Both masked forms come down to: every bit the mask names is exactly as
+     the value says. The bare form is the same thing with the value as its own
+     mask, which is why it can be written once. */
+  { re: /\btcp\s+flags\s+(!=\s*)?(?:&\s*)?\(?([\w|,]+)\)?\s*(?:(==|\/)\s*\(?([\w|,]+)\)?)?/,
+    ok: (m,p) => {
+      const set = new Set(p.flags || []);
+      const bits = t => t.split(/[|,]/).map(x=>x.trim()).filter(Boolean);
+      const want = m[3] === "==" ? bits(m[4]) : bits(m[2]);
+      const mask = m[3] === "==" ? bits(m[2]) : m[3] === "/" ? bits(m[4]) : want;
+      return negated(m[1], want.every(f => set.has(f))
+                        && mask.every(f => set.has(f) === want.includes(f)));
+    } },
   { re: IFACE_RE("iif"), ok: (m,p) => negated(m[1], matchIface(p.iif, m[2])) },
   { re: IFACE_RE("oif"), ok: (m,p) => negated(m[1], matchIface(p.oif, m[2])) },
   /* `ip saddr` and `ip6 saddr` are different matches, and in an inet table
@@ -384,9 +396,24 @@ export const PATHS = {
    `dnat to <address>`, and a packet with no port matches nothing downstream. */
 export function natTarget(spec){
   const s = String(spec ?? "").trim();
-  const m = s.match(/^(\[[^\]]*\]|[^:]*)(?::(\d+)(?:-\d+)?)?$/);
-  if(!m) return {host:s, port:null};
-  return {host:m[1] || "", port:m[2] ? +m[2] : null};
+  const m = s.match(/^(\[[^\]]*\]|[^:]*)(?::(\d+)(?:-(\d+))?)?$/);
+  if(!m) return {host:s, port:null, assumed:[]};
+  const assumed = [];
+  /* An IPv6 target is written in brackets so the port can be told from the
+     address. Keeping them made the destination a string no address matcher
+     recognised, so every rule downstream of a v6 DNAT quietly missed. */
+  let host = (m[1] || "").replace(/^\[(.*)\]$/, "$1");
+  /* `dnat to 10.20.1.1-10.20.1.9` hands the kernel a pool and it picks one. A
+     packet has one destination, so the trace has to pick too — the first, and
+     it says so, because which one it picked can change what matches next. */
+  const range = host.match(/^([^\s-]+)\s*-\s*(\S+)$/);
+  if(range && looksLikeAddr(range[1]) && looksLikeAddr(range[2])){
+    host = range[1];
+    assumed.push(`the destination was taken as ${host} out of ${m[1]}`);
+  }
+  const port = m[2] ? +m[2] : null;
+  if(m[3]) assumed.push(`the port was taken as ${port} out of ${m[2]}-${m[3]}`);
+  return {host, port, assumed};
 }
 
 export function evaluate(p){
@@ -401,8 +428,27 @@ export function evaluate(p){
                                   it reached a verdict — which is what decides
                                   both whether a jump carries on afterwards and
                                   whether a base chain's policy still applies. */
+  /* The chains currently being walked, so a cycle is refused instead of
+     recursing into the stack until the browser stops it.
+     `nft` rejects a loop when the ruleset is loaded, so this cannot arrive
+     from a host — but the editor can build one with two clicks, and what it
+     produced was `RangeError: Maximum call stack size exceeded` from inside a
+     click handler, which is precisely the shape of failure that once shipped
+     a broken simulator: an exception with nowhere to go and a screen that
+     simply stopped answering. A cycle decides nothing and is named under the
+     verdict, like anything else this cannot evaluate. */
+  const walking = new Set();
   const walk = (chainId, depth=0) => {
     const ch = chainOf(chainId);
+    /* a chain that is not there decides nothing — it can be deleted while a
+       rule still names it, and lint.js is what says so out loud */
+    if(!ch) return {stop:"chain", settled:false};
+    if(walking.has(chainId) || depth > 64){
+      guessed.push(`${ch.id} jumps back into a chain already being walked, so this trace stops there`);
+      return {stop:"chain", settled:false};
+    }
+    walking.add(chainId);
+    try{
     const hop = {chain:ch, evs:[], depth};
     steps.push(hop);
     for(let i=0;i<ch.rules.length;i++){
@@ -421,7 +467,8 @@ export function evaluate(p){
       /* NAT terminates the chain, and the packet that walks on to the next
          hook is the translated one. */
       if(r.verdict==="dnat" || r.verdict==="redirect"){
-        const {host, port} = natTarget(r.to);
+        const {host, port, assumed} = natTarget(r.to);
+        guessed.push(...assumed);
         p.dnat = true;
         if(host) p.daddr = host;
         if(port !== null) p.dport = port;
@@ -455,6 +502,7 @@ export function evaluate(p){
         return {stop:"packet", v:r.verdict, chain:ch, r, i};
     }
     return {stop:"chain", settled:false};
+    } finally { walking.delete(chainId); }
   };
 
   /* A dormant table's base chains are never registered with netfilter, so no
