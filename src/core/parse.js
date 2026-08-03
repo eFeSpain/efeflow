@@ -468,14 +468,26 @@ function byIndex(src, out){
    100% on a ruleset whose netdev chain had lost its device. This compares the
    whole file — parse it, emit it, and diff what we get against what we were
    given, line for line. */
+const keep = l => l && l !== "flush ruleset" && !l.startsWith("#");
 const meaningful = lines => lines
   .map(l => normalise(typeof l === "string" ? l : l.text))
-  .filter(l => l && l !== "flush ruleset" && !l.startsWith("#"));
+  .filter(keep);
 
 export function verify(text){
   const parsed = parseNft(text);
-  const src = meaningful(logicalLines(text));
+  /* Line numbers are carried alongside, because a diff nobody can point at is
+     a bug report nobody can act on. The README promises this file will say
+     which line it could not reproduce, and for a long time the only thing that
+     kept that promise was the import dialog, which has the source on screen
+     next to the answer. The CLI printed the same finding with no line and no
+     text at all — it was reading fields this function has never returned. */
+  const rows = logicalLines(text)
+    .map(l => ({ text: normalise(l.text), ln: l.ln + 1 }))
+    .filter(r => keep(r.text));
   const out = meaningful(generate(parsed));
 
-  return { ...compare(src, out), parsed };
+  const r = compare(rows.map(x => x.text), out);
+  /* `i` indexes the source side: for a line that changed or vanished it is the
+     line itself, and for one that appeared it is where it appeared. */
+  return { ...r, diffs: r.diffs.map(d => ({ ...d, ln: rows[d.i]?.ln ?? null })), parsed };
 }
