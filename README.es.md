@@ -153,7 +153,7 @@ puede reproducir, te dice cuál antes de que te comprometas a nada.
 ## ⚠ Beta
 
 Hace el trabajo completo hoy: importar, demostrar, analizar, simular, editar,
-aplicar y exportar. Lo respaldan 835 comprobaciones automáticas, sobre el
+aplicar y exportar. Lo respaldan 840 comprobaciones automáticas, sobre el
 parser, el analizador, el evaluador de paquetes y la propia interfaz.
 
 Lo que todavía no tiene es kilometraje. **Ningún ruleset que no sea el de su
@@ -207,7 +207,7 @@ fw.nft:103  error conflict   Conflicting DNAT targets for the same destination p
 fw.nft:71   warn  shadowed   Rule 11 is shadowed by rule 9 and can never match
       ip saddr 10.10.0.0/24 tcp dport 443 accept
 
-  32 rules in 7 chains across 2 tables  ·  round-trip 76/76 = 100%
+  31 rules in 7 chains across 2 tables  ·  round-trip 75/75 = 100%
   1 error  2 warnings  3 hints
 ```
 
@@ -327,7 +327,7 @@ escribes `accept`, no `aceptar`.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 835 aserciones
+npm test             # 840 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 
 node bin/efeflow.mjs lint fw.nft    # el linter, directo desde el clon

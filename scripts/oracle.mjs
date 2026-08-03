@@ -508,6 +508,25 @@ table inet t {
 	}
 }` },
 
+  /* Conntrack is a hook too, at -200. A chain earlier than that on prerouting
+     runs before the packet has an entry, so `ct state` there matches nothing
+     but invalid — and `ct state invalid counter drop` is the ordinary first
+     line of a raw chain. Loopback cannot show it: a packet this host generated
+     has already been through conntrack on the way out. */
+  "conntrack has not run yet in a raw chain": { arrives: true, nft: `
+table inet t {
+	chain raw {
+		type filter hook prerouting priority -300; policy accept;
+		ct state invalid counter comment "invalid-before-conntrack"
+		ct state new     counter comment "new-before-conntrack"
+	}
+	chain mangle {
+		type filter hook prerouting priority -150; policy accept;
+		ct state invalid counter comment "invalid-after-conntrack"
+		ct state new     counter comment "new-after-conntrack"
+	}
+}` },
+
   "a dormant table is not walked at all": `
 table inet parked {
 	flags dormant
@@ -556,21 +575,54 @@ table ip four {
 }`,
 };
 
-function kernelWalk(ruleset) {
-  writeFileSync(WRULES, ruleset);
-  const script = `
-set -e
+/* A packet that arrives, rather than one this machine made.
+ *
+ * On loopback everything has already been through the output side — conntrack
+ * included — so a chain that runs before conntrack cannot be asked about
+ * anything there. A veth with its far end in a namespace of its own gives a
+ * genuine arrival, which is the only way some of these questions have an
+ * answer at all. */
+const OVER_LOOPBACK = `
 ip link set lo up
-nft -f ${WRULES}
+nft -f ${"${WRULES}"}
 python3 - <<'PY'
 import socket
 s = socket.socket()
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind(("127.0.0.1", ${SPORT}))
+s.bind(("127.0.0.1", ${"${SPORT}"}))
 s.settimeout(0.3)
-try: s.connect(("127.0.0.1", ${DPORT}))
+try: s.connect(("127.0.0.1", ${"${DPORT}"}))
 except Exception: pass
 PY
+`;
+
+const OVER_VETH = `
+ip link set lo up
+ip link add v0 type veth peer name v1
+unshare -n sleep 20 &
+PID=$!
+sleep 0.3
+ip link set v1 netns $PID
+ip addr add 10.9.0.1/24 dev v0
+ip link set v0 up
+nsenter -t $PID -n sh -c 'ip link set lo up; ip addr add 10.9.0.2/24 dev v1; ip link set v1 up'
+nft -f ${"${WRULES}"}
+nsenter -t $PID -n python3 - <<'PY'
+import socket
+s = socket.socket()
+s.bind(("10.9.0.2", ${"${SPORT}"}))
+s.settimeout(0.3)
+try: s.connect(("10.9.0.1", ${"${DPORT}"}))
+except Exception: pass
+PY
+kill $PID 2>/dev/null || true
+`;
+
+function kernelWalk(ruleset, arrives = false) {
+  writeFileSync(WRULES, ruleset);
+  const script = `
+set -e
+${arrives ? OVER_VETH : OVER_LOOPBACK}
 nft list ruleset
 `;
   const r = spawnSync(BOX.cmd[0], [...BOX.cmd.slice(1), "sh", "-c", script], { encoding: "utf8" });
@@ -584,14 +636,16 @@ nft list ruleset
   return { hit };
 }
 
-function efeflowWalk(ruleset, dir = "in") {
+function efeflowWalk(ruleset, dir = "in", arrives = false) {
   const p = parseNft(ruleset);
   Object.assign(MODEL, {
     chains: p.chains, sets: p.sets, objects: p.objects,
     tables: p.tables, prelude: p.prelude,
   });
   const out = dir === "out";
-  const r = evaluate({ ...WPKT, dir, iif: out ? "" : "lo", oif: out ? "lo" : "" });
+  const r = evaluate({ ...WPKT, dir,
+    iif: out ? "" : (arrives ? "v0" : "lo"), oif: out ? "lo" : "",
+    ...(arrives ? { saddr: "10.9.0.2", daddr: "10.9.0.1" } : {}) });
   const hit = new Map();
   for (const c of MODEL.chains)
     for (const rule of c.rules)
@@ -606,9 +660,10 @@ let wbad = 0, wran = 0;
 for (const [name, scenario] of Object.entries(WALKS)) {
   const ruleset = typeof scenario === "string" ? scenario : scenario.nft;
   const dir = typeof scenario === "string" ? "in" : (scenario.dir ?? "in");
-  const k = kernelWalk(ruleset);
+  const arrives = typeof scenario === "object" && scenario.arrives === true;
+  const k = kernelWalk(ruleset, arrives);
   if (k.err) { stdout.write(`  --   ${name}: ${k.err.trim()}` + "\n"); continue; }
-  const e = efeflowWalk(ruleset, dir);
+  const e = efeflowWalk(ruleset, dir, arrives);
   wran++;
   const marks = [...k.hit.keys()];
   const wrong = marks.filter((m) => k.hit.get(m) !== (e.hit.get(m) ?? false));

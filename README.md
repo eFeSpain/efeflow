@@ -151,7 +151,7 @@ be reproduced, it tells you which one before you commit to anything.
 ## ⚠ Beta
 
 It does the whole job today: import, prove, analyse, simulate, edit, apply,
-export. 835 automated assertions stand behind it, across the parser, the
+export. 840 automated assertions stand behind it, across the parser, the
 analyser, the packet evaluator and the interface itself.
 
 What it does not have yet is mileage. **No ruleset but its author's has ever
@@ -204,7 +204,7 @@ fw.nft:103  error conflict   Conflicting DNAT targets for the same destination p
 fw.nft:71   warn  shadowed   Rule 11 is shadowed by rule 9 and can never match
       ip saddr 10.10.0.0/24 tcp dport 443 accept
 
-  32 rules in 7 chains across 2 tables  ·  round-trip 76/76 = 100%
+  31 rules in 7 chains across 2 tables  ·  round-trip 75/75 = 100%
   1 error  2 warnings  3 hints
 ```
 
@@ -323,7 +323,7 @@ write `accept`, not `aceptar`.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 835 assertions
+npm test             # 840 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 
 node bin/efeflow.mjs lint fw.nft    # the linter, straight from the clone

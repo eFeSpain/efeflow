@@ -36,7 +36,7 @@ test("it reports the ruleset the analyser reports", () => {
   const r = run(["lint", "--no-colour", FIXTURE]);
   assert.match(r.stdout, /shadowed/);
   assert.match(r.stdout, /conflict/);
-  assert.match(r.stdout, /round-trip 76\/76/);
+  assert.match(r.stdout, /round-trip 75\/75/);
   assert.equal(r.status, 1, "a ruleset with an error has to fail the build");
 });
 

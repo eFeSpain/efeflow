@@ -140,3 +140,62 @@ test("an snat verdict is what makes the packet snatted", () => {
   setPacket({ ...PKT, dir: "out", oif: "wan0", snat: false });
   assert.equal(evaluate(packet).packet.snat, true);
 });
+
+/* ── conntrack is a hook, and it has a priority ──────────────────────────── */
+
+/* A chain earlier than -200 on prerouting or output runs before the packet has
+ * a conntrack entry at all, so `ct state` there matches nothing but `invalid`
+ * — whatever the connection turns out to be a moment later. This was evaluated
+ * the same at every priority, so `ct state invalid counter drop` in a raw
+ * chain, which is the ordinary first line of one, passed every packet here and
+ * dropped every packet on the machine.
+ *
+ * Both the fixture and the real ruleset that turned this up had exactly that
+ * rule at priority -300. Loopback hides it, which is why it took an arrival
+ * over a veth to find: a packet this host generated has already been through
+ * conntrack on the way out, so by the time prerouting sees it the entry
+ * exists. The boundary is -200 inclusive, measured against the kernel. */
+const walk = (chains, over = {}) => {
+  Object.assign(MODEL, { sets: [], objects: [], tables: [], prelude: [], chains });
+  setPacket({ ...PKT, ...over });
+  return evaluate(packet);
+};
+const at = (prio, hook, rules) =>
+  ({ id: `c${prio}`, table: "inet t", hook, prio, type: "filter", policy: "accept", rules });
+
+test("before conntrack every packet reads as invalid", () => {
+  const r = walk([at(-300, "prerouting", [{ expr: "ct state invalid", verdict: "drop", on: true, pkts: 0, bytes: 0 }])]);
+  assert.equal(r.final.v, "drop", "the raw chain sees no conntrack entry, so: invalid");
+});
+
+test("and nothing else matches there", () => {
+  for (const state of ["new", "established", "related", "untracked"]) {
+    const r = walk([
+      at(-300, "prerouting", [{ expr: `ct state ${state}`, verdict: "drop", on: true, pkts: 0, bytes: 0 }]),
+      at(0, "input", []),
+    ]);
+    assert.equal(r.final.v, "accept", `ct state ${state} matched before conntrack ran`);
+  }
+});
+
+test("from -200 onwards it is the state the packet is in", () => {
+  for (const prio of [-200, -150, 0]) {
+    const r = walk([at(prio, "prerouting", [{ expr: "ct state new", verdict: "drop", on: true, pkts: 0, bytes: 0 }])]);
+    assert.equal(r.final.v, "drop", `ct state new did not match at priority ${prio}`);
+  }
+});
+
+test("the hooks that have nothing before them are never early", () => {
+  /* input, forward and postrouting all run after conntrack whatever their
+     priority: there is no earlier place on those hooks to be. */
+  const r = walk([at(-500, "input", [{ expr: "ct state new", verdict: "drop", on: true, pkts: 0, bytes: 0 }])]);
+  assert.equal(r.final.v, "drop");
+});
+
+test("a status cannot be read before conntrack either", () => {
+  const r = walk([
+    at(-300, "prerouting", [{ expr: "ct status dnat", verdict: "drop", on: true, pkts: 0, bytes: 0 }]),
+    at(0, "input", []),
+  ], { dnat: true });
+  assert.equal(r.final.v, "accept");
+});

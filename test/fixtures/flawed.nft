@@ -52,7 +52,6 @@ table inet fw {
 	chain raw_pre {
 		type filter hook prerouting priority -300 ; policy accept ;
 		ip saddr @blocklist counter drop comment "Threat-feed drop, 24h timeout"
-		ct state invalid counter drop
 		meta iifname "wan0" ip saddr 10.0.0.0/8 counter drop comment "Anti-spoof: RFC1918 from WAN"
 	}
 
