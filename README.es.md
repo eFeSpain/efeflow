@@ -127,6 +127,13 @@ Casi todos llevan corrección de un clic. Todo es deshacible.
 Y donde no puede leer una regla entera, **se niega a juzgarla** y dice cuántas ha
 dejado en paz, en vez de llamar muerta a una regla viva.
 
+El eclipsado se calcula **dentro de una cadena**, nunca a través de un `jump`.
+Una regla que queda inalcanzable por una regla terminal de la cadena que saltó
+hasta ella no se reporta, porque decidirlo con seguridad exige conocer todas las
+formas de entrar en esa cadena — y equivocarse significa ofrecerte borrar una
+regla que sí se dispara. El mismo criterio conservador que en todo lo demás: los
+hallazgos que ves son los que puede sostener, no todos los que hay.
+
 ## No empiezas de cero
 
 Pega `nft list ruleset`, o léelo directamente de una máquina.
@@ -146,7 +153,7 @@ puede reproducir, te dice cuál antes de que te comprometas a nada.
 ## ⚠ Beta
 
 Hace el trabajo completo hoy: importar, demostrar, analizar, simular, editar,
-aplicar y exportar. Lo respaldan 543 comprobaciones automáticas, sobre el
+aplicar y exportar. Lo respaldan 568 comprobaciones automáticas, sobre el
 parser, el analizador, el evaluador de paquetes y la propia interfaz.
 
 Lo que todavía no tiene es kilometraje. **Ningún ruleset que no sea el de su
@@ -320,7 +327,7 @@ escribes `accept`, no `aceptar`.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 543 aserciones
+npm test             # 568 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 
 node bin/efeflow.mjs lint fw.nft    # el linter, directo desde el clon

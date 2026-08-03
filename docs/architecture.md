@@ -47,6 +47,23 @@ now.** Fixes resolve their target by identity when applied, not by holding an
 object reference. Undo rebuilds every chain and rule from JSON, so a captured
 reference becomes an orphan and the fix silently mutates nothing.
 
+## What the analyser deliberately does not answer
+
+Subsumption is computed **within a chain**. Two rules are only ever weighed
+against each other if they sit in the same one, so a rule made unreachable by a
+terminal rule in the chain that jumped to it is not reported.
+
+That is a choice, not an oversight. Reaching across a `jump` means reasoning
+about every path into the target chain — several callers, each with its own
+constraints, `goto` not returning where `jump` does — and the cost of getting
+it wrong is not a missed finding. It is a Delete button under a rule that
+fires. `subsumes()` already refuses on a rate limit, on a negation and on
+anything it could not read whole, for the same reason; this is the same refusal
+one level up.
+
+Worth knowing before widening it: the finding is only as good as the offer
+attached to it, and every finding here carries a fix.
+
 ## Emission carries provenance
 
 `generateWithMap()` returns the lines and a parallel array saying which rule
@@ -56,7 +73,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 543 assertions.
+`npm test` — 568 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across
