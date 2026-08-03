@@ -334,8 +334,19 @@ pub fn nft_arm(target: Target, seconds: u32) -> Outcome {
          # the copy is the ruleset as it was before eFeFlow touched anything,\n\
          # so an arm that finds one already armed keeps it rather than\n\
          # photographing whatever it has just been asked to replace\n\
+         #\n\
+         # It is a restore script and not a listing. `nft -f` on a listing\n\
+         # adds to what is already loaded, so a table the apply created — the\n\
+         # one that may be doing the cutting off — outlives the rollback. And\n\
+         # `nft list ruleset` on a firewall with no rules yet is zero bytes,\n\
+         # which every `-s` test below reads as no copy at all: the net would\n\
+         # decline to fire on precisely the machine most likely to need it,\n\
+         # the one being set up for the first time. `flush ruleset` on the\n\
+         # front fixes both, and nft applies a file as one transaction, so\n\
+         # there is no moment where the firewall is empty.\n\
          if [ ! -s {SENTINEL} ] || [ ! -s {ROLLBACK} ]; then\n\
-           nft list ruleset > {ROLLBACK}\n\
+           printf 'flush ruleset\\n' > {ROLLBACK}\n\
+           nft list ruleset >> {ROLLBACK}\n\
          fi\n\
          printf '%s' '{tok}' > {SENTINEL}\n\
          \

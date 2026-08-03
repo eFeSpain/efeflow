@@ -99,6 +99,26 @@ test("the directory is created before it is written into, and only for root", ()
 
 const canRun = platform === "linux" || platform === "darwin";
 
+/* `nft -f` applies a file *into* the loaded ruleset. It replaces only what the
+   file redeclares and leaves everything else standing, unless the file says
+   `flush ruleset` first — which is why the copy has to be a restore script and
+   not a listing. Checked against nft 1.1.3 on a real kernel: a table created
+   by an apply outlived a rollback that loaded a bare listing. */
+const FAKE_NFT = [
+  "#!/bin/sh",
+  'case "$1 $2" in',
+  '  "list ruleset") cat "$STATE" ;;',
+  '  "-f "*)',
+  '    if head -n 1 "$2" | grep -qx "flush ruleset"; then',
+  '      tail -n +2 "$2" > "$STATE"',
+  "    else",
+  '      cat "$2" >> "$STATE"',
+  "    fi ;;",
+  "  *) exit 1 ;;",
+  "esac",
+  "",
+].join("\n");
+
 test("arming twice keeps the first copy, and retires the first timer", { skip: !canRun }, async () => {
   const w = mkdtempSync(join(tmpdir(), "efeflow-arm-"));
   try {
@@ -107,16 +127,12 @@ test("arming twice keeps the first copy, and retires the first timer", { skip: !
     const bin = join(w, "bin");
     execFileSync("mkdir", ["-p", bin]);
 
-    /* an nft that reads and writes one file, so a restore is observable */
-    writeFileSync(join(bin, "nft"), [
-      "#!/bin/sh",
-      'case "$1 $2" in',
-      '  "list ruleset") cat "$STATE" ;;',
-      '  "-f "*) cp "$2" "$STATE" ;;',
-      "  *) exit 1 ;;",
-      "esac",
-      "",
-    ].join("\n"));
+    /* An nft that reads and writes one file, so a restore is observable — and
+       that adds rather than replaces, because that is what nftables does. A
+       fake that treated `-f` as an overwrite made the rollback look like it
+       put the ruleset back when on a real kernel it merges into what is
+       already loaded, and a table the apply created survives it. */
+    writeFileSync(join(bin, "nft"), FAKE_NFT);
     chmodSync(join(bin, "nft"), 0o755);
 
     const there = { DIR: dir, ROLLBACK: join(dir, "rollback.nft"), SENTINEL: join(dir, "armed") };
@@ -129,15 +145,16 @@ test("arming twice keeps the first copy, and retires the first timer", { skip: !
     const read = (p) => (existsSync(p) ? readFileSync(p, "utf8") : null);
 
     writeFileSync(live, "GOOD\n");
-    assert.equal(arm(1, "tok-A"), "GOOD\n", "arm hands back the copy it took");
+    assert.equal(arm(1, "tok-A"), "flush ruleset\nGOOD\n", "arm hands back the copy it took");
     assert.equal(statSync(dir).mode & 0o777, 0o700, "the directory is private");
-    assert.equal(read(join(dir, "rollback.nft")), "GOOD\n");
+    assert.equal(read(join(dir, "rollback.nft")), "flush ruleset\nGOOD\n");
 
     /* an apply happened and was not confirmed; now a second one */
     writeFileSync(live, "BROKEN\n");
-    assert.equal(arm(30, "tok-B"), "GOOD\n",
+    assert.equal(arm(30, "tok-B"), "flush ruleset\nGOOD\n",
       "the second arm photographed the ruleset it was asked to replace");
-    assert.equal(read(join(dir, "rollback.nft")), "GOOD\n", "the good copy survived a re-arm");
+    assert.equal(read(join(dir, "rollback.nft")), "flush ruleset\nGOOD\n",
+      "the good copy survived a re-arm");
 
     /* tok-A's timer is due about now, and the sentinel is not its any more */
     await new Promise((r) => setTimeout(r, 2500));
@@ -147,4 +164,84 @@ test("arming twice keeps the first copy, and retires the first timer", { skip: !
   } finally {
     rmSync(w, { recursive: true, force: true });
   }
+});
+
+/* ── the two the VM found ────────────────────────────────────────────────
+   Both were invisible here until the script met a real kernel: the fake nft
+   above replaced the ruleset on `-f`, which is not what nftables does, and
+   nothing had ever armed a host that had no firewall yet. */
+
+/** A workspace with the fake nft on PATH and the script's paths pointed into it. */
+function bench() {
+  const w = mkdtempSync(join(tmpdir(), "efeflow-net-"));
+  const dir = join(w, "run"), live = join(w, "live"), bin = join(w, "bin");
+  execFileSync("mkdir", ["-p", bin]);
+  writeFileSync(join(bin, "nft"), FAKE_NFT);
+  chmodSync(join(bin, "nft"), 0o755);
+  const paths = { DIR: dir, ROLLBACK: join(dir, "rollback.nft"), SENTINEL: join(dir, "armed") };
+  const sh = (script) => execFileSync("sh", ["-s"], {
+    input: script,
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, STATE: live },
+    encoding: "utf8",
+  });
+  return {
+    w, live, paths,
+    arm: (secs = 60, tok = "tok") => sh(render("nft_arm", { ...paths, secs, tok })),
+    rollback: () => sh(render("nft_rollback", paths)),
+    state: () => readFileSync(live, "utf8"),
+    copy: () => (existsSync(paths.ROLLBACK) ? readFileSync(paths.ROLLBACK, "utf8") : null),
+  };
+}
+
+/* A firewall with no rules yet lists as nothing at all, and `[ -s ]` reads a
+   zero-byte file as no copy — so the net declined to fire on precisely the
+   machine most likely to need it: the one being set up for the first time. */
+test("a host with no ruleset still gets a net", { skip: !canRun }, () => {
+  const b = bench();
+  try {
+    writeFileSync(b.live, "");
+    b.arm();
+    assert.notEqual(b.copy(), "", "an empty listing left an empty copy");
+    assert.ok(statSync(b.paths.ROLLBACK).size > 0,
+      "a zero-byte copy is read as no copy by every -s test in the script");
+
+    /* something was applied and it cut the connection */
+    writeFileSync(b.live, "table inet oops\n");
+    b.rollback();
+    assert.equal(b.state(), "", "the net had to put an empty firewall back, and did not");
+  } finally {
+    rmSync(b.w, { recursive: true, force: true });
+  }
+});
+
+/* `nft -f` adds to what is loaded. A rollback that hands the kernel a bare
+   listing leaves behind whatever the apply created — which is the table doing
+   the cutting off. */
+test("a table the apply created does not survive the rollback", { skip: !canRun }, () => {
+  const b = bench();
+  try {
+    writeFileSync(b.live, "table inet keepme\n");
+    b.arm();
+
+    /* the apply: keepme changed, and a table that was not there before */
+    writeFileSync(b.live, "table inet keepme CHANGED\ntable inet brandnew\n");
+    b.rollback();
+
+    assert.equal(b.state(), "table inet keepme\n");
+    assert.doesNotMatch(b.state(), /brandnew/,
+      "the table the apply created outlived the rollback that was meant to undo it");
+    assert.doesNotMatch(b.state(), /CHANGED/);
+  } finally {
+    rmSync(b.w, { recursive: true, force: true });
+  }
+});
+
+test("the copy is a restore script, not a listing", () => {
+  const arm = render("nft_arm", here);
+  /* the script carries a literal backslash-n for the shell's printf to read,
+     so this is a plain string comparison and not a regex with an escape in it */
+  assert.ok(arm.includes(String.raw`printf 'flush ruleset\n' > ${ROLLBACK}`),
+    "without a flush at the front, `nft -f` merges into the live ruleset");
+  assert.ok(arm.includes(`nft list ruleset >> ${ROLLBACK}`),
+    "and the listing has to be appended, not overwrite it");
 });
