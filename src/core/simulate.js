@@ -5,7 +5,24 @@ import { inCidr, family, looksLikeAddr, toBig } from './addr.js';
 import { isDormant } from './tables.js';
 export { inCidr };
 
-const setOf = n => (MODEL.sets.find(s=>s.n===n)||{el:[]}).el;
+/* Elements a rule put in a set during this walk.
+ *
+ * `add @banned { ip saddr }` writes the packet's own address into the set, and
+ * a rule below it that looks that set up finds it — within the same traversal,
+ * in the kernel and so here. Without this the lookup missed, silently, and the
+ * shape it misses on is the one this application has a whole finding about:
+ * a set filled by traffic.
+ *
+ * Null outside a walk, deliberately. inSet() is exported and the analyser uses
+ * it; away from the one function that controls the lifetime, showing elements
+ * no ruleset holds would be worse than showing none. */
+let ADDED = null;
+
+const setOf = n => {
+  const el = (MODEL.sets.find(s=>s.n===n)||{el:[]}).el;
+  const extra = ADDED && ADDED.get(n);
+  return extra ? [...el, ...extra] : el;
+};
 
 const unquote = s => String(s ?? "").trim().replace(/^"([^"]*)"$/, "$1");
 
@@ -204,6 +221,26 @@ export function vmapVerdict(expr, p){
   return null;
 }
 
+/* `add @banned { ip saddr }`, and the update form, and a concatenated key.
+   An element may carry its own timeout, which is bookkeeping and not part of
+   the value. */
+const ADD_RE = /\b(?:add|update)\s+@(\w+)\s*\{([^}]*)\}/g;
+
+function addElements(expr, p, note){
+  for(const m of String(expr || "").matchAll(ADD_RE)){
+    const body = m[2].replace(/\s+timeout\s+\S+/g, "").trim();
+    const keys = body.split(/\s+\.\s+/).map(k => k.trim().replace(/\s+/g, " "));
+    const parts = keys.map(k => CONCAT_KEY[k]);
+    if(parts.some(x => !x)){
+      note(`this rule fills @${m[1]} with ${body}, which this cannot read`);
+      continue;
+    }
+    const val = parts.map(x => x.of(p)).join(" . ");
+    if(!ADDED.has(m[1])) ADDED.set(m[1], []);
+    ADDED.get(m[1]).push(val);
+  }
+}
+
 function concatOk(m, p){
   const keys = keysOf(m);
   const parts = keys.map(k => CONCAT_KEY[k]);
@@ -324,6 +361,12 @@ const OPAQUE = [
      reported whole by unmodelled() rather than half read. */
   new RegExp(CONCAT_RE.source, "g"),
   new RegExp(VMAP_RE.source, "g"),
+  /* `add @banned { ip saddr }` names a key, not a constraint — and the address
+     matcher was reading the `}` after it as the address the rule compared
+     against, so the rule never matched. That rule is the standard shape for
+     tarpitting a scanner, and the one this application has a whole finding
+     about: a set filled by traffic. It never fired in any trace. */
+  new RegExp(ADD_RE.source, "g"),
   /* A hash, or a counter chosen at random, is not something one packet has an
      answer for — and `jhash ip saddr mod 2 == 0` was worse than unanswered:
      the address matcher read the `ip saddr` out of the middle of it and
@@ -583,6 +626,8 @@ export function evaluate(input){
      trap was waiting for everything else. The translated packet comes back in
      the result instead. */
   const p = { ...input, flags: [...(input.flags || [])] };
+  ADDED = new Map();
+  try{
   const steps = [];
   let accepted = null;
   /* the matches that were assumed rather than evaluated on the way to a verdict */
@@ -629,6 +674,15 @@ export function evaluate(input){
       const un = unmodelled(r.expr);
       hop.evs.push({r, i, st:"match", ...(un.length ? {unsure:un} : {})});
       guessed.push(...un);
+
+      /* What a matched rule does to the packet before its verdict is read.
+         `notrack` takes it out of conntrack, so every `ct state` below can
+         only reach it through the untracked keyword — and left unmodelled it
+         was a rule the trace read perfectly and then ignored, which is how a
+         raw-table `notrack` produced an answer for a packet that no longer
+         had the conntrack entry the answer was about. */
+      if(/\bnotrack\b/.test(String(r.expr || ""))) p.tracked = false;
+      addElements(r.expr, p, m => guessed.push(m));
 
       /* NAT terminates the chain, and the packet that walks on to the next
          hook is the translated one. */
@@ -749,6 +803,7 @@ export function evaluate(input){
     /* tables this packet would have gone through if they were not parked */
     parked: [...parked],
   };
+  } finally { ADDED = null; }
 }
 
 export const setPacket = p => Object.assign(packet, p);
