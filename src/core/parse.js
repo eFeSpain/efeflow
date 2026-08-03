@@ -373,23 +373,53 @@ export function parseRule(line){
      `name "http_hits"` in the expression and re-emitted the rule in a
      different order. The lookahead keeps this off it. */
   const k = expr.match(/\bcounter(?!\s+name\b)(?:\s+packets\s+(\d+)\s+bytes\s+(\d+))?/);
+  /* How many words of the expression came before it.
+   *
+   * Where the counter sits is not a matter of taste. nftables evaluates a
+   * rule left to right and the first expression that does not match abandons
+   * it, so `counter ip saddr 10.0.0.1 drop` counts every packet that reaches
+   * the rule and `ip saddr 10.0.0.1 counter drop` counts only the ones from
+   * that address. Both are legal, both are written on purpose, and this file
+   * used to read either and emit the second — quietly changing what somebody
+   * had asked the kernel to measure.
+   *
+   * It showed up as a round-trip diff, which is the check doing its job. */
+  let at = null;
   if(k){
     ctr = true;
     pkts = +(k[1]||0); bytes = +(k[2]||0);
-    expr = (expr.slice(0,k.index) + expr.slice(k.index + k[0].length)).replace(/\s{2,}/g," ").trim();
+    const head = expr.slice(0, k.index).trim();
+    at = head ? head.split(/\s+/).length : 0;
+    /* Close the gap the counter left, and nothing else. Collapsing every run
+       of spaces in the rule also collapsed the ones inside a quoted string, so
+       `log prefix "two  spaces"` came back as a different prefix on any rule
+       that happened to carry a counter. */
+    const tail = expr.slice(k.index + k[0].length).replace(/^\s+/, "");
+    expr = (head + (head && tail ? " " : "") + tail).trim();
   }
+  /* Recorded only when it is not already where ruleLine() writes it by
+     default, which is where nft prints it and where every rule built in the
+     editor puts it. A field nobody needs is a field in every saved project
+     and every undo snapshot. */
+  const where = e => {
+    if(at === null) return {};
+    const words = e ? e.split(/\s+/).length : 0;
+    return at < words ? { ctrAt: at } : {};
+  };
 
   for(const [re, make] of VERDICT_RE){
     const m = expr.match(re);
     if(!m) continue;
     const v = make(m);
-    return Object.assign({expr: expr.slice(0, m.index).trim(), on:true, ctr, pkts, bytes},
+    const match = expr.slice(0, m.index).trim();
+    return Object.assign({expr: match, on:true, ctr, pkts, bytes}, where(match),
                          v, cmt?{cmt}:{});
   }
   /* no terminal verdict — a counting or logging rule that falls through.
      A bare `counter` is a legal rule, so an empty expr is not an error. */
   if(!expr && !ctr) return null;
-  return {expr, verdict:"continue", implicit:true, on:true, ctr, pkts, bytes, ...(cmt?{cmt}:{})};
+  return {expr, verdict:"continue", implicit:true, on:true, ctr, pkts, bytes,
+          ...where(expr), ...(cmt?{cmt}:{})};
 }
 
 /* ── round-trip proof: re-emit each rule and compare to its source ── */

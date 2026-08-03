@@ -107,15 +107,9 @@ test("a verdict map in a rule stays in the rule", () => {
 
 /* `counter` names an object and also opens a rule. Which one it is depends on
    what follows it, and getting that wrong would read a rule's anonymous set as
-   the body of a named counter.
-
-   No round-trip assertion here, and not because of the braces: `counter` is
-   lifted out of the expression and written back in the one place this file
-   writes it, so a rule that arrived with it in front comes back with it in the
-   middle. nft normalises the same statement the same way. It is a move, not a
-   loss, and it is older than anything on this page. */
+   the body of a named counter. Where it goes back out is counter.test.js. */
 test("a rule beginning with counter is not a named counter", () => {
-  const p = parseNft(wrap("\tchain c {\n\t\tcounter ip saddr { 1.1.1.1, 2.2.2.2 } drop\n\t}"));
+  const p = read(wrap("\tchain c {\n\t\tcounter ip saddr { 1.1.1.1, 2.2.2.2 } drop\n\t}"));
   assert.equal(p.objects.length, 0, "no object was declared here");
   assert.equal(rulesOf(p, "c").length, 1);
   assert.equal(p.chains[0].rules[0].ctr, true);

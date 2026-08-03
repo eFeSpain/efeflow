@@ -76,7 +76,27 @@ export function verdictText(r){
    rule imported with `counter packets 0 bytes 0` has the first and not the
    second, and must still emit its counter. `pkts` is honoured too so that
    rules built before the distinction existed keep theirs. */
-export function ruleLine(r){ return ((r.expr ? r.expr+" " : "") + (r.ctr || r.pkts ? "counter ":"") + verdictText(r)).trim(); }
+/* `ctrAt` says the counter did not sit just before the verdict, and it is the
+   word of the expression it went in front of. Only rules that arrived that way
+   carry it; everything else takes the path below, unchanged.
+   Split on the separators rather than through them, so a `log prefix "two
+   spaces"` keeps its own spacing instead of being tidied into a different
+   rule. */
+function withCounter(expr, at){
+  const bits = expr.split(/(\s+)/);
+  const i = at * 2;
+  if(i >= bits.length) return null;      /* the expression has since got shorter */
+  bits.splice(i, 0, "counter", " ");
+  return bits.join("");
+}
+export function ruleLine(r){
+  const ctr = r.ctr || r.pkts;
+  if(ctr && r.ctrAt != null && r.expr){
+    const placed = withCounter(String(r.expr), r.ctrAt);
+    if(placed !== null) return (placed + " " + verdictText(r)).trim();
+  }
+  return ((r.expr ? r.expr+" " : "") + (ctr ? "counter ":"") + verdictText(r)).trim();
+}
 
 export const UID = ch => ch.table + '/' + ch.id;
 export const jumpTarget = (ch, name) =>
