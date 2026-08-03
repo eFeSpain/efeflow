@@ -9,7 +9,7 @@ import { MODEL, R, ruleLine, jumpTarget, UID, chainOf, expand } from './model.js
 const at = (uid, i) => { const c = chainOf(uid); return c && c.rules[i] ? c : null; };
 import { inSet, readable } from './simulate.js';
 import { covers as addrCovers, toBig, looksLikeAddr } from './addr.js';
-import { lintRuleset } from './lint.js';
+import { lintRuleset, lintNames } from './lint.js';
 import { dormantTables, isDormant, readTable, writeTable } from './tables.js';
 import { escape as esc } from './html.js';
 import { t } from '../i18n.js';
@@ -492,6 +492,19 @@ export function analyse(){
       detail:[`nft rejects this line, and it rejects the whole file with it — a ruleset is applied entire or not at all, so one rule like this is the difference between your firewall changing and nothing happening.`,
               `nft rechaza esta línea, y con ella el fichero entero — un ruleset se aplica completo o no se aplica, así que una regla así es la diferencia entre que tu firewall cambie y que no pase nada.`],
       code:[[f.i+1, ruleLine(f.chain.rules[f.i]), "neg"]],
+    }));
+  });
+
+  /* And the same question asked of the declarations rather than the rules. A
+     rule nft refuses costs the apply; a name nft refuses costs the apply too,
+     and is harder to see coming, because nothing in the ruleset looks wrong. */
+  lintNames(MODEL).forEach(f=>{
+    out.push(F("error","syntax",{
+      at:"name",
+      title:f.title,
+      where:f.where,
+      detail:[`nft's scanner turns "${f.name}" into a keyword before the grammar gets to decide it is reading a name, so the declaration fails and takes the rest of its block with it. Quoting does not help. The name has to change.`,
+              `El escáner de nft convierte "${f.name}" en palabra clave antes de que la gramática decida que está leyendo un nombre, así que la declaración falla y se lleva por delante el resto de su bloque. Entrecomillarlo no sirve. Hay que cambiar el nombre.`],
     }));
   });
 

@@ -178,6 +178,78 @@ export function lintRuleset(model){
   return out;
 }
 
+/* ── names nftables will not let you use ─────────────────────────────────
+ *
+ * `chain log { ... }` does not load. Neither does a set called `ct`, nor a
+ * table called `ip`. nft's scanner turns these words into keywords before the
+ * grammar ever gets to decide it is looking at a name, so the file dies with
+ * `syntax error, unexpected log, expecting string` — and it dies at the
+ * declaration, which takes the rest of the block down with it.
+ *
+ * This is the export path's version of the failure this project keeps finding
+ * elsewhere: nothing was unreadable, so nothing was reported. The parser reads
+ * the chain back, verify() calls the round trip exact, the generated file says
+ * `round-trip safe` in its header, and nft refuses to load it.
+ *
+ * Quoting does not help — nft rejects a quoted name in a declaration too — so
+ * there is nothing to fix on the way out. The name has to change, which means
+ * the person who chose it has to be told.
+ *
+ * The list is measured, not remembered: each candidate was offered to nft 1.0.6
+ * as a chain, a set and a table name, and these are the ones it refused. All
+ * three kinds refuse exactly the same words. It is certainly not every keyword
+ * nft has — a list built by hand never is — and that is the safe direction to
+ * be wrong in, because a name missing from it costs a warning that was not
+ * given, while a name wrongly on it would refuse one that works.
+ *
+ * Words that read like keywords and are *not* here are here on purpose:
+ * `filter`, `nat`, `route`, `input`, `output`, `forward`, `prerouting`,
+ * `postrouting`, `state`, `new`, `established`, `last`, `zone`, `name`, `to`,
+ * `prefix`, `level`, `group`, `rate`, `burst`, `packets` and `bytes` all load
+ * fine, because nft only treats them as keywords where one can appear. Nearly
+ * every chain anyone writes is called one of the first eight.
+ */
+export const RESERVED = new Set(`accept add ah all arp bridge chain comment comp constant
+continue counter cpu ct day dccp define delete device devices dnat drop dup dynamic elements
+esp ether exists expires export fib flags flow flowtable fwd goto handle hook hour icmp icmpv6
+igmp iif iifname iiftype include index inet insert interval ip ip6 ipsec jhash jump limit list
+log map mark masquerade meta meter missing monitor netdev nftrace notrack numgen offload oif
+oifname oiftype osf pkttype policy position priority queue quota random redirect reject rename
+replace reset return rt rule ruleset sctp secmark set size snat socket symhash synproxy table
+tcp th time timeout tproxy type udp udplite update vlan vmap xt`.trim().split(/\s+/));
+
+/** the word nftables would choke on, or null — the name of a table is
+    `family name`, and only the name half is the identifier */
+export const reservedName = name => {
+  const word = String(name || "").trim().split(/\s+/).pop();
+  return RESERVED.has(word) ? word : null;
+};
+
+/* Every name the ruleset declares. Separate from lintRuleset() because these
+   are not rules: a finding here points at a declaration, and has no rule index
+   to go to. */
+export function lintNames(model){
+  const out = [];
+  const seen = new Set();
+  /* `es` carries its own article: "cadena" and "set" do not take the same one,
+     and a sentence that gets it wrong reads as nobody having looked. */
+  const check = (kind, es, name, where) => {
+    const word = reservedName(name);
+    if(!word || seen.has(kind + " " + word)) return;
+    seen.add(kind + " " + word);
+    out.push({
+      code: "reserved-name", level: "error", kind, name: word, where,
+      title: [`nftables keeps the word "${word}" for itself, so no ${kind} can be called that`,
+              `nftables se reserva la palabra "${word}", así que ${es} puede llamarse así`],
+    });
+  };
+  for(const tb of model.tables || []) check("table", "ninguna tabla", tb.name, tb.name);
+  for(const ch of model.chains || []) check("chain", "ninguna cadena", ch.id, `${ch.table} / ${ch.id}`);
+  for(const s of model.sets || []) check("set", "ningún set", s.n, s.table ? `${s.table} / ${s.n}` : s.n);
+  for(const o of model.objects || []) check(o.kind, `ningún ${o.kind}`, o.name, `${o.table} / ${o.name}`);
+  return out;
+}
+
 /* ── what nft itself said ────────────────────────────────────────────────
  * Everything above is a reading of nftables. This is nftables, read back.
  *

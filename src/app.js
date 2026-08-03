@@ -21,7 +21,7 @@ import { catalogue, protoOf, OWNABLE, BUILT_IN, emptyVocabulary,
          TEMPLATES, templateById } from "./core/vocabulary.js";
 import { readExpr, editExpr } from "./core/expr.js";
 import { readObject, editObject, refsToObject, OBJECT_FIELDS, OBJECT_TEMPLATE, OBJECT_KINDS } from "./core/objects.js";
-import { lintRule } from "./core/lint.js";
+import { lintRule, reservedName } from "./core/lint.js";
 import { FAMILIES, splitTable, joinTable, tableNames, readTable, writeTable,
          renameTable, removeTable, isDormant, dormantTables } from "./core/tables.js";
 import { modelChanged, rerender, onModelChange, onRender, findings, setFindings } from "./core/bus.js";
@@ -3048,6 +3048,12 @@ document.addEventListener("change", e=>{
       toast(t(`A set called ${next} already exists`, `Ya existe un set llamado ${next}`));
       renderSets(); return;
     }
+    const taken = reservedName(next);
+    if(taken){
+      toast(t(`nftables keeps "${taken}" for itself — no set can be called that`,
+              `nftables se reserva "${taken}" — ningún set puede llamarse así`));
+      renderSets(); return;
+    }
     /* rename the references too, or the rules would point at nothing */
     const was = s.n, hits = refsTo(was).length;
     edit(t("rename set","renombrar set"), ()=>{
@@ -4285,6 +4291,16 @@ $("#ch-save").addEventListener("click", ()=>{
      it on the canvas and changed nothing in the export. Typing a number is how
      the name comes off. */
   const { prio, name: prioName } = readPriority(d.prio);
+  /* A name nft keeps for itself is refused here rather than at export. The
+     analyser reports it either way, but by then the chain exists, the canvas
+     has drawn it, and the file that will not load looks finished. */
+  const taken = reservedName(d.id);
+  if(taken){
+    toast(t(`nftables keeps "${taken}" for itself — no chain can be called that`,
+            `nftables se reserva "${taken}" — ninguna cadena puede llamarse así`));
+    $("#ch-name").focus();
+    return;
+  }
   const uid = chEditing;
   edit(uid ? t("edit chain","editar cadena") : t("new chain","cadena nueva"), ()=>{
     const ch = uid ? chainOf(uid) : {rules:[]};
