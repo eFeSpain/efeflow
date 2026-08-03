@@ -485,6 +485,20 @@ export const chainDevices = ch => [...String(ch.dev || "").matchAll(/"([^"]*)"|[
   .map(m => m[1] ?? m[0])
   .filter(d => d && d !== "device" && d !== "devices" && d !== "=");
 
+/* A table's family decides which packets reach its chains at all, and nothing
+   was checking it: an `ip nat` table translated IPv6 traffic and an `ip6
+   filter` table dropped IPv4. On a dual-stack ruleset — which is most of them
+   — half the trace was chains the packet never enters.
+   `inet` sees both by design. `bridge` and `netdev` are not decided by the
+   address family. `arp` only ever sees ARP, and a packet described here always
+   has an IP address, so it is never one. */
+const seesPacket = (ch, p) => {
+  const f = String(ch.table || "").split(" ")[0];
+  if(f === "arp") return false;
+  if(f !== "ip" && f !== "ip6") return true;
+  return family(p.saddr ?? p.daddr) === (f === "ip6" ? 6 : 4);
+};
+
 /* Only packets on that device enter it: `hook ingress device "wan0"` says
    nothing about traffic arriving on br-lan. */
 const onDevice = (ch, p) => {
@@ -560,7 +574,15 @@ export function natTarget(spec){
   return {host, port, assumed};
 }
 
-export function evaluate(p){
+export function evaluate(input){
+  /* The packet the caller handed over is not ours to change, and this used to
+     translate it in place: a DNAT rewrote its destination, so running the same
+     simulation twice gave two different answers — the second one starting from
+     where the first had left the packet, with the rule that moved it no longer
+     matching. The interface copies before calling and was never affected; the
+     trap was waiting for everything else. The translated packet comes back in
+     the result instead. */
+  const p = { ...input, flags: [...(input.flags || [])] };
   const steps = [];
   let accepted = null;
   /* the matches that were assumed rather than evaluated on the way to a verdict */
@@ -684,6 +706,7 @@ export function evaluate(p){
      path alone decides */
   const byHook = h => MODEL.chains
     .filter(c=>c.hook===h && (p.nat || c.type!=="nat"))
+    .filter(c=>seesPacket(c, p))
     .filter(c=>onDevice(c, p))
     .filter(c=>{ if(!isDormant(MODEL, c.table)) return true; parked.add(c.table); return false; })
     .sort((a,b)=>a.prio-b.prio).map(c=>UID(c));
@@ -717,6 +740,9 @@ export function evaluate(p){
   const unsure = [...new Set(guessed)];
   return {
     steps,
+    /* what it was by the end: translated, tracked, and whatever else the walk
+       did to it. The one the caller passed in is untouched. */
+    packet: p,
     final: final || accepted || {v:"accept", chain:chainOf(last), policy:true},
     sure: unsure.length === 0,
     unsure,

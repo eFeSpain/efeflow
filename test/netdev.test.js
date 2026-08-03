@@ -113,8 +113,8 @@ test("a value with no port leaves the port alone", () => {
             rules: [R("", "dnat", { to: "tcp dport map @port_fwd" })] }),
     chain({ id: "input", hook: "input" }),
   ], { dport: 25 }, FWD);
-  assert.equal(packet.daddr, "10.20.0.40");
-  assert.equal(packet.dport, 25, "the map named a host and not a port");
+  assert.equal(r.packet.daddr, "10.20.0.40");
+  assert.equal(r.packet.dport, 25, "the map named a host and not a port");
   assert.equal(r.sure, true);
 });
 
@@ -127,7 +127,7 @@ test("a key the map does not hold means the rule does not fire", () => {
                     R("", "dnat", { to: "10.99.0.1" })] }),
     chain({ id: "input", hook: "input" }),
   ], { dport: 9999 }, FWD);
-  assert.equal(packet.daddr, "10.99.0.1", "it walked on to the rule below");
+  assert.equal(r.packet.daddr, "10.99.0.1", "it walked on to the rule below");
   assert.equal(r.sure, true);
 });
 
@@ -148,7 +148,7 @@ test("a map on a key nothing reads is admitted to rather than applied", () => {
             rules: [R("", "dnat", { to: "meta mark map @port_fwd" })] }),
     chain({ id: "input", hook: "input" }),
   ], {}, FWD);
-  assert.equal(packet.daddr, before.daddr, "nothing was invented for the destination");
+  assert.equal(r.packet.daddr, before.daddr, "nothing was invented for the destination");
   assert.equal(r.sure, false);
   assert.ok(r.unsure.some((u) => /cannot read/.test(u)), JSON.stringify(r.unsure));
 });

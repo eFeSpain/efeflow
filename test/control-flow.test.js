@@ -84,9 +84,12 @@ test("redirect translates the port and marks the packet", () => {
     base("input", "input", "drop", [R("tcp dport 8080", "accept")]),
   ]);
   const p = packet({ dport: 80 });
-  assert.equal(evaluate(p).final.v, "accept");
-  assert.equal(p.dport, 8080);
-  assert.equal(p.dnat, true);
+  /* the packet handed over is left alone; the translated one comes back */
+  const r = evaluate(p);
+  assert.equal(r.final.v, "accept");
+  assert.equal(r.packet.dport, 8080);
+  assert.equal(r.packet.dnat, true);
+  assert.equal(p.dport, 80, "evaluate() does not edit what it was given");
 });
 
 /* `dnat to 10.0.0.5` moves the packet to another host on the port it already
@@ -98,9 +101,10 @@ test("a dnat with no port leaves the port alone", () => {
     base("input", "input", "drop", [R("tcp dport 443", "accept")]),
   ]);
   const p = packet({ dport: 443 });
-  assert.equal(evaluate(p).final.v, "accept");
-  assert.equal(p.daddr, "10.0.0.5");
-  assert.equal(p.dport, 443, "the port was not part of the translation");
+  const r = evaluate(p);
+  assert.equal(r.final.v, "accept");
+  assert.equal(r.packet.daddr, "10.0.0.5");
+  assert.equal(r.packet.dport, 443, "the port was not part of the translation");
 });
 
 test("a dnat to an address and a port applies both", () => {
@@ -109,7 +113,8 @@ test("a dnat to an address and a port applies both", () => {
     base("input", "input", "drop", [R("tcp dport 443 ip daddr 10.0.0.5", "accept")]),
   ]);
   const p = packet({ dport: 8443 });
-  assert.equal(evaluate(p).final.v, "accept");
-  assert.equal(p.daddr, "10.0.0.5");
-  assert.equal(p.dport, 443);
+  const r = evaluate(p);
+  assert.equal(r.final.v, "accept");
+  assert.equal(r.packet.daddr, "10.0.0.5");
+  assert.equal(r.packet.dport, 443);
 });

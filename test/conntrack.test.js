@@ -138,6 +138,5 @@ test("an snat verdict is what makes the packet snatted", () => {
     ],
   });
   setPacket({ ...PKT, dir: "out", oif: "wan0", snat: false });
-  evaluate(packet);
-  assert.equal(packet.snat, true);
+  assert.equal(evaluate(packet).packet.snat, true);
 });

@@ -169,6 +169,6 @@ test("an ordinary target is not hedged about", () => {
     chain("input", "input", "accept", []),
   ]);
   assert.equal(r.sure, true);
-  assert.equal(packet.daddr, "10.20.1.5");
-  assert.equal(packet.dport, 443);
+  assert.equal(r.packet.daddr, "10.20.1.5");
+  assert.equal(r.packet.dport, 443);
 });
