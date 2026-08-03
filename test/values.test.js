@@ -158,3 +158,53 @@ test("a bitwise mask on an address is declared, not guessed at", () => {
     assert.deepEqual(unread, [expr], "and the whole of it is named");
   }
 });
+
+/* ── a key is not just a field ───────────────────────────────────────────── */
+
+/* `tcp dport` is not "the destination port": it is the destination port of a
+   TCP packet, and on a UDP one the lookup does not happen at all. The
+   standalone matcher had always checked that; the concatenation table did not,
+   so a UDP packet matched `ip saddr . tcp dport @pairs`.
+ *
+ * Found by asking the kernel — a real packet through a real netfilter instance
+ * — which is the only reason it was found at all. Every table of cases in this
+ * directory is still this project stating what nftables does. */
+test("a concatenation on tcp dport says nothing about a udp packet", () => {
+  Object.assign(MODEL, {
+    chains: [], objects: [], tables: [], prelude: [],
+    sets: [{ n: "pairs", el: ["203.0.113.48 . 9038"] }],
+  });
+  const expr = "ip saddr . tcp dport @pairs";
+  assert.equal(matches({ expr }, PKT), true, "the TCP packet it was written for");
+  assert.equal(matches({ expr }, { ...PKT, proto: "udp" }), false);
+});
+
+test("and a concatenation on ip saddr says nothing about a v6 packet", () => {
+  Object.assign(MODEL, {
+    chains: [], objects: [], tables: [], prelude: [],
+    sets: [{ n: "pairs", el: ["203.0.113.48 . 9038"] }],
+  });
+  assert.equal(matches({ expr: "ip saddr . tcp dport @pairs" },
+    { ...PKT, saddr: "2001:db8::1", daddr: "2001:db8::2" }), false);
+});
+
+test("a verdict map is the same: no key, no lookup", async () => {
+  const { vmapVerdict } = await import("../src/core/simulate.js");
+  Object.assign(MODEL, {
+    chains: [], objects: [], tables: [], prelude: [],
+    sets: [{ n: "by_port", el: ["9038 : accept"] }],
+  });
+  assert.equal(vmapVerdict("tcp dport vmap @by_port", PKT), "accept");
+  assert.equal(vmapVerdict("tcp dport vmap @by_port", { ...PKT, proto: "udp" }), null,
+    "the rule does not fire on a packet the key cannot be read from");
+});
+
+test("and so is a NAT target that is a lookup", async () => {
+  const { natLookup } = await import("../src/core/simulate.js");
+  Object.assign(MODEL, {
+    chains: [], objects: [], tables: [], prelude: [],
+    sets: [{ n: "fwd", el: ["9038 : 10.0.0.1"] }],
+  });
+  assert.equal(natLookup("tcp dport map @fwd", PKT).to, "10.0.0.1");
+  assert.equal(natLookup("tcp dport map @fwd", { ...PKT, proto: "udp" }).missed, true);
+});

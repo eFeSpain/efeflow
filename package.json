@@ -16,6 +16,7 @@
     "preview": "vite preview",
     "test": "node --test \"test/*.test.js\"",
     "differ": "node scripts/differ.mjs",
+    "oracle": "node scripts/oracle.mjs",
     "tauri": "tauri",
     "app": "tauri dev",
     "app:build": "tauri build",

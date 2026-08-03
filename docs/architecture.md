@@ -73,7 +73,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 829 assertions.
+`npm test` — 833 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across
@@ -183,6 +183,19 @@ not; without either, or without `nft`, it says so and stops.
 
 CI runs it with `--require`, which turns "could not run" into a failure. A skip
 that reports success is the green tick that only means nobody checked.
+
+`npm run oracle` asks the same of the evaluator. A real packet goes through a
+real netfilter instance with one counter per expression under test, and the
+counters say which of them matched it; the simulator is asked about the same
+packet, described the same way. Four go through: a TCP SYN, a UDP datagram,
+that SYN again over IPv6, and a byte on an established connection.
+
+It earned its place immediately. `ip saddr . tcp dport @pairs` matched a UDP
+packet, because a concatenation key was being read as a field rather than as
+what it is — the destination port *of a TCP packet*. The standalone matcher had
+always checked the protocol; the concatenation table, added later, did not. No
+test here would have found it, because every one of them is this project
+stating what nftables does.
 
 `test/fixtures/flawed.nft` is reported as skipped there and always will be:
 its element list is abbreviated to a comment, so nft refuses it. That is

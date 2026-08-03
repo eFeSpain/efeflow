@@ -48,6 +48,11 @@ jobs:
       # only means nobody checked
       - name: Round-trip against nft
         run: npm run differ -- --require
+      # And the evaluator against netfilter itself: real packets through a real
+      # instance, one counter per expression, compared with what the simulator
+      # says about the same packet.
+      - name: Evaluator against the kernel
+        run: npm run oracle -- --require
 
   rust:
     runs-on: ubuntu-22.04

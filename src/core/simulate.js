@@ -164,25 +164,36 @@ const inList = (tok, v) => (tok.startsWith("{")
    still a prefix, a range or a wildcard. A concatenation naming a key this
    does not read is left whole for unmodelled() to report, rather than half
    evaluated. */
+/* `when` is the half a key carries with it. `tcp dport` is not "the port": it
+   is the port of a TCP packet, and the lookup does not happen at all on a UDP
+   one. The standalone matcher checked that and this table did not, so a UDP
+   packet matched `ip saddr . tcp dport @pairs` — found by asking the kernel,
+   which is the only reason it was found. */
+const TRANSPORT = new Set(["tcp", "udp", "sctp", "dccp", "udplite"]);
 const CONCAT_KEY = {
-  "ip saddr":  { of: p => p.saddr, cmp: atom },
-  "ip6 saddr": { of: p => p.saddr, cmp: atom },
-  "ip daddr":  { of: p => p.daddr, cmp: atom },
-  "ip6 daddr": { of: p => p.daddr, cmp: atom },
-  "tcp dport": { of: p => p.dport, cmp: atom },
-  "udp dport": { of: p => p.dport, cmp: atom },
-  "tcp sport": { of: p => p.sport, cmp: atom },
-  "udp sport": { of: p => p.sport, cmp: atom },
-  "th dport":  { of: p => p.dport, cmp: atom },
-  "th sport":  { of: p => p.sport, cmp: atom },
+  "ip saddr":  { of: p => p.saddr, cmp: atom, when: p => family(p.saddr) === 4 },
+  "ip6 saddr": { of: p => p.saddr, cmp: atom, when: p => family(p.saddr) === 6 },
+  "ip daddr":  { of: p => p.daddr, cmp: atom, when: p => family(p.daddr) === 4 },
+  "ip6 daddr": { of: p => p.daddr, cmp: atom, when: p => family(p.daddr) === 6 },
+  "tcp dport": { of: p => p.dport, cmp: atom, when: p => p.proto === "tcp" },
+  "udp dport": { of: p => p.dport, cmp: atom, when: p => p.proto === "udp" },
+  "tcp sport": { of: p => p.sport, cmp: atom, when: p => p.proto === "tcp" },
+  "udp sport": { of: p => p.sport, cmp: atom, when: p => p.proto === "udp" },
+  "th dport":  { of: p => p.dport, cmp: atom, when: p => TRANSPORT.has(p.proto) },
+  "th sport":  { of: p => p.sport, cmp: atom, when: p => TRANSPORT.has(p.proto) },
   "iifname":   { of: p => p.iif,   cmp: nameAtom },
   "iif":       { of: p => p.iif,   cmp: nameAtom },
   "oifname":   { of: p => p.oif,   cmp: nameAtom },
   "oif":       { of: p => p.oif,   cmp: nameAtom },
   "meta l4proto": { of: p => p.proto, cmp: (v,t) => protoName(t) === protoName(v) },
-  "ip protocol":  { of: p => p.proto, cmp: (v,t) => protoName(t) === protoName(v) },
+  "ip protocol":  { of: p => p.proto, cmp: (v,t) => protoName(t) === protoName(v),
+                    when: p => family(p.saddr ?? p.daddr) === 4 },
   "ct state":     { of: p => p.state, cmp: (v,t) => String(v) === String(t).trim() },
 };
+
+/* every key the packet has an answer for — a key it does not is not a miss to
+   be reasoned about, it is a lookup that never happens */
+const keysApply = (parts, p) => parts.every(x => !x.when || x.when(p));
 const KEY_RE = Object.keys(CONCAT_KEY).sort((a,b)=>b.length-a.length)
   .map(k => k.replace(/ /g, "\\s+")).join("|");
 const CONCAT_RE = new RegExp(
@@ -224,6 +235,7 @@ export function vmapVerdict(expr, p){
   const keys = m[1].trim().split(/\s+\.\s+/).map(k => k.trim().replace(/\s+/g, " "));
   const parts = keys.map(k => CONCAT_KEY[k]);
   if(parts.some(x => !x)) return undefined;
+  if(!keysApply(parts, p)) return null;         /* the lookup does not happen */
   const vals = parts.map(x => x.of(p));
   for(const e of (m[2].startsWith("@") ? setOf(m[2].slice(1)) : items(m[2]))){
     const at = String(e).split(/\s+:\s+/);
@@ -249,6 +261,7 @@ function addElements(expr, p, note){
       note(`this rule fills @${m[1]} with ${body}, which this cannot read`);
       continue;
     }
+    if(!keysApply(parts, p)) continue;
     const val = parts.map(x => x.of(p)).join(" . ");
     if(!ADDED.has(m[1])) ADDED.set(m[1], []);
     ADDED.get(m[1]).push(val);
@@ -259,6 +272,7 @@ function concatOk(m, p){
   const keys = keysOf(m);
   const parts = keys.map(k => CONCAT_KEY[k]);
   if(parts.some(x => !x)) return true;          /* not ours to decide */
+  if(!keysApply(parts, p)) return negated(m[2], false);
   const vals = parts.map(x => x.of(p));
   const tuples = m[3].startsWith("@") ? setOf(m[3].slice(1)) : items(m[3]);
   const hit = tuples.some(t => {
@@ -608,6 +622,7 @@ export function natLookup(spec, p){
   if(parts.some(x => !x))
     return { to: null, missed: false,
              assumed: [`the target is a map on ${m[1].trim()}, which this cannot read`] };
+  if(!keysApply(parts, p)) return { to: null, missed: true, assumed: [] };
 
   const vals = parts.map(x => x.of(p));
   for(const e of (m[2].startsWith("@") ? setOf(m[2].slice(1)) : items(m[2]))){
