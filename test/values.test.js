@@ -124,3 +124,37 @@ test("a value shape that is understood leaves nothing unread", () => {
   for (const e of ["tcp dport 9000-9100", 'iifname "wan*"', "ip saddr @nets"])
     assert.deepEqual(check(e).unread, [], e);
 });
+
+/* ── comparisons that are not equality ───────────────────────────────────── */
+
+/* nftables compares with more than `==`, and `tcp dport >= 1024` is where it
+   is usually written: the rule about ephemeral ports. The matcher read the
+   operator as the value it was comparing against, so every one of them was a
+   certain miss — and a miss is never reported as a guess. */
+
+hits("tcp dport > 1024", true);
+hits("tcp dport >= 9038", true);
+hits("tcp dport >= 9039", false);
+hits("tcp dport < 1024", false);
+hits("tcp dport <= 9038", true);
+hits("tcp dport > 9038", false);
+hits("tcp sport > 1024", true);
+hits("tcp sport < 1024", false);
+/* the protocol still has to agree */
+hits("udp dport > 1024", false);
+/* and equality, sets and ranges are untouched by any of it */
+hits("tcp dport 9038", true);
+hits("tcp dport != 9038", false);
+hits("tcp dport { 80, 9038 }", true);
+hits("tcp dport 9000-9100", true);
+
+/* A bitwise mask on an address is a prefix test written the long way. Nothing
+   here evaluates one, and the address matcher was reading the `&` as the
+   address — so it is struck out and named rather than answered. */
+test("a bitwise mask on an address is declared, not guessed at", () => {
+  for (const expr of ["ip saddr & 255.255.255.0 == 203.0.113.0", "ip daddr & 0xff != 0"]) {
+    const { hit, unread } = check(expr);
+    assert.equal(hit, true, "a rule this cannot read is taken as matching");
+    assert.deepEqual(unread, [expr], "and the whole of it is named");
+  }
+});

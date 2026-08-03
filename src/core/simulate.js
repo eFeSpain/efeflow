@@ -78,6 +78,20 @@ export function nameAtom(v, tok){
   return t.endsWith("*") ? s.startsWith(t.slice(0, -1)) : s === t;
 }
 
+/* nftables compares with more than equality: `tcp dport >= 1024` is as
+   ordinary as a set, and reading the operator as the value made every one of
+   them a certain miss — on a rule about ephemeral ports, which is where they
+   are usually written.
+   Null when this is not a relational comparison, or not one that can be
+   answered, so the caller falls back to reading it as a value. */
+function relate(op, v, tok){
+  if(op !== "<" && op !== ">" && op !== "<=" && op !== ">=") return null;
+  const num = t => /^\d+$/.test(t) ? BigInt(t) : (looksLikeAddr(t) ? toBig(t) : null);
+  const a = num(String(v).trim()), b = num(bare(tok));
+  if(a === null || b === null) return null;
+  return op === "<" ? a < b : op === ">" ? a > b : op === "<=" ? a <= b : a >= b;
+}
+
 const items = tok => tok.slice(1, -1).split(",").map(s => s.trim()).filter(Boolean);
 
 export function inSet(v, name, cmp = atom){
@@ -338,12 +352,20 @@ const MATCHERS = [
   { re: /\b(ip|ip6)\s+(?:protocol|nexthdr)\s+(!=\s*)?(\{[^}]*\}|\S+)/,
     ok: (m,p) => (m[1] === "ip6" ? 6 : 4) === family(p.saddr ?? p.daddr)
                  && negated(m[2], inList(m[3], p.proto)) },
-  { re: /\b(tcp|udp|sctp|dccp|udplite)\s+(sport|dport)\s+(!=\s*)?(\{[^}]*\}|\S+)/,
-    ok: (m,p) => m[1] === p.proto
-                 && negated(m[3], matchVal(m[2] === "dport" ? p.dport : p.sport, m[4])) },
+  { re: /\b(tcp|udp|sctp|dccp|udplite)\s+(sport|dport)\s+(!=|<=|>=|<|>)?\s*(\{[^}]*\}|\S+)/,
+    ok: (m,p) => {
+      if(m[1] !== p.proto) return false;
+      const v = m[2] === "dport" ? p.dport : p.sport;
+      const rel = relate(m[3], v, m[4]);
+      return rel !== null ? rel : negated(m[3], matchVal(v, m[4]));
+    } },
   { re: /\b(tcp|udp|icmp|icmpv6|sctp|dccp)\b/, ok: (m,p) => m[1] === p.proto },
-  { re: /\b(sport|dport)\s+(!=\s*)?(\{[^}]*\}|\S+)/,
-    ok: (m,p) => negated(m[2], matchVal(m[1] === "dport" ? p.dport : p.sport, m[3])) },
+  { re: /\b(sport|dport)\s+(!=|<=|>=|<|>)?\s*(\{[^}]*\}|\S+)/,
+    ok: (m,p) => {
+      const v = m[1] === "dport" ? p.dport : p.sport;
+      const rel = relate(m[2], v, m[3]);
+      return rel !== null ? rel : negated(m[2], matchVal(v, m[3]));
+    } },
 ];
 
 /* Statements recognised by shape and not by meaning.
@@ -367,6 +389,11 @@ const OPAQUE = [
      tarpitting a scanner, and the one this application has a whole finding
      about: a set filled by traffic. It never fired in any trace. */
   new RegExp(ADD_RE.source, "g"),
+  /* `ip saddr & 255.255.255.0 == 10.0.0.0` is a prefix test written the long
+     way, and the address matcher was reading the `&` as the address — another
+     certain miss. Nothing here evaluates a bitwise mask on an address, so it
+     is struck out and named rather than answered. */
+  /\b(?:ip6?|meta|ct)\s+\w+\s+&\s*\S+\s*(?:==|!=)\s*\S+/g,
   /* A hash, or a counter chosen at random, is not something one packet has an
      answer for — and `jhash ip saddr mod 2 == 0` was worse than unanswered:
      the address matcher read the `ip saddr` out of the middle of it and
