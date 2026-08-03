@@ -66,3 +66,51 @@ test("the chip distinguishes unasked from unanswered", () => {
   assert.match(host, /state === null/,
     "the status bar reported `no host answering` on a host it had never called");
 });
+
+/* ── the whole rule, in one place ────────────────────────────────────────
+ *
+ * Over ssh it must not open a connection unless told to. On the local machine
+ * it must not read the running ruleset unless told to. Reading this machine is
+ * an option in the import dialog — "Read from host" against a local target —
+ * and that is where it belongs: something a person clicks.
+ *
+ * The list below is every place in the interface that reaches a machine, and
+ * what makes it happen. A new one has to be added here, which is the point:
+ * it forces whoever adds it to say out loud what asked for it. */
+const REACHES = {
+  nftCheck:   "Check with nft -c, and the export dialog's verify",
+  nftList:    "Read from host in the import dialog, counters, and the drift check",
+  nftWatch:   "Watch, on the canvas",
+  nftUnwatch: "Watch again, to stop it — and teardown",
+  hostProbe:  "probe(), from the target and apply dialogs only",
+  nftArm:     "Apply, when a rollback window was asked for",
+  nftApply:   "Apply",
+  nftDisarm:  "Keep, after an apply",
+  nftRollback:"Roll back now",
+  nftArmed:   "the pending-rollback question, asked with the others",
+  nftRuleOp:  "the handle chip on a rule, pushed one at a time",
+};
+
+test("everything that touches a machine is something a person pressed", () => {
+  const read = (f) => code(readFileSync(new URL("../src/" + f, import.meta.url), "utf8"));
+  const all = [code(APP), read("target.js"), read("apply.js"), read("host.js")].join("\n");
+
+  /* whatever the object is called where it is used — native, api, nativeApi */
+  const found = new Set(
+    [...all.matchAll(/\b(?:native|nativeApi|api)\.(nft\w+|hostProbe)\(/g)].map((m) => m[1]));
+
+  for (const f of found)
+    assert.ok(f in REACHES,
+      `${f} reaches a machine and nothing here says what asked it to`);
+  for (const f of Object.keys(REACHES))
+    assert.ok(found.has(f), `${f} has gone — update the list, and say what replaced it`);
+});
+
+test("the one that reads this machine is the import dialog's, not the boot's", () => {
+  const at = APP.indexOf('$("#imp-host")');
+  assert.ok(at > 0, "the button that reads a host has to exist");
+  const handler = APP.slice(at, at + 400);
+  assert.match(handler, /addEventListener\("click"/, "it is a click, not something on the way up");
+  assert.match(handler, /native\.nftList\(asTauriTarget\(\)\)/,
+    "and it reads whatever target is configured — this machine, when that is the target");
+});
