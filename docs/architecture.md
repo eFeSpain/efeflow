@@ -73,7 +73,7 @@ up all of them.
 
 ## Tests, and why there are three layers
 
-`npm test` — 833 assertions.
+`npm test` — 835 assertions.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across

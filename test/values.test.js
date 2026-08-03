@@ -208,3 +208,30 @@ test("and so is a NAT target that is a lookup", async () => {
   assert.equal(natLookup("tcp dport map @fwd", PKT).to, "10.0.0.1");
   assert.equal(natLookup("tcp dport map @fwd", { ...PKT, proto: "udp" }).missed, true);
 });
+
+/* ── a protocol named as somebody else's value ───────────────────────────── */
+
+/* `meta l4proto != tcp` is a rule that catches everything which is not TCP,
+   and the bare-protocol matcher was reading the `tcp` out of the middle of it
+   and demanding the packet be TCP — turning the negation into its opposite. An
+   ICMP packet missed a rule written precisely to catch it.
+ *
+ * Found by asking the kernel. No table of cases here would have caught it,
+ * because the case would have been written by whoever wrote the bug. */
+test("a protocol written as a value belongs to the match that names it", () => {
+  Object.assign(MODEL, { chains: [], sets: [], objects: [], tables: [], prelude: [] });
+  const icmp = { ...PKT, proto: "icmp" };
+  assert.equal(matches({ expr: "meta l4proto != tcp" }, icmp), true);
+  assert.equal(matches({ expr: "meta l4proto != tcp" }, PKT), false);
+  assert.equal(matches({ expr: "ip protocol != tcp" }, icmp), true);
+  assert.equal(matches({ expr: "meta l4proto != { tcp, udp }" }, icmp), true);
+});
+
+test("and a protocol named on its own still constrains", () => {
+  Object.assign(MODEL, { chains: [], sets: [], objects: [], tables: [], prelude: [] });
+  assert.equal(matches({ expr: "tcp dport 9038" }, { ...PKT, proto: "udp" }), false);
+  assert.equal(matches({ expr: "icmp type echo-request" }, PKT), false, "the packet is TCP");
+  assert.equal(matches({ expr: "meta l4proto tcp" }, PKT), true);
+  assert.equal(matches({ expr: "meta l4proto { tcp, udp }" }, PKT), true);
+  assert.equal(matches({ expr: "meta l4proto { udp, icmp }" }, PKT), false);
+});

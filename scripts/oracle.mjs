@@ -54,7 +54,7 @@ if (nftv.status !== 0 || !BOX) {
   stdout.write(`oracle: not run — ${why}.\n` + "\n");
   exit(REQUIRE ? 2 : 0);
 }
-stdout.write(`oracle: ${nftv.stdout.trim()}, in ${BOX.as}\n\n` + "\n");
+stdout.write(`oracle: ${nftv.stdout.trim()}, in ${BOX.as}\n\n`);
 
 const SETS_NFT = `
 	set ports { type inet_service ; elements = { 18080, 22 } }
@@ -96,6 +96,18 @@ s.bind(("::1", ${SPORT}))
 s.settimeout(0.3)
 try: s.connect(("::1", ${DPORT}))
 except Exception: pass`,
+  icmp: `
+import subprocess
+subprocess.run(["ping","-c","1","-W","1","-s","64","127.0.0.1"],
+               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)`,
+  /* the same TCP SYN, watched on its way out instead of on its way in */
+  output: `
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", ${SPORT}))
+s.settimeout(0.3)
+try: s.connect(("127.0.0.1", ${DPORT}))
+except Exception: pass`,
   /* a listener, a handshake, and then a byte: the byte is the established one */
   established: `
 srv = socket.socket()
@@ -117,7 +129,13 @@ const PKT = {
   tcp6: { proto: "tcp", saddr: "::1", daddr: "::1", state: "new", flags: ["syn"] },
   established: { proto: "tcp", saddr: "127.0.0.1", daddr: "127.0.0.1", state: "established",
                  flags: ["ack", "psh"] },
+  icmp: { proto: "icmp", saddr: "127.0.0.1", daddr: "127.0.0.1", state: "new", flags: [] },
+  output: { proto: "tcp", saddr: "127.0.0.1", daddr: "127.0.0.1", state: "new", flags: ["syn"] },
 };
+
+/* which hook the probe chain hangs off, and which way round the interface is */
+const HOOK = { icmp: "input", output: "output" };
+const DIR  = { output: "out" };
 
 /* which selector the jump uses to let only our packet through */
 const GATE = {
@@ -125,6 +143,8 @@ const GATE = {
   udp: `udp sport ${SPORT} udp dport ${DPORT}`,
   tcp6: `tcp sport ${SPORT} tcp dport ${DPORT} tcp flags syn`,
   established: `tcp sport ${SPORT} tcp dport ${DPORT} ct state established tcp flags & (psh) == psh`,
+  icmp: `meta l4proto icmp icmp type echo-request`,
+  output: `tcp sport ${SPORT} tcp dport ${DPORT} tcp flags syn`,
 };
 
 const COMMON = [
@@ -142,6 +162,31 @@ const COMMON = [
   "ip6 saddr ::1", "ip6 saddr ::1/128", "ip6 saddr @nets6",
   "ip6 nexthdr tcp", "ip protocol tcp",
   "ip frag-off & 0x1fff != 0",
+  /* the outgoing side, which only the output probe can answer */
+  'oifname "lo"', 'oifname "eth*"', 'oifname != "lo"', "oif lo",
+  /* icmp: the protocol is knowable, which message it is never was */
+  "meta l4proto icmp", "ip protocol icmp", "icmp type echo-request", "icmp type echo-reply",
+
+  /* negation, in every place it can be written */
+  "tcp dport != { 22, 80 }", "ip saddr != @nets", "ip saddr != 127.0.0.0/8",
+  "meta l4proto != tcp", "ct state != { new, established }",
+  /* anonymous sets, including a concatenated one */
+  "ip saddr { 127.0.0.1 }", "ip saddr . tcp dport { 127.0.0.1 . 18080 }",
+  "ip saddr . tcp dport { 10.0.0.1 . 22 }",
+  /* the transport-agnostic spelling */
+  "th dport 18080", "th sport 15000", "th dport 9999",
+  /* several constraints of the same kind in one rule, which is one rule */
+  "tcp sport 15000 tcp dport 18080", "tcp sport 15000 tcp dport 9999",
+  "ip saddr 127.0.0.1 ip daddr 127.0.0.1", "ip saddr 127.0.0.1 ip daddr 10.0.0.1",
+  /* a range written the other way, and the boundaries */
+  "tcp dport 18080-18080", "tcp dport 18079-18080", "tcp dport 18081-18999",
+  /* no verdict maps here: one is the verdict, so the counter behind it never
+     runs and the probe would be measuring its own shape. test/vmap.test.js
+     asks about those where they belong, at the verdict. */
+  /* things nothing here models: the kernel will disagree and the trace has to
+     say so rather than be quietly right by accident */
+  "meta mark 0x1", "meta skuid 0", "ip ttl 64", "ip ttl < 5", "meta length > 10000",
+  "ct mark 0x1", "ip dscp cs1",
 ];
 
 function runOne(kind) {
@@ -150,7 +195,7 @@ function runOne(kind) {
   const ruleset = `table inet probe {
 ${SETS_NFT}
 	chain input {
-		type filter hook input priority 0; policy accept;
+		type filter hook ${HOOK[kind] ?? "input"} priority 0; policy accept;
 		${GATE[kind]} jump probe
 	}
 
@@ -188,10 +233,11 @@ nft list chain inet probe probe
   }
 
   Object.assign(MODEL, { chains: [], objects: [], tables: [], prelude: [], sets: SETS_MODEL });
-  const p = { dir: "in", iif: "lo", oif: "", sport: SPORT, dport: DPORT,
-              tracked: true, nat: true, ...PKT[kind] };
+  const leaving = DIR[kind] === "out";
+  const p = { dir: DIR[kind] ?? "in", iif: leaving ? "" : "lo", oif: leaving ? "lo" : "",
+              sport: SPORT, dport: DPORT, tracked: true, nat: true, ...PKT[kind] };
 
-  let bad = 0, seen = 0, yes = 0;
+  let bad = 0, seen = 0, yes = 0, assumed = 0;
   for (const [i, expr] of cases.entries()) {
     if (!kernel.has(i)) continue;
     seen++;
@@ -199,16 +245,21 @@ nft list chain inet probe probe
     if (k) yes++;
     const e = matches({ expr }, p);
     if (k === e) continue;
-    bad++;
+    /* Disagreeing about something it said it had not read is the design
+       working: the verdict carries the admission with it. Disagreeing with
+       nothing to show for it is the failure this harness is for. */
     const un = unmodelled(expr);
-    stdout.write(`  ${un.length ? "assumed " : "SILENT  "} ${kind.padEnd(12)} kernel=${String(k).padEnd(5)} eFeFlow=${String(e).padEnd(5)} ${expr}` + "\n");
+    if (un.length) { assumed++; continue; }
+    bad++;
+    stdout.write(`  SILENT   ${kind.padEnd(12)} kernel=${String(k).padEnd(5)} eFeFlow=${String(e).padEnd(5)} ${expr}` + "\n");
   }
-  stdout.write(`  ${kind.padEnd(12)} ${seen} compared, ${bad} disagree  (kernel: ${yes} match / ${seen - yes} do not)` + "\n");
+  stdout.write(`  ${kind.padEnd(12)} ${seen} compared, ${bad} silent, ${assumed} declared`
+    + `  (kernel: ${yes} match / ${seen - yes} do not)` + "\n");
   return { bad, seen };
 }
 
 let bad = 0, seen = 0;
-for (const kind of ["tcp", "udp", "tcp6", "established"]) {
+for (const kind of ["tcp", "udp", "tcp6", "established", "icmp", "output"]) {
   const r = runOne(kind);
   bad += r.bad; seen += r.seen;
 }

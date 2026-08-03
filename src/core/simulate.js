@@ -285,6 +285,10 @@ function concatOk(m, p){
   return negated(m[2], hit);
 }
 
+/* is the token about to be read the value of an l4proto/protocol/nexthdr
+   match, rather than a protocol named on its own? */
+const OWNED = /(?:l4proto|protocol|nexthdr)\s+(?:!=\s*)?(?:\{[^}]*)?[\s,]*$/;
+
 const MATCHERS = [
   /* an untracked packet has no conntrack entry: `ct state` can only match it
      through the untracked keyword, and `ct status` never matches */
@@ -373,7 +377,14 @@ const MATCHERS = [
       const rel = relate(m[3], v, m[4]);
       return rel !== null ? rel : negated(m[3], matchVal(v, m[4]));
     } },
-  { re: /\b(tcp|udp|icmp|icmpv6|sctp|dccp)\b/, ok: (m,p) => m[1] === p.proto },
+  /* The protocol named on its own — `tcp dport 22`, `icmp type echo-request` —
+     and only then. A protocol written as the *value* of another match belongs
+     to that match: `meta l4proto != tcp` is read by the matcher above, and
+     reading the `tcp` out of it a second time turned the negation into its
+     opposite, so an ICMP packet missed a rule written to catch everything that
+     is not TCP. Found by asking the kernel. */
+  { re: /\b(tcp|udp|icmp|icmpv6|sctp|dccp)\b/,
+    ok: (m,p) => OWNED.test(m.input.slice(0, m.index)) || m[1] === p.proto },
   { re: /\b(sport|dport)\s+(!=|<=|>=|<|>)?\s*(\{[^}]*\}|\S+)/,
     ok: (m,p) => {
       const v = m[1] === "dport" ? p.dport : p.sport;
