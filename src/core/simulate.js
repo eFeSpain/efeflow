@@ -1,6 +1,6 @@
 /* Evaluates a synthetic packet against the same model the code is
    emitted from, so a verdict here is the verdict the export produces. */
-import { MODEL, UID, chainOf, jumpTarget } from './model.js';
+import { MODEL, UID, chainOf, jumpTarget, expand } from './model.js';
 import { inCidr, family, looksLikeAddr } from './addr.js';
 import { isDormant } from './tables.js';
 export { inCidr };
@@ -119,7 +119,7 @@ const OPAQUE = [
 /* The expression with the statements nothing reads into struck out. Shared
    with the analyser, which was making the same mistake this was written for:
    reading the `oif` out of the middle of a fib lookup. */
-export const readable = e => mask(String(e || "")).masked;
+export const readable = e => mask(expand(e)).masked;
 
 function mask(e){
   const chars = [...e];
@@ -139,7 +139,9 @@ const allOf = (re, s) =>
   [...s.matchAll(re.global ? re : new RegExp(re.source, re.flags + "g"))];
 
 export function matches(r,p){
-  const e = r.expr;
+  /* on the expansion, never on the text: `iifname $WAN` is a constraint on
+     wan0, and comparing a packet against the dollar sign was a certain miss */
+  const e = expand(r.expr);
   if(!e) return true;
   const { masked } = mask(e);
   for(const { re, ok } of MATCHERS)
@@ -169,7 +171,9 @@ const NOT_A_MATCH = [
 /* Struck out with a marker rather than deleted, so a leftover keeps the
    spaces inside it: `meta mark 0x1` is one thing this cannot read, not three. */
 export function unmodelled(expr){
-  const e = String(expr || "");
+  /* the same expansion the matchers saw, so the spans line up with what was
+     actually read rather than with what was written */
+  const e = expand(expr);
   if(!e.trim()) return [];
 
   const { masked } = mask(e);

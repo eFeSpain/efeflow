@@ -98,6 +98,49 @@ export function ruleLine(r){
   return ((r.expr ? r.expr+" " : "") + (ctr ? "counter ":"") + verdictText(r)).trim();
 }
 
+/* `define WAN = wan0` above the first table, and `$WAN` in fifty rules below.
+ *
+ * The parser keeps both, and deliberately: the definitions in `prelude`, the
+ * references verbatim in the rules, which is what makes the round-trip exact
+ * and what lets the file come back out looking like the file that went in.
+ * Nothing resolved them, so the evaluator compared a packet arriving on wan0
+ * against the string "$WAN" and missed — and so did every other matcher, on
+ * every rule of a ruleset written the way most of them are written.
+ *
+ * A rule that cannot match for a reason that is not a reason is the worst
+ * shape this can fail in: silent, and confident. So the text stays as it was
+ * and the reasoning happens on the expansion. */
+export function defines(model = MODEL){
+  const out = new Map();
+  for(const line of model.prelude || []){
+    const m = String(line).match(/^define\s+([A-Za-z_]\w*)\s*=\s*(.+?)\s*;?$/);
+    /* nft accepts a quoted value and an unquoted one for the same thing, and
+       the rules below use them interchangeably: `iifname $WAN` wants wan0
+       whether the define wrote it with quotes or without */
+    if(m) out.set(m[1], m[2].replace(/^"([^"]*)"$/, "$1"));
+  }
+  return out;
+}
+
+/** An expression with its `$name` references replaced by what they name. */
+export function expand(expr, model = MODEL){
+  const e = String(expr ?? "");
+  if(!e.includes("$")) return e;                  /* the overwhelming majority */
+  const map = defines(model);
+  if(!map.size) return e;
+  /* A define may name another one. The bound is here because a definition
+     that names itself must not hang the canvas — nft rejects that, we just
+     stop. A name with no definition is left as it was written: `include` can
+     have provided it, and inventing a value would be worse than saying so. */
+  let out = e;
+  for(let i = 0; i < 8 && out.includes("$"); i++){
+    const next = out.replace(/\$([A-Za-z_]\w*)/g, (all, n) => map.has(n) ? map.get(n) : all);
+    if(next === out) break;
+    out = next;
+  }
+  return out;
+}
+
 export const UID = ch => ch.table + '/' + ch.id;
 export const jumpTarget = (ch, name) =>
   MODEL.chains.find(c => c.table === ch.table && c.id === name);

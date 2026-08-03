@@ -1,6 +1,6 @@
 /* Findings are derived from the model, never authored. The core relation
    is subsumption: A subsumes B when every packet matching B matches A. */
-import { MODEL, R, ruleLine, jumpTarget, UID, chainOf } from './model.js';
+import { MODEL, R, ruleLine, jumpTarget, UID, chainOf, expand } from './model.js';
 
 /* A finding describes the ruleset; applying it must act on the ruleset as
    it is now. Capturing object references looked fine until undo — which
@@ -71,7 +71,11 @@ export function criteria(expr){
   let at = 0, rest = "";
   for(const [x,y] of read){ if(x > at) rest += e.slice(at, x); at = Math.max(at, y); }
   rest += e.slice(at);
-  c._opaque = /\S/.test(rest) || readable(expr) !== String(expr || "");
+  /* against the expansion and not the source: with `define` resolved, a rule
+     naming $WAN differs from its own text for a reason that has nothing to do
+     with anything being unreadable, and calling it opaque would silently
+     retire the analyser on every ruleset that uses a variable. */
+  c._opaque = /\S/.test(rest) || e !== expand(expr);
   return c;
 }
 const listOf = v => v.startsWith("{") ? v.slice(1,-1).split(",").map(s=>s.trim()) : [v];
