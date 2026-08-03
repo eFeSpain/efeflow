@@ -31,6 +31,18 @@ table inet probe {
 		elements = { 203.0.113.0/24 timeout 30m, 198.51.100.7 }
 	}
 
+	map pairs_v {
+		type ipv4_addr . inet_service : verdict
+		elements = { 203.0.113.48 . 19074 : accept }
+	}
+
+	set growing {
+		type ipv4_addr
+		flags dynamic, timeout
+		timeout 1h
+		size 65535
+	}
+
 	set ifaces {
 		type ifname
 		elements = { "veth*", wan0 }
@@ -103,6 +115,27 @@ table inet probe {
 		ct state { new, related } tcp dport 19031 accept
 		ct status dnat tcp dport 19032 accept
 		ct status confirmed tcp dport 19033 accept
+	}
+
+	# ── verdict maps, which carry the verdict the rule does not ─────────
+	chain maps {
+		type filter hook input priority 50; policy drop;
+		tcp dport vmap { 19071 : accept, 19072 : drop }
+		iifname vmap { "wan0" : jump sink }
+		ip saddr . tcp dport vmap @pairs_v
+	}
+
+	chain sink {
+		tcp dport 19073 accept
+	}
+
+	# ── statements, which decide nothing about whether a rule applies ───
+	chain doing {
+		type filter hook input priority 60; policy drop;
+		tcp dport 19081 meta mark set 0x1 accept
+		tcp dport 19082 notrack accept
+		tcp dport 19083 add @growing { ip saddr } accept
+		tcp dport 19084 counter queue num 0
 	}
 
 	# ── things nothing here models, which must be said rather than guessed ──

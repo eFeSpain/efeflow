@@ -56,16 +56,32 @@ test("an untracked packet is only reachable through the untracked keyword", () =
 
 /* ── ct state vmap ───────────────────────────────────────────────────────── */
 
-/* A verdict map decides the verdict, which is more than this models. What it
-   must not do is pretend to have evaluated it and come back with a certain
-   miss on the first rule of every chain. */
-test("a verdict map on ct state is left to unmodelled rather than misread", () => {
-  const e = "ct state vmap { established : accept, invalid : drop }";
-  assert.equal(hit(e), true, "a rule this cannot read is taken as matching");
-  assert.deepEqual(unread(e), [e], "and the whole of it is named as assumed");
+/* A verdict map decides the verdict, and the rule carries none of its own.
+   This was first fixed by refusing to misread it — the state matcher took
+   `vmap` for the name of a state and made the rule a certain miss — and the
+   honest answer then was to leave it unread and say so. It is evaluated now,
+   which is better, and the shape of the earlier fix is what made that safe:
+   nothing else reads a fragment out of it. */
+test("a verdict map on ct state decides the verdict", () => {
+  Object.assign(MODEL, {
+    sets: [], objects: [], tables: [], prelude: [],
+    chains: [{
+      id: "input", table: "inet fw", hook: "input", prio: 0, type: "filter",
+      policy: "drop", rules: [
+        { expr: "ct state vmap { established : accept, invalid : drop }",
+          verdict: "continue", implicit: true, on: true, pkts: 0, bytes: 0 },
+      ],
+    }],
+  });
+  setPacket({ ...PKT, state: "established" });
+  assert.equal(evaluate(packet).final.v, "accept");
+  setPacket({ ...PKT, state: "invalid" });
+  assert.equal(evaluate(packet).final.v, "drop");
 });
 
-test("a rule carrying a vmap is marked unsure in the trace", () => {
+/* A key the map does not hold means the rule does not fire, the same as a map
+   used as a NAT target: the lookup is part of the expression. */
+test("a state the map says nothing about falls through to the rule below", () => {
   Object.assign(MODEL, {
     sets: [], objects: [], tables: [], prelude: [],
     chains: [{
@@ -77,11 +93,10 @@ test("a rule carrying a vmap is marked unsure in the trace", () => {
       ],
     }],
   });
-  setPacket(PKT);
+  setPacket(PKT);                                  /* state new: not in the map */
   const r = evaluate(packet);
-  assert.equal(r.final.v, "accept");
-  assert.equal(r.sure, false, "the verdict passed through something it could not read");
-  assert.ok(r.unsure.some((u) => u.includes("vmap")), JSON.stringify(r.unsure));
+  assert.equal(r.final.v, "accept", "the rule below decided it");
+  assert.equal(r.sure, true, "and nothing about that was a guess");
 });
 
 /* ── ct status ───────────────────────────────────────────────────────────── */

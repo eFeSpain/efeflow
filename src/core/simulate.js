@@ -157,14 +157,51 @@ const KEY_RE = Object.keys(CONCAT_KEY).sort((a,b)=>b.length-a.length)
 const CONCAT_RE = new RegExp(
   `\\b((?:${KEY_RE})(?:\\s*\\.\\s*(?:${KEY_RE}))+)\\s+(!=\\s*)?(@\\w+|\\{[^}]*\\})`, "g");
 
+/* one key or a concatenation of them, then the map that decides */
+const VMAP_RE = new RegExp(
+  `\\b((?:${KEY_RE})(?:\\s*\\.\\s*(?:${KEY_RE}))*)\\s+vmap\\s+(@\\w+|\\{[^}]*\\})`, "g");
+
 const keysOf = m => m[1].split(/\s*\.\s*/).map(k => k.trim().replace(/\s+/g, " "));
 
 /* the concatenations this can actually evaluate, as spans of the expression */
 function concatSpans(e){
   const out = [];
-  for(const m of e.matchAll(CONCAT_RE))
-    if(keysOf(m).every(k => CONCAT_KEY[k])) out.push([m.index, m.index + m[0].length]);
+  for(const re of [CONCAT_RE, VMAP_RE])
+    for(const m of e.matchAll(re))
+      if(keysOf(m).every(k => CONCAT_KEY[k])) out.push([m.index, m.index + m[0].length]);
   return out;
+}
+
+/**
+ * `tcp dport vmap { 80 : accept, 443 : drop }` — the lookup is the verdict,
+ * and the rule carries none of its own.
+ *
+ * The port matcher read `vmap` as the value it was comparing, so the rule was
+ * a certain miss — and a miss is never reported as a guess, because
+ * unmodelled() is only asked about rules that matched. A packet to port 80 was
+ * shown falling past an accept written for it into a policy drop, and the
+ * trace called itself certain. `ct state vmap` had already been found doing
+ * this; every other key was doing it too.
+ *
+ * @returns the verdict as written (`accept`, `jump lan_in`), `null` when no
+ *   element holds the key — the rule does not fire — or `undefined` when the
+ *   key is one nothing here reads, which is left to unmodelled().
+ */
+export function vmapVerdict(expr, p){
+  const m = new RegExp(VMAP_RE.source).exec(expand(expr));
+  if(!m) return undefined;
+  const keys = m[1].trim().split(/\s+\.\s+/).map(k => k.trim().replace(/\s+/g, " "));
+  const parts = keys.map(k => CONCAT_KEY[k]);
+  if(parts.some(x => !x)) return undefined;
+  const vals = parts.map(x => x.of(p));
+  for(const e of (m[2].startsWith("@") ? setOf(m[2].slice(1)) : items(m[2]))){
+    const at = String(e).split(/\s+:\s+/);
+    if(at.length !== 2) continue;
+    const ks = at[0].split(/\s+\.\s+/);
+    if(ks.length === keys.length && ks.every((kv, i) => parts[i].cmp(vals[i], kv)))
+      return at[1].trim();
+  }
+  return null;
 }
 
 function concatOk(m, p){
@@ -286,6 +323,12 @@ const OPAQUE = [
      matches() evaluates these before the mask goes on; the ones it cannot are
      reported whole by unmodelled() rather than half read. */
   new RegExp(CONCAT_RE.source, "g"),
+  new RegExp(VMAP_RE.source, "g"),
+  /* A hash, or a counter chosen at random, is not something one packet has an
+     answer for — and `jhash ip saddr mod 2 == 0` was worse than unanswered:
+     the address matcher read the `ip saddr` out of the middle of it and
+     compared the packet against the word `mod`. */
+  /\b(?:numgen|jhash|symhash)\s+[^{]*?mod\s+\d+(?:\s+offset\s+\d+)?(?:\s*(?:<=|>=|==|!=|<|>)\s*\S+)?/g,
   /\bfib\s+\w+(?:\s*\.\s*\w+)*\s+(?:oif(?:name)?|type|check)(?:\s+(?:!=\s*)?\S+)?/g,
   /* `icmp type echo-request` is two claims, and only one of them is beyond
      this: which message it is. That it is ICMP at all is knowable, and masking
@@ -342,6 +385,22 @@ const NOT_A_MATCH = [
   /\blog\b(?:\s+(?:prefix\s+"(?:[^"\\]|\\.)*"|level\s+\S+|group\s+\d+|snaplen\s+\d+|queue-threshold\s+\d+|flags\s+\S+))*/g,
   /\bcounter(?:\s+packets\s+\d+\s+bytes\s+\d+)?/g,
   /\bcomment\s+"(?:[^"\\]|\\.)*"/g,
+  /* Statements, not matches: whether the rule applies does not turn on any of
+     them, so reporting them as assumptions was noise — and the whole value of
+     that list is in it being short. A rule doing `meta mark set` or `notrack`
+     is one this reads perfectly well.
+     `limit rate` is deliberately not here. A rate limit really does decide
+     whether the rule fires, out of a history no single packet carries, and
+     saying so is the honest answer rather than a nuisance. */
+  /\bmeta\s+(?:mark|priority|nftrace|secmark|pkttype)\s+set\s+\S+/g,
+  /\bct\s+(?:mark|label|event|zone|helper)\s+set\s+\S+/g,
+  /\bnotrack\b/g,
+  /\bnftrace\s+set\s+\d+/g,
+  /\bqueue(?:\s+(?:num|flags)\s+\S+)*/g,
+  /\bflow\s+(?:add|offload)\s+@\w+/g,
+  /\b(?:add|update|delete)\s+@\w+\s*\{[^}]*\}/g,
+  /\b(?:dup|fwd|tproxy)\s+to\s+\S+(?:\s+device\s+\S+)?/g,
+  /\bsynproxy\b(?:\s+(?:mss|wscale)\s+\S+|\s+(?:timestamp|sack-perm))*/g,
 ];
 
 /**
@@ -561,40 +620,56 @@ export function evaluate(p){
         target = look.to ?? "";
       }
 
-      if(r.verdict==="dnat" || r.verdict==="redirect"){
+      /* A verdict map decides the verdict, and the rule carries none of its
+         own — the parser reads it as falling through, because there is no
+         verdict word at the end of the line to read. Same rule as a map
+         target: a key the map does not hold means nothing fires. */
+      let verdict = r.verdict;
+      if(/\bvmap\b/.test(String(r.expr || ""))){
+        const v = vmapVerdict(r.expr, p);
+        if(v === null){ hop.evs.push({r, i, st:"miss", note:"vmap"}); continue; }
+        if(v !== undefined){
+          const go = v.match(/^(jump|goto)\s+(\S+)$/);
+          if(go){ verdict = go[1]; target = go[2]; }
+          else { verdict = v; target = undefined; }
+          hop.evs[hop.evs.length - 1].via = v;
+        }
+      }
+
+      if(verdict==="dnat" || verdict==="redirect"){
         const {host, port, assumed} = natTarget(target);
         guessed.push(...assumed);
         p.dnat = true;
         if(host) p.daddr = host;
         if(port !== null) p.dport = port;
-        hop.nat = r.to || r.verdict;
+        hop.nat = r.to || verdict;
         return {stop:"chain", settled:true};
       }
       /* `ct status snat` can only be answered for a packet something has
          actually translated the source of */
-      if(r.verdict==="snat"){ p.snat = true; hop.nat = target; return {stop:"chain", settled:true}; }
+      if(verdict==="snat"){ p.snat = true; hop.nat = target; return {stop:"chain", settled:true}; }
 
       /* jump remembers where it came from and goto does not — which is the
          whole reason nftables has both. A goto whose target settles nothing
          leaves the base chain's policy to decide, never the rules below it. */
-      if(r.verdict==="jump" || r.verdict==="goto"){
-        const tgt = jumpTarget(ch, r.to);
+      if(verdict==="jump" || verdict==="goto"){
+        const tgt = jumpTarget(ch, target);
         if(!tgt) continue;              /* a chain that is not there decides nothing */
         const v = walk(UID(tgt), depth+1);
         if(v.stop==="packet") return v;
-        if(r.verdict==="goto" || v.settled) return {stop:"chain", settled:v.settled};
+        if(verdict==="goto" || v.settled) return {stop:"chain", settled:v.settled};
         continue;
       }
 
       /* `return` leaves this chain having decided nothing: back to the caller,
          or to the policy if this chain is the base one. */
-      if(r.verdict==="return") return {stop:"chain", settled:false};
+      if(verdict==="return") return {stop:"chain", settled:false};
 
       /* nftables terminality: `accept` ends this chain but the packet carries
          on to the next hook. Only drop/reject end the packet outright. */
-      if(r.verdict==="accept"){ accepted = {v:"accept", chain:ch, r, i}; return {stop:"chain", settled:true}; }
-      if(r.verdict==="drop" || r.verdict==="reject")
-        return {stop:"packet", v:r.verdict, chain:ch, r, i};
+      if(verdict==="accept"){ accepted = {v:"accept", chain:ch, r, i}; return {stop:"chain", settled:true}; }
+      if(verdict==="drop" || verdict==="reject")
+        return {stop:"packet", v:verdict, chain:ch, r, i};
     }
     return {stop:"chain", settled:false};
     } finally { walking.delete(chainId); }

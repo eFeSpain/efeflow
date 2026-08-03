@@ -139,7 +139,10 @@ for (const expr of [
   "fib saddr . iif oif missing",
   "meta skuid 1000",
   "ct status confirmed",
-  "ct state vmap { established : accept, invalid : drop }",
+  /* not the verdict maps: those are evaluated now. What stays here is state
+     that is nowhere on the packet, which no amount of reading can supply. */
+  "meta length 40-1500",
+  "numgen random mod 100 < 5",
 ])
   test(`says it did not read: ${expr}`, () => {
     load();
