@@ -486,6 +486,65 @@
   margin-bottom: 14px;
 }
 
+/* ── what an apply does to the host ────────────────────────────────────
+   Not a code block and not a git diff. The three things an apply does to a
+   rule are create it, destroy it and change it, and destroy is the one worth
+   seeing first, because those are rules running on that machine right now
+   which will not be there afterwards. */
+.ap-plan {
+  border: 1px solid var(--line-2);
+  background: var(--sunken);
+  border-radius: var(--r-sm);
+  max-height: 210px;
+  overflow: auto;
+  font: 450 11px/1.55 var(--mono);
+}
+.ap-plan .ch {
+  padding: 5px 10px 3px;
+  color: var(--t3);
+  font: 600 10px var(--sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-top: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--sunken);
+}
+.ap-plan .ch:first-child {
+  border-top: 0;
+}
+.ap-plan .ln {
+  display: flex;
+  gap: 7px;
+  padding: 1px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ap-plan .ln > i {
+  flex: none;
+  width: 8px;
+  font-style: normal;
+  opacity: 0.8;
+}
+.ap-plan .ln.gone {
+  color: #ffc9c9;
+  background: rgba(250, 90, 90, 0.07);
+}
+.ap-plan .ln.new {
+  color: #b6f2cd;
+  background: rgba(71, 224, 130, 0.06);
+}
+.ap-plan .ln.was {
+  color: var(--t4);
+}
+.ap-plan .ln.now {
+  color: var(--t1);
+}
+.ap-plan .quiet {
+  padding: 4px 10px 7px;
+  color: var(--t4);
+}
+
 /* ── the project name is editable, and looks it ────────────────────── */
 #proj-name {
   display: inline-flex;

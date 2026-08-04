@@ -70,6 +70,46 @@ test("rules something else added on the host are counted", async () => {
   assert.equal(r.inSync, false);
 });
 
+/* The scoped apply replaces the project's own tables and leaves the rest of
+   the firewall standing, so the rest of the firewall is not drift. Unscoped,
+   any machine running Docker reported drift before every apply, for ever,
+   about chains it was never going to touch — and a warning that is always on
+   is a warning nobody reads. */
+const DOCKER = `
+table ip docker {
+	chain DOCKER {
+		type nat hook prerouting priority dstnat; policy accept;
+		iif "docker0" counter packets 7 bytes 400 return # handle 3
+	}
+}`;
+
+test("another program's tables are not drift when the apply spares them", async () => {
+  const api = fake({ list: { ok: true, stdout: LIVE + DOCKER, stderr: "", code: 0 } });
+  const r = await checkDrift({
+    model: parseNft(LIVE), target: TARGET, tables: ["inet filter"], api,
+  });
+  assert.equal(r.inSync, true, "Docker counted as drift on a ruleset that matches the host");
+  assert.equal(r.added, 0);
+});
+
+test("and they are, when the apply is the one that empties the kernel", async () => {
+  const api = fake({ list: { ok: true, stdout: LIVE + DOCKER, stderr: "", code: 0 } });
+  const r = await checkDrift({ model: parseNft(LIVE), target: TARGET, api });
+  assert.equal(r.added, 1, "`flush ruleset` deletes Docker's table and has to say so");
+});
+
+/* A diff of a firewall is a photograph, and the dialog says how old it is. */
+test("a drift check carries the plan and when it was taken", async () => {
+  const before = Date.now();
+  const r = await checkDrift({ model: parseNft(LIVE), target: TARGET, api: fake() });
+  assert.ok(r.plan, "nothing to draw the diff from");
+  assert.ok(r.at >= before && r.at <= Date.now(), "the reading has no timestamp");
+  assert.equal(r.plan.identical, true);
+  /* and even an identical ruleset is not free */
+  assert.equal(r.plan.recreated, 3);
+  assert.equal(r.plan.packets, 900 + 12 + 3);
+});
+
 test("one rule can be pushed by its handle", async () => {
   const model = parseNft(LIVE);
   const api = fake();

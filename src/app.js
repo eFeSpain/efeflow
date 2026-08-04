@@ -31,6 +31,7 @@ import { target, loadTarget, saveTarget, asTauriTarget, describe, probe,
 import { asTarget, matching, label as hostLabel } from "./core/hosts.js";
 import { applyWithNet, keep, rollBackNow, pendingRollback } from "./apply.js";
 import { refreshCounters, checkDrift, pushRule } from "./host.js";
+import { applyPlan } from "./core/sync.js";
 import * as native from "./native.js";
 
 const MODEL_HOOKS = { push: onModelChange };
@@ -45,7 +46,7 @@ document.addEventListener("click", (e) => {
 });
 
 /* hoisted: the prototype relied on <script> ordering for these */
-let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI, TOURI, APPLY, REACH, WATCH;
+let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI, TOURI, APPLY, REACH, WATCH, PLAN;
 
 FIND = [];
 const $  = (s,r=document)=>r.querySelector(s);
@@ -4910,21 +4911,147 @@ function tickCountdown(){
  * the apply takes them with it. This is the look before that, and it runs when
  * the dialog opens rather than on a button, because the moment it matters is
  * the moment before you press Apply. */
+/* ── what applying does, said before it is done ──────────────────────────
+ *
+ * Three things were wrong with the one-line summary this replaces, and only
+ * the first was visible from here.
+ *
+ * It went silent when it could not read the host: `!r.ok` and `inSync` left by
+ * the same door, so *I could not look* was drawn exactly like *nothing has
+ * changed* — in front of the one button that can lock somebody out of a
+ * machine. Same defect as the counters: a zero that means nothing, painted
+ * like a zero that means something.
+ *
+ * It counted every table on the host, while the default apply replaces only
+ * the project's own. Any machine running Docker reported drift before every
+ * apply, for ever, about chains that were never going to be touched — and a
+ * warning that is always on is a warning nobody reads.
+ *
+ * And "3 it has that you have not" reads like something missing from your
+ * document. They are rules running on that firewall now — a ban, a
+ * colleague's hotfix — and what Apply does to them is delete them.
+ */
 async function warnOnDrift(){
-  if(!REACH?.ok) return;
-  const box = $("#ap-drift");
+  const box = $("#ap-drift"), fld = $("#ap-plan-fld");
   box.style.display = "none";
-  const r = await checkDrift({model: MODEL, target: asTauriTarget()});
-  if(!r.ok || r.inSync || !$("#scrim-apply").classList.contains("on")) return;
-  const bits = [
-    r.added   && t(`${r.added} it has that you have not`, `${r.added} que tiene y tú no`),
-    r.missing && t(`${r.missing} you have that it has not`, `${r.missing} que tienes y él no`),
-    r.changed && t(`${r.changed} that differ`, `${r.changed} que difieren`),
-  ].filter(Boolean);
-  box.style.display = "";
-  box.textContent = t(
-    `${describe()} has moved since you read it — ${bits.join(", ")}. Applying replaces what is there with what is here.`,
-    `${describe()} ha cambiado desde que lo leíste — ${bits.join(", ")}. Aplicar reemplaza lo que hay por lo que tienes.`);
+  if(fld) fld.style.display = "none";
+  PLAN = null;
+  if(!REACH?.ok) return;
+
+  /* Scoped to what this apply actually replaces. `ruleset` really does empty
+     the kernel, so there the scope is everything and no list is passed. */
+  const r = await reaching(
+    t(`reading ${describe()}…`, `leyendo ${describe()}…`),
+    ()=> checkDrift({
+      model: MODEL,
+      target: asTauriTarget(),
+      tables: APPLY.scope === "tables" ? applyTables() : undefined,
+    }));
+  if(!$("#scrim-apply").classList.contains("on")) return;
+
+  if(!r.ok){
+    /* Said out loud, and never as an empty diff. Apply is left enabled: a
+       screen that blocks the urgent operation because it could not draw a
+       picture is a screen that teaches people to apply blind. */
+    box.style.display = "";
+    box.textContent = t(
+      `Could not read ${describe()} — ${r.error || "no answer"}. This window cannot tell you what applying would replace. The rollback window below is the only safety net here.`,
+      `No se ha podido leer ${describe()} — ${r.error || "sin respuesta"}. Esta ventana no puede decirte qué reemplazaría aplicar. La ventana de rollback de abajo es aquí la única red.`);
+    return;
+  }
+
+  PLAN = r;
+  paintApplyPlan();
+}
+
+/** The diff, and the two facts about the machine that no diff can carry. */
+function paintApplyPlan(){
+  const fld = $("#ap-plan-fld"), out = $("#ap-plan"), cost = $("#ap-plan-cost");
+  const box = $("#ap-drift");
+  if(!fld) return;
+  if(!PLAN?.host){ fld.style.display = "none"; return; }
+
+  /* Recomputed from the reading already taken, not from a second one. The
+     scope buttons change what is replaced — "the whole ruleset" puts Docker's
+     tables back in play — and switching between them is a question about a
+     photograph we are already holding, not a reason to go back to the host. */
+  const p = applyPlan(MODEL, PLAN.host, {
+    tables: APPLY.scope === "tables" ? applyTables() : undefined,
+  });
+  fld.style.display = "";
+  out.innerHTML = "";
+
+  const line = (cls, mark, text)=>{
+    const el = document.createElement("div");
+    el.className = "ln " + cls;
+    const i = document.createElement("i"); i.textContent = mark;
+    const s = document.createElement("span"); s.textContent = text;
+    el.append(i, s); out.appendChild(el);
+  };
+
+  for(const c of p.touched){
+    const h = document.createElement("div");
+    h.className = "ch";
+    h.textContent = `${c.table} · ${c.chain}` + (
+      c.isNew ? t(" — new here", " — nueva aquí")
+      : c.isGone ? t(" — goes with the table", " — se va con la tabla") : "");
+    out.appendChild(h);
+    /* destroyed first: those are running right now and will not be */
+    for(const r of c.destroy) line("gone", "−", ruleLine(r));
+    for(const ch of c.change){ line("was", "−", ruleLine(ch.from)); line("now", "+", ruleLine(ch.to)); }
+    for(const r of c.create) line("new", "+", ruleLine(r));
+    if(c.keep) {
+      const q = document.createElement("div");
+      q.className = "quiet";
+      q.textContent = t(`${c.keep} unchanged`, `${c.keep} sin cambios`);
+      out.appendChild(q);
+    }
+  }
+
+  if(p.identical){
+    const q = document.createElement("div");
+    q.className = "quiet";
+    q.style.padding = "8px 10px";
+    q.textContent = t("Nothing differs. The rules on the host already say this.",
+                      "No difiere nada. Las reglas de la máquina ya dicen esto.");
+    out.appendChild(q);
+  }
+
+  /* The part with no text. Measured on nft 1.1.6: a scoped apply deletes the
+     table and rebuilds it, so every rule in it is a new rule to the kernel —
+     handles reassigned, counters at zero — including the ones nobody edited.
+     Where handles come out the same it is because numbering restarts and
+     coincides, which is not the same as being preserved. */
+  const when = Math.max(0, Math.round((Date.now() - PLAN.at)/1000));
+  const read = t(`read ${when}s ago`, `leído hace ${when}s`);
+  const said = [];
+  if(p.recreated)
+    said.push(t(
+      `All ${p.recreated} rules in ${p.tables.join(", ")} are deleted and rebuilt, not edited: every handle is reassigned and their counters go back to zero.`,
+      `Las ${p.recreated} reglas de ${p.tables.join(", ")} se borran y se reconstruyen, no se editan: todos los handles se reasignan y sus contadores vuelven a cero.`));
+  /* deleted and *not* put back — a different fate, and the worse one */
+  if(p.dropped)
+    said.push(t(
+      `${p.droppedTables.join(", ")} is not yours and is not rebuilt: ${p.dropped} rule${p.dropped===1?"":"s"} on that host stop existing.`,
+      `${p.droppedTables.join(", ")} no es tuya y no se reconstruye: ${p.dropped} regla${p.dropped===1?"":"s"} de esa máquina dejan de existir.`));
+  if(p.packets)
+    said.push(t(`${p.packets.toLocaleString()} packets counted so far go with them.`,
+                `Con ello se pierden ${p.packets.toLocaleString()} paquetes contados hasta ahora.`));
+  if(!said.length)
+    said.push(t(`${describe()} has none of these tables yet — nothing is replaced.`,
+                `${describe()} aún no tiene estas tablas — no se reemplaza nada.`));
+  cost.textContent = said.join(" ") + ` · ${read}`;
+
+  /* The old warning keeps its job: something moved under you since you read
+     it. It is now about rules this will destroy, which is what it always
+     meant. */
+  const gone = p.touched.reduce((a,c)=> a + c.destroy.length, 0);
+  box.style.display = gone ? "" : "none";
+  if(gone) box.textContent = gone === 1
+    ? t(`${describe()} has 1 rule that this does not — added there since you read it. Applying deletes it.`,
+        `${describe()} tiene 1 regla que esto no — añadida allí desde que lo leíste. Aplicar la borra.`)
+    : t(`${describe()} has ${gone} rules that this does not — added there since you read it. Applying deletes them.`,
+        `${describe()} tiene ${gone} reglas que esto no — añadidas allí desde que lo leíste. Aplicar las borra.`);
 }
 
 function openApply(){
@@ -4940,14 +5067,26 @@ function openApply(){
   paintApplyForm();
   $("#scrim-apply").classList.add("on");
   /* About to write to a firewall is the moment to know whether it answers and
-     whether it already has a rollback counting down. */
-  if(REACH === null && native.isDesktop()) refreshTarget();
-  warnOnDrift();
+     whether it already has a rollback counting down.
+
+     Awaited, and this is why: warnOnDrift begins `if(!REACH?.ok) return`, so
+     firing it alongside a probe that has not come back meant it returned
+     instantly, every time, on the first open of this dialog. The drift check
+     only ever ran the second time somebody opened it — which is not when they
+     needed it. Found by driving the real dialog, not by reading this. */
+  (async ()=>{
+    if(REACH === null && native.isDesktop()) await refreshTarget();
+    await warnOnDrift();
+  })();
 }
 
 $("#val-apply")?.addEventListener("click", openApply);
 $$("#ap-scope [data-scope]").forEach(b=>b.addEventListener("click", ()=>{
-  APPLY.scope = b.dataset.scope; paintApplyForm();
+  APPLY.scope = b.dataset.scope;
+  paintApplyForm();
+  /* the scope is what "this replaces" means, so the picture of what it
+     replaces changes with it — from the reading already in hand */
+  paintApplyPlan();
 }));
 $$("#ap-window [data-secs]").forEach(b=>b.addEventListener("click", ()=>{
   APPLY.secs = +b.dataset.secs; paintApplyForm();

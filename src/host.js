@@ -11,7 +11,7 @@
 
 import * as nativeApi from "./native.js";
 import { parseNft } from "./core/parse.js";
-import { applyCounters, syncReport, addressable } from "./core/sync.js";
+import { applyCounters, syncReport, applyPlan, addressable } from "./core/sync.js";
 import { ruleLine } from "./core/model.js";
 
 const read = async (target, api) => {
@@ -52,10 +52,18 @@ export async function refreshCounters({ model, target, api = nativeApi }) {
  * fail2ban while you were editing are invisible, and the apply takes them with
  * it. This is the look before that.
  */
-export async function checkDrift({ model, target, api = nativeApi }) {
+export async function checkDrift({ model, target, tables, api = nativeApi }) {
   const r = await read(target, api);
   if (!r.ok) return r;
-  return { ok: true, ...syncReport(model, r.host), host: r.host };
+  /* `at` because a diff of a firewall is a photograph, and one taken before
+     the last thing somebody did to that machine is worse than none. */
+  return {
+    ok: true,
+    ...syncReport(model, r.host, { tables }),
+    plan: applyPlan(model, r.host, { tables }),
+    host: r.host,
+    at: Date.now(),
+  };
 }
 
 /**
