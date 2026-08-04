@@ -228,7 +228,7 @@ says which opinion is missing rather than implying there were two.
 
 ## Install
 
-Grab an installer from [**Releases**](https://github.com/eFeSpain/efeflow/releases/latest):
+Grab an installer from [**Releases**](https://github.com/eFeSpain/efeflow/releases):
 Linux `.deb` `.rpm` `.AppImage` · Windows `.msi` · macOS `.dmg`
 
 ### Where `nft` runs

@@ -107,13 +107,14 @@ jobs:
 
             Local `nft` integration is Linux-only; on Windows and macOS point
             eFeFlow at a firewall over SSH.
-          # Published, and not a prerelease. Both of those were wrong for the
-          # same reason: the README's install link is /releases/latest, a draft
-          # is invisible to everyone but the owner, and GitHub leaves
-          # prereleases out of `latest` — so the one link that tells somebody
-          # how to install this pointed at nothing for the whole first release.
-          # That it is a beta is said by the README, by the version, and by the
-          # badge; it does not also need to be said by hiding the installers.
+          # Published, because a draft is visible to the owner and to nobody
+          # else — v0.9.0 sat as one, so the README's install link pointed at
+          # nothing for everybody who could not already build this.
+          #
+          # Still a prerelease, which is what it is. That leaves it out of
+          # GitHub's `latest`, so the README links to the releases list
+          # instead: one more click, and nothing has to claim the tool is ready
+          # to depend on in order for somebody to download it.
           releaseDraft: false
-          prerelease: false
+          prerelease: true
           args: ${{ matrix.target }}
