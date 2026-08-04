@@ -151,7 +151,7 @@ be reproduced, it tells you which one before you commit to anything.
 ## ⚠ Beta
 
 It does the whole job today: import, prove, analyse, simulate, edit, apply,
-export. 892 automated assertions stand behind it, across the parser, the
+export. 897 automated assertions stand behind it, across the parser, the
 analyser, the packet evaluator and the interface itself.
 
 What it does not have yet is mileage. **No ruleset but its author's has ever
@@ -355,11 +355,14 @@ write `accept`, not `aceptar`.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 892 assertions
+npm test             # 897 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 
 node bin/efeflow.mjs lint fw.nft    # the linter, straight from the clone
 ```
+
+**Node 22 or newer** — `.nvmrc` pins the 24 that CI builds with. Below 22 the
+test runner will not expand the glob in `npm test`, and jsdom will not load.
 
 Needs the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your
 platform. On Debian/Ubuntu:

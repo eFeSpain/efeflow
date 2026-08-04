@@ -10,6 +10,9 @@
     "url": "https://github.com/eFeSpain/efeflow.git"
   },
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
