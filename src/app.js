@@ -4741,6 +4741,19 @@ const ROOT_WHY = {
     body: t("Nothing was read, and nothing on this machine was touched. Press the button again to be asked once more.",
             "No se ha leído nada y no se ha tocado nada de esta máquina. Vuelve a pulsar el botón para que te lo pregunte otra vez."),
   }),
+  /* Measured on a Debian 13 desktop with the released .deb installed: the
+     helper was root-owned, mode 755, shebang present, and execve ran it — and
+     pkexec still exited 127, because the application had been started from an
+     ssh session and polkit had no agent for it. The message told the user to
+     reinstall a package that was installed perfectly, which is worse than
+     saying nothing. pkexec names the reason in its stderr; the native side
+     reads it now rather than inferring from the exit code alone. */
+  "no-polkit-agent": () => ({
+    title: t("Nothing asked you for a password",
+             "Nada te ha pedido la contraseña"),
+    body: t("The permission exists and the helper is fine — but there is nobody to raise the dialog. eFeFlow is running outside a desktop session that polkit can prompt in, which is what happens when it is launched from a terminal over ssh. Start it from your applications menu on that machine, or point eFeFlow at the firewall over SSH instead.",
+            "El permiso existe y el helper está bien — pero no hay quien levante el diálogo. eFeFlow se está ejecutando fuera de una sesión de escritorio en la que polkit pueda preguntar, que es lo que pasa al lanzarlo desde un terminal por ssh. Ábrelo desde el menú de aplicaciones de esa máquina, o apunta eFeFlow al cortafuegos por SSH."),
+  }),
   "helper-broken": () => ({
     title: t("polkit could not start the helper","polkit no pudo arrancar el helper"),
     body: t("The authorisation exists but the program behind it would not run. pkexec refuses a helper that is not owned by root or that others can write to, and reinstalling the package restores both.",

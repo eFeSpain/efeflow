@@ -48,6 +48,29 @@ test("the two reasons it cannot ask are told apart", async () => {
   assert.match(noPkexec, /pkexec/);
 });
 
+/* Reported from a Debian 13 desktop with the released .deb on it: "polkit
+   could not start the helper — reinstall the package". The helper was
+   root-owned, mode 755, shebang present, and execve ran it. Nothing was wrong
+   with the package at all. pkexec exits 127 for a helper it cannot run *and*
+   for having no authentication agent to ask with, and the second is what had
+   happened — the application had been started from an ssh session. Sending
+   somebody to reinstall a package that is installed correctly is worse than
+   telling them nothing. */
+test("a missing authentication agent is not a broken helper", async () => {
+  await boot();
+  const noAgent = (await help("no-polkit-agent")).text;
+  const broken = (await help("helper-broken")).text;
+  assert.equal((await help("no-polkit-agent")).drew, true);
+  assert.notEqual(noAgent, broken, "the two causes of exit 127 share a message again");
+
+  assert.doesNotMatch(noAgent, /reinstal|reinstal/i,
+    "it sends the user to reinstall a package that is installed correctly");
+  assert.match(noAgent, /sesión de escritorio|desktop session/i,
+    "it has to name what is actually missing");
+  assert.match(noAgent, /menú de aplicaciones|applications menu/i,
+    "and what to do instead");
+});
+
 /* A workaround belongs where there is something to work around. A declined
    password dialog is answered by pressing the button again, and telling
    somebody to go and run sudo instead would be the wrong advice. */

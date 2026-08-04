@@ -269,6 +269,22 @@ fn local_hint(out: Outcome, v: Verb, elevated: bool) -> Outcome {
             "declined",
             "The authorisation was declined, so nothing was read.".to_string(),
         ),
+        /* 127 has two quite different causes and this used to name only one of
+        them, confidently. Measured on a Debian 13 desktop: the helper was
+        root-owned, mode 755, with its shebang, and `execve` ran it — and
+        pkexec still exited 127, because the application had been started
+        outside the graphical session and polkit had no agent to ask with.
+        Being told to reinstall a package that is installed correctly is worse
+        than being told nothing.
+
+        pkexec says which it was, so read it rather than guess. */
+        Some(127) if elevated && both.contains("authentication agent") => (
+            "no-polkit-agent",
+            "Nothing asked for a password, so nothing was read. This is running outside a \
+             desktop session that polkit can prompt in — launch eFeFlow from your applications \
+             menu rather than from a terminal over ssh, or use an SSH target instead."
+                .to_string(),
+        ),
         Some(127) if elevated => (
             "helper-broken",
             "polkit could not start the eFeFlow helper — reinstall the package, or check that \
@@ -889,6 +905,32 @@ mod tests {
     fn a_rejected_ruleset_carries_no_code_at_all() {
         let out = failed(1, "/dev/stdin:1:34-34: Error: syntax error");
         assert_eq!(local_hint(out, Verb::Check, false).hint, None);
+    }
+
+    /* Both of these are exit 127 and they are not the same problem.
+    Measured on a Debian 13 desktop carrying the released .deb: the helper was
+    root-owned, mode 755, shebang present, and execve ran it — and pkexec still
+    exited 127, because the application had been started from an ssh session
+    and polkit had no agent to raise a dialog with. The message sent somebody
+    to reinstall a package that was installed perfectly. pkexec says which it
+    was; this reads that instead of inferring from the number. */
+    #[test]
+    fn no_authentication_agent_is_not_a_broken_helper() {
+        let no_agent = failed(
+            127,
+            "Error creating textual authentication agent: Error opening current \
+             controlling terminal for the process (`/dev/tty'): No such device or address",
+        );
+        assert_eq!(
+            local_hint(no_agent, Verb::Read, true).hint,
+            Some("no-polkit-agent")
+        );
+
+        /* and a 127 that says nothing about an agent keeps the old reading */
+        assert_eq!(
+            local_hint(failed(127, "no such file"), Verb::Read, true).hint,
+            Some("helper-broken")
+        );
     }
 
     #[test]
