@@ -32,22 +32,30 @@ pub enum Target {
     },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct Outcome {
     pub ok: bool,
     pub stdout: String,
     pub stderr: String,
     /// None when the process could not be spawned at all.
     pub code: Option<i32>,
+    /// Why a local call could not be made, as a word rather than a sentence.
+    ///
+    /// The sentence used to be here, in English, and the interface put it in a
+    /// toast — which is bilingual everywhere else and gives you two seconds to
+    /// read it. A code lets the interface say it in the user's language, in a
+    /// place that stays on screen. `stderr` keeps the prose for the CLI and
+    /// for whoever is reading a diagnostic.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<&'static str>,
 }
 
 impl Outcome {
     fn failed(msg: impl Into<String>) -> Self {
         Outcome {
             ok: false,
-            stdout: String::new(),
             stderr: msg.into(),
-            code: None,
+            ..Default::default()
         }
     }
 }
@@ -211,6 +219,28 @@ fn local_argv(v: Verb) -> (String, Vec<String>) {
     )
 }
 
+/// Which of the two halves is missing, when a call that needed root did not
+/// even get as far as asking for it.
+///
+/// "This needs root" and then no prompt is the worst of both: reported from
+/// the running app as "me sale un mensaje que dice que necesita root, pero no
+/// me pide root". There are two quite different reasons for it and the fix is
+/// different for each, so they are not going to share a sentence.
+#[cfg(target_os = "linux")]
+fn why_not_elevated() -> &'static str {
+    if helper().is_none() {
+        "needs-root-uninstalled"
+    } else if pkexec().is_none() {
+        "needs-root-no-pkexec"
+    } else {
+        "needs-root"
+    }
+}
+#[cfg(not(target_os = "linux"))]
+fn why_not_elevated() -> &'static str {
+    "needs-root"
+}
+
 /// Say what a local failure was actually about.
 ///
 /// `Operation not permitted` on its own is a true statement that helps nobody:
@@ -226,26 +256,31 @@ fn local_hint(out: Outcome, v: Verb, elevated: bool) -> Outcome {
     /* pkexec's own exit codes: 126 is "not authorised", which covers both a
     wrong password and a dismissed dialog, and 127 is a helper it could not
     run at all. Neither reaches nft, so neither says anything about nft. */
-    let hint = match out.code {
-        Some(126) if elevated => "The authorisation was declined, so nothing was read.".to_string(),
-        Some(127) if elevated => {
+    let (code, prose) = match out.code {
+        Some(126) if elevated => (
+            "declined",
+            "The authorisation was declined, so nothing was read.".to_string(),
+        ),
+        Some(127) if elevated => (
+            "helper-broken",
             "polkit could not start the eFeFlow helper — reinstall the package, or check that \
              /usr/libexec/efeflow/efeflow-nft-helper is owned by root and executable."
-                .to_string()
-        }
+                .to_string(),
+        ),
         _ if both.contains("Operation not permitted")
             || both.contains("must be root")
             || both.contains("Permission denied") =>
         {
-            v.hint().to_string()
+            (why_not_elevated(), v.hint().to_string())
         }
         _ => return out,
     };
     Outcome {
+        hint: Some(code),
         stderr: if out.stderr.trim().is_empty() {
-            hint
+            prose
         } else {
-            format!("{hint}\n\n{}", out.stderr.trim())
+            format!("{prose}\n\n{}", out.stderr.trim())
         },
         ..out
     }
@@ -405,6 +440,7 @@ fn spawn_collect(program: &str, args: &[String], stdin: Option<&str>) -> Outcome
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
             code: out.status.code(),
+            hint: None,
         },
         Err(e) => Outcome::failed(e.to_string()),
     }
@@ -686,9 +722,9 @@ pub async fn nft_apply(target: Target, ruleset: String, confirmed: bool) -> Outc
         if !check.ok {
             return Outcome {
                 ok: false,
-                stdout: String::new(),
                 stderr: format!("validation failed, nothing was applied:\n{}", check.stderr),
                 code: check.code,
+                ..Default::default()
             };
         }
         run(&target, &["nft", "-f", "-"], Some(&ruleset))
@@ -751,9 +787,8 @@ pub fn nft_watch(app: AppHandle, target: Target) -> Outcome {
     *WATCH.lock().unwrap() = Some(child);
     Outcome {
         ok: true,
-        stdout: String::new(),
-        stderr: String::new(),
         code: Some(0),
+        ..Default::default()
     }
 }
 
@@ -765,9 +800,8 @@ pub fn nft_unwatch() -> Outcome {
     }
     Outcome {
         ok: true,
-        stdout: String::new(),
-        stderr: String::new(),
         code: Some(0),
+        ..Default::default()
     }
 }
 
@@ -778,9 +812,9 @@ mod tests {
     fn failed(code: i32, stderr: &str) -> Outcome {
         Outcome {
             ok: false,
-            stdout: String::new(),
             stderr: stderr.into(),
             code: Some(code),
+            ..Default::default()
         }
     }
 
@@ -832,13 +866,38 @@ mod tests {
         assert_eq!(seen.stderr, "bash: nft: command not found");
     }
 
+    /// "It needs root" followed by no prompt was the actual complaint. The
+    /// code has to distinguish the two reasons, because one is fixed by
+    /// installing the package and the other by installing pkexec.
+    #[test]
+    fn a_permission_failure_names_why_it_could_not_ask() {
+        let out = failed(1, "Operation not permitted (you must be root)");
+        let seen = local_hint(out, Verb::Read, false);
+        let code = seen.hint.expect("a permission failure carries a code");
+        assert!(code.starts_with("needs-root"), "got {code}");
+    }
+
+    #[test]
+    fn a_rejected_ruleset_carries_no_code_at_all() {
+        let out = failed(1, "/dev/stdin:1:34-34: Error: syntax error");
+        assert_eq!(local_hint(out, Verb::Check, false).hint, None);
+    }
+
+    #[test]
+    fn a_declined_prompt_is_its_own_code() {
+        assert_eq!(
+            local_hint(failed(126, ""), Verb::Read, true).hint,
+            Some("declined")
+        );
+    }
+
     #[test]
     fn success_is_left_alone() {
         let out = Outcome {
             ok: true,
             stdout: "table inet filter {}".into(),
-            stderr: String::new(),
             code: Some(0),
+            ..Default::default()
         };
         assert!(local_hint(out, Verb::Read, false).ok);
     }

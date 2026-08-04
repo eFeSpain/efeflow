@@ -331,7 +331,9 @@ select{appearance:none;cursor:pointer;padding-right:26px;
   box-shadow:var(--lift);opacity:0;pointer-events:none;
   transition:opacity .18s var(--ease),transform .24s var(--ease);
 }
-#toast.on{opacity:1;transform:translate(-50%,0)}
+/* clickable only while it is up, so it never eats a click on what is behind */
+#toast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto;cursor:pointer}
+#toast{max-width:min(560px,86vw);line-height:1.5}
 
 /* ── context menu ── */
 .ctx{

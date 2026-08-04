@@ -138,13 +138,24 @@ function syncHistUI(){
 }
 
 toastT = null;
-function toast(msg){
+export function toast(msg){
   let n = $("#toast");
-  if(!n){ n = el("div","glass"); n.id = "toast"; document.body.appendChild(n); }
+  if(!n){
+    n = el("div","glass"); n.id = "toast";
+    /* Reported from the running app: "me sale un mensaje que no me da tiempo
+       a leer bien". Clicking it away is the other half of the fix below —
+       once a message can last eleven seconds, it has to be dismissible. */
+    n.addEventListener("click", ()=>n.classList.remove("on"));
+    document.body.appendChild(n);
+  }
   n.textContent = msg;
   n.classList.add("on");
   clearTimeout(toastT);
-  toastT = setTimeout(()=>n.classList.remove("on"), 2200);
+  /* 2.2s is right for "Exported fw.nft" and nowhere near enough for a
+     sentence explaining a permission. Scaled to roughly a reading pace, with
+     the old duration as the floor so nothing short got slower. */
+  toastT = setTimeout(()=>n.classList.remove("on"),
+                      Math.min(11000, Math.max(2200, String(msg).length * 55)));
 }
 
 /* ══ NAVIGATION ═════════════════════════════════════════════════════════ */
@@ -4693,12 +4704,89 @@ $("#tg-save").addEventListener("click", async ()=>{
   toast(t(`nft will run on ${describe()}`, `nft se ejecutará en ${describe()}`));
 });
 
+/* Why a local read could not even ask for the privilege it needs.
+ *
+ * The native side answers with a word rather than a sentence, because the
+ * sentence has to be said in the user's language and this file is where the
+ * two languages live. Reported from the running app: "un mensaje que dice que
+ * necesita root, pero no me pide root" — which was true, and the message did
+ * not say why not. There are two reasons and they have different fixes, so
+ * they get different text.
+ */
+/* Why, and only why. What was being attempted belongs to the caller — the
+   same missing pkexec stops a read and a check, and each has its own way
+   round it. */
+const ROOT_WHY = {
+  "needs-root-uninstalled": () => ({
+    title: t("Nothing here can ask you for root",
+             "Aquí no hay nada que pueda pedirte root"),
+    body: t("nftables has no read-only permission: the kernel wants CAP_NET_ADMIN even to list the rules. eFeFlow can ask for it with a desktop password prompt rather than running as root — but what does the asking is installed by the .deb or the .rpm, and this build is running without it. That is why it says root and never prompts.",
+            "nftables no tiene un permiso de solo lectura: el kernel exige CAP_NET_ADMIN incluso para listar las reglas. eFeFlow puede pedírtelo con un diálogo de contraseña del escritorio, en vez de ejecutarse como root — pero quien lo pide lo instala el .deb o el .rpm, y esta compilación se está ejecutando sin él. Por eso dice root y nunca te pregunta."),
+  }),
+  "needs-root-no-pkexec": () => ({
+    title: t("pkexec is missing, and pkexec is what asks",
+             "Falta pkexec, que es quien pregunta"),
+    body: t("The eFeFlow helper is installed, but pkexec is not — it is the program that raises the password dialog. On Debian and Ubuntu it is a package of its own: sudo apt install pkexec. A polkit authentication agent has to be running too, which every desktop environment provides.",
+            "El helper de eFeFlow está instalado, pero pkexec no — es el programa que levanta el diálogo de contraseña. En Debian y Ubuntu es un paquete aparte: sudo apt install pkexec. También hace falta un agente de autenticación de polkit en marcha, que todos los escritorios traen."),
+  }),
+  "needs-root": () => ({
+    title: t("This needs root, and it cannot be asked for here",
+             "Esto necesita root y aquí no se puede pedir"),
+    body: t("The kernel wants CAP_NET_ADMIN for this, and the desktop authorisation is not available on this machine.",
+            "El kernel exige CAP_NET_ADMIN para esto, y la autorización del escritorio no está disponible en esta máquina."),
+  }),
+  declined: () => ({
+    title: t("The authorisation was declined","Se rechazó la autorización"),
+    body: t("Nothing was read, and nothing on this machine was touched. Press the button again to be asked once more.",
+            "No se ha leído nada y no se ha tocado nada de esta máquina. Vuelve a pulsar el botón para que te lo pregunte otra vez."),
+  }),
+  "helper-broken": () => ({
+    title: t("polkit could not start the helper","polkit no pudo arrancar el helper"),
+    body: t("The authorisation exists but the program behind it would not run. pkexec refuses a helper that is not owned by root or that others can write to, and reinstalling the package restores both.",
+            "La autorización existe pero el programa que hay detrás no arrancó. pkexec rechaza un helper que no sea de root o en el que otros puedan escribir; reinstalar el paquete arregla las dos cosas."),
+  }),
+};
+
+/* The explanation goes where the button that failed is, and it stays there.
+   A toast cannot hold four sentences and a command you are meant to copy. */
+export function showRootHelp(code){
+  const why = ROOT_WHY[code]?.(); if(!why) return false;
+  /* Only the cases that are about not being able to ask have a way round;
+     a declined prompt is answered by pressing the button again. */
+  const workaround = code.startsWith("needs-root");
+  $("#imp-side").innerHTML = `
+    <div class="imp-sec">
+      <div style="display:flex;gap:9px;align-items:flex-start;margin-bottom:10px">
+        <span style="color:var(--warn);font-size:13px;line-height:1.2">⚠</span>
+        <span style="font:600 12.5px var(--sans);color:var(--t1)">${esc(why.title)}</span>
+      </div>
+      <div style="font-size:11.5px;color:var(--t3);line-height:1.65">${esc(why.body)}</div>
+      ${workaround ? `<div style="font-size:11.5px;color:var(--t3);line-height:1.65;margin-top:10px">${esc(t(
+        "Meanwhile: read the ruleset yourself, then open the file it writes.",
+        "Mientras tanto: lee el ruleset tú y abre el fichero que genera."))}</div>
+      <div class="mono" style="margin-top:7px;padding:8px 10px;border-radius:var(--r-sm);
+           background:var(--raised-2);border:1px solid var(--line-2);color:var(--t2);
+           font-size:11px;user-select:all;word-break:break-all">sudo nft -a list ruleset &gt; ruleset.nft</div>` : ""}
+    </div>`;
+  return true;
+}
+
 /* ── the two things a target is for ── */
 $("#imp-host")?.addEventListener("click", async ()=>{
   const r = await whilePressed($("#imp-host"), t("Reading…","Leyendo…"),
     ()=> reaching(t(`reading ${describe()}…`, `leyendo ${describe()}…`),
                   ()=> native.nftList(asTauriTarget())));
-  if(!r.ok){ toast(r.stderr.trim().split("\n")[0] || t("could not read","no se pudo leer")); return; }
+  if(!r.ok){
+    /* A privilege the application cannot obtain is not a one-line failure,
+       and it is not English either. The native side names the case; the text
+       and the language are decided here. */
+    if(showRootHelp(r.hint)){
+      toast(t("Could not read this machine — see the panel","No se pudo leer esta máquina — mira el panel"));
+      return;
+    }
+    toast(r.stderr.trim().split("\n")[0] || t("could not read","no se pudo leer"));
+    return;
+  }
   /* A machine with no firewall loaded answers with nothing, and nothing is a
      perfectly good answer — but "Read from fw01" over an empty textarea reads
      as a success with the result hidden somewhere, and the Import button then
@@ -4722,10 +4810,18 @@ $("#val-nft")?.addEventListener("click", async ()=>{
   const box = $("#val-nft-out");
   box.style.display = "";
   box.className = "nft-out " + (r.ok ? "ok" : "bad");
+  /* A ruleset nft rejected must be reported in nft's own words — that output
+     is the answer. A privilege it never got to spend is not about the ruleset
+     at all, so it is said here, in the user's language, like the read path. */
+  const why = r.ok ? null : ROOT_WHY[r.hint]?.();
   box.textContent = r.ok
     ? t(`nft -c accepted the ruleset on ${describe()}.`,
         `nft -c aceptó el ruleset en ${describe()}.`)
-    : (r.stderr || r.stdout).trim();
+    : why
+      ? `${why.title}\n\n${why.body}\n\n` + t(
+          "Without it, nft -c only gets as far as the syntax. Check on an SSH target for the kernel's answer.",
+          "Sin eso, nft -c solo llega hasta la sintaxis. Compruébalo en un target SSH para tener la respuesta del kernel.")
+      : (r.stderr || r.stdout).trim();
 });
 
 /* ══ APPLY ══════════════════════════════════════════════════════════════
