@@ -132,6 +132,14 @@ enum Verb {
 
 impl Verb {
     /// The word the helper takes. Also what the polkit action is scoped to.
+    ///
+    /// The one caller is inside `#[cfg(target_os = "linux")]`, because pkexec
+    /// and polkit are, so on Windows and macOS this is dead code and
+    /// `-D warnings` refuses to build. Not cfg'd away, because the test below
+    /// checks these words against the helper's own case statement and that
+    /// check is worth running wherever the suite runs. CI lints on ubuntu
+    /// only, so nothing there would ever have said so.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fn word(self) -> &'static str {
         match self {
             Verb::Read => "read",
