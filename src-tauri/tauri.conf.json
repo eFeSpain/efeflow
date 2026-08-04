@@ -52,7 +52,8 @@
           "/usr/libexec/efeflow/efeflow-nft-helper": "../packaging/linux/efeflow-nft-helper",
           "/usr/share/polkit-1/actions/com.alegoriasoft.efeflow.policy": "../packaging/linux/com.alegoriasoft.efeflow.policy"
         },
-        "postInstallScript": "./scripts/postinstall.sh"
+        "postInstallScript": "./scripts/postinstall.sh",
+        "desktopTemplate": "./efeflow.desktop"
       },
       "rpm": {
         "recommends": ["nftables", "polkit"],
@@ -60,7 +61,8 @@
           "/usr/libexec/efeflow/efeflow-nft-helper": "../packaging/linux/efeflow-nft-helper",
           "/usr/share/polkit-1/actions/com.alegoriasoft.efeflow.policy": "../packaging/linux/com.alegoriasoft.efeflow.policy"
         },
-        "postInstallScript": "./scripts/postinstall.sh"
+        "postInstallScript": "./scripts/postinstall.sh",
+        "desktopTemplate": "./efeflow.desktop"
       }
     }
   }

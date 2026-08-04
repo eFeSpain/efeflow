@@ -342,3 +342,15 @@ illustrated with a Spanish interface reads as nobody having looked, and
   aliasing `setTimeout` or `performance` to jsdom's makes them call themselves.
 - Tauri gates every IPC call behind a capability. A missing grant rejects
   silently, which reads as a dead button — hence the capabilities test.
+- `src-tauri/tauri.linux.conf.json` exists for one line, and the line needs an
+  explanation the file cannot carry — Tauri validates its config against a
+  schema that rejects unknown keys, comments included.
+
+  The deb and rpm package names are `productName` in kebab-case, and there is
+  no field to set them directly: `DebConfig` and `RpmConfig` have no such key.
+  Kebab-casing `eFeFlow` splits it at every capital and yields `e-fe-flow`,
+  which is then what apt calls this application forever — in searches, in
+  `apt remove`, in anyone's dependency list. The Linux overlay sets
+  `productName` to `efeflow`, which a Debian package name has to be anyway,
+  and only for Linux, so macOS and Windows keep the name as written. What
+  people read still comes from the `.desktop` entry, not from this.
