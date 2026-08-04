@@ -1,0 +1,46 @@
+#!/bin/sh
+# The privileged half of the local transport, and deliberately the smallest
+# thing that can be one.
+#
+# nftables has no read-only permission. `nft list ruleset` speaks netlink and
+# the kernel wants CAP_NET_ADMIN for it — the same capability that lets you
+# flush the firewall. Running the whole application as root so that it can read
+# a ruleset is a poor trade, so this is what polkit elevates instead: three
+# verbs, fixed argv, nothing composed out of what the caller sent, and not one
+# of them changes the machine.
+#
+# Applying a ruleset is not here, and should not be added. That is the one
+# operation that can lock somebody out of a host, and it must not become
+# reachable through an authorisation the user granted in order to read.
+set -eu
+
+# A pkexec-elevated process inherits almost nothing, and nft lives in sbin.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+case "${1-}" in
+  read)
+    exec nft -a list ruleset
+    ;;
+  monitor)
+    exec nft monitor ruleset
+    ;;
+  check)
+    # The ruleset to validate arrives on stdin, and `-c` is ours: the input
+    # cannot revoke it. nft parses, asks the kernel, and the transaction is
+    # aborted whatever the text says.
+    #
+    # An `include` line in that text does make nft open the named file as root
+    # and quote it back in any parse error, which is a way to read a file you
+    # could not otherwise read. It is allowed anyway, on two grounds: whoever
+    # got here has just authenticated as an administrator and can read the file
+    # directly, and refusing the directive would break every real ruleset
+    # assembled out of /etc/nftables.d — which the parser preserves precisely
+    # so that it can be checked.
+    exec nft -c -f -
+    ;;
+  *)
+    echo "efeflow-nft-helper: expected one of: read, check, monitor" >&2
+    exit 2
+    ;;
+esac

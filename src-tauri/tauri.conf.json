@@ -45,7 +45,23 @@
     "shortDescription": "Visual nftables firewall rule designer",
     "longDescription": "Design Linux nftables rulesets visually: import a live ruleset, edit it on a canvas laid out by netfilter hook and chain priority, catch shadowed rules and NAT conflicts, simulate a packet through the chains, and export clean nft source.",
     "linux": {
-      "deb": { "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"] }
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"],
+        "recommends": ["nftables", "pkexec | policykit-1"],
+        "files": {
+          "/usr/libexec/efeflow/efeflow-nft-helper": "../packaging/linux/efeflow-nft-helper",
+          "/usr/share/polkit-1/actions/com.alegoriasoft.efeflow.policy": "../packaging/linux/com.alegoriasoft.efeflow.policy"
+        },
+        "postInstallScript": "./scripts/postinstall.sh"
+      },
+      "rpm": {
+        "recommends": ["nftables", "polkit"],
+        "files": {
+          "/usr/libexec/efeflow/efeflow-nft-helper": "../packaging/linux/efeflow-nft-helper",
+          "/usr/share/polkit-1/actions/com.alegoriasoft.efeflow.policy": "../packaging/linux/com.alegoriasoft.efeflow.policy"
+        },
+        "postInstallScript": "./scripts/postinstall.sh"
+      }
     }
   }
 }

@@ -253,6 +253,39 @@ que tengas abierto. Púlsalo para apuntar
 eFeFlow a un host. Delega en el `ssh` del sistema, así que tus claves, tu agente
 y tu `~/.ssh/config` ya se aplican, y eFeFlow no guarda credenciales.
 
+### Leer la máquina local sin ejecutar la app como root
+
+nftables no tiene un permiso de solo lectura. `nft list ruleset` habla por
+netlink y el kernel exige `CAP_NET_ADMIN` para ello — la misma capability que
+permite vaciar el cortafuegos —, y por eso abrir un *fichero* no pide nada y
+leer la *máquina* lo pide todo. Ejecutar un editor entero como root para poder
+leer un ruleset es un mal trato.
+
+Así que el `.deb` y el `.rpm` instalan dos cosas pequeñas:
+
+- `/usr/libexec/efeflow/efeflow-nft-helper`, que acepta tres verbos — `read`,
+  `check`, `monitor` — y ejecuta un comando `nft` fijo para cada uno. Ninguno
+  cambia la máquina.
+- una acción de polkit que autoriza exactamente ese programa, con
+  `auth_admin_keep` en una sesión activa.
+
+eFeFlow sigue siendo un proceso de usuario normal. La primera lectura levanta un
+único diálogo de contraseña del escritorio y el resto de la sesión no vuelve a
+preguntar. **Aplicar no entra ahí**: la única operación que puede dejarte fuera
+de una máquina no va a quedar al alcance de un permiso que concediste para leer.
+Aplicar en *esta* máquina sigue necesitando root; para aplicar en cualquier otra
+están los targets SSH.
+
+Si el paquete no está instalado — el AppImage, un árbol de compilación, una
+máquina sin agente de polkit — no se rompe nada y no pregunta nada. La lectura
+falla como siempre y dice qué hacer en su lugar:
+
+```sh
+sudo nft -a list ruleset > ruleset.nft
+```
+
+y abrir ese fichero.
+
 ### Aplicar, y poder cambiar de opinión
 
 Nada llega a una máquina en producción si no lo pides tú. Y cuando lo pides,

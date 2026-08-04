@@ -250,6 +250,38 @@ ruleset you have open. Click it to point eFeFlow at a
 host. It shells out to the system `ssh`, so your keys, your agent and
 `~/.ssh/config` already apply, and eFeFlow stores no credentials.
 
+### Reading the local machine, without running as root
+
+nftables has no read-only permission. `nft list ruleset` speaks netlink and the
+kernel wants `CAP_NET_ADMIN` for it — the same capability that lets you flush
+the firewall — which is why opening a *file* asks for nothing and reading the
+*machine* asks for everything. Running an editor as root so that it can read a
+ruleset is a poor trade.
+
+So the `.deb` and the `.rpm` install two small things:
+
+- `/usr/libexec/efeflow/efeflow-nft-helper`, which takes three verbs — `read`,
+  `check`, `monitor` — and runs one fixed `nft` command for each. Not one of
+  them changes the machine.
+- a polkit action authorising exactly that program, `auth_admin_keep` on an
+  active session.
+
+eFeFlow itself stays an ordinary user process. The first read raises one desktop
+password prompt and the rest of the session is quiet. **Applying is not covered
+by it**: the one operation that can lock you out of a machine is not going to be
+reachable through a permission you granted in order to read. Applying to *this*
+machine still needs root; applying anywhere else is what an SSH target is for.
+
+If the package is not installed — the AppImage, a build tree, a machine with no
+polkit agent — nothing breaks and nothing prompts. The read fails the way it
+always did, and says what to do instead:
+
+```sh
+sudo nft -a list ruleset > ruleset.nft
+```
+
+then open that file.
+
 ### Applying, and being able to change your mind
 
 Nothing reaches a live host unless you ask. When you do ask, applying is the one

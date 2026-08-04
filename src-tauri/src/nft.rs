@@ -97,6 +97,160 @@ impl Target {
 /// blamed the host. This is that same list, said out loud.
 const SBIN_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
+/* ── the privileges the local transport needs ────────────────────────────
+Reading a ruleset is not a read as far as the kernel is concerned. `nft list
+ruleset` speaks netlink and wants CAP_NET_ADMIN, and nftables has no lesser
+permission to ask for — which is why opening a *file* asks nothing and reading
+the *machine* used to mean running the whole editor as root.
+
+So the elevation is per call and it is not ours to grant: the packaged .deb and
+.rpm install a helper that does three read-only things, and a polkit action
+that authorises exactly that program. When both are present and we are not
+already root, the local commands go through `pkexec`; one desktop prompt, kept
+for the session, and the editor itself stays an ordinary user process.
+
+None of this is required. Without the package — an AppImage, a `cargo run`, a
+machine with no polkit agent — the commands run as before and fail as before,
+and local_hint() is what turns that failure into something the user can act on
+rather than "Operation not permitted". */
+
+/// The three local operations that need root and change nothing.
+#[derive(Clone, Copy)]
+enum Verb {
+    Read,
+    Check,
+    Monitor,
+}
+
+impl Verb {
+    /// The word the helper takes. Also what the polkit action is scoped to.
+    fn word(self) -> &'static str {
+        match self {
+            Verb::Read => "read",
+            Verb::Check => "check",
+            Verb::Monitor => "monitor",
+        }
+    }
+
+    /// The command itself, for when we already have the privileges or have no
+    /// way to ask for them. The helper runs these same three.
+    fn nft(self) -> &'static [&'static str] {
+        match self {
+            Verb::Read => &["nft", "-a", "list", "ruleset"],
+            Verb::Check => &["nft", "-c", "-f", "-"],
+            Verb::Monitor => &["nft", "monitor", "ruleset"],
+        }
+    }
+
+    /// What to tell somebody the command just failed on for want of root.
+    fn hint(self) -> &'static str {
+        match self {
+            Verb::Read => "Reading this machine's ruleset needs root — install the eFeFlow .deb or .rpm to authorise it from the desktop, or run `sudo nft -a list ruleset > ruleset.nft` and open that file.",
+            Verb::Check => "Checking against this machine's kernel needs root — install the eFeFlow .deb or .rpm to authorise it from the desktop, or check on an SSH target instead.",
+            Verb::Monitor => "Watching this machine's ruleset needs root — install the eFeFlow .deb or .rpm to authorise it from the desktop, or watch an SSH target instead.",
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn am_root() -> bool {
+    /* geteuid cannot fail and touches nothing — the unsafe is the FFI call
+    itself, not anything this does with the answer. */
+    unsafe { libc::geteuid() == 0 }
+}
+
+/// Where the packages put the helper. The env var is for running from a build
+/// tree, where there is no installed copy to find.
+#[cfg(target_os = "linux")]
+fn helper() -> Option<String> {
+    use std::path::Path;
+    if let Ok(p) = std::env::var("EFEFLOW_NFT_HELPER") {
+        return (!p.is_empty() && Path::new(&p).is_file()).then_some(p);
+    }
+    [
+        "/usr/libexec/efeflow/efeflow-nft-helper",
+        "/usr/lib/efeflow/efeflow-nft-helper",
+        "/usr/local/libexec/efeflow/efeflow-nft-helper",
+    ]
+    .into_iter()
+    .find(|p| Path::new(p).is_file())
+    .map(str::to_string)
+}
+
+#[cfg(target_os = "linux")]
+fn pkexec() -> Option<&'static str> {
+    use std::path::Path;
+    ["/usr/bin/pkexec", "/bin/pkexec"]
+        .into_iter()
+        .find(|p| Path::new(p).is_file())
+}
+
+/// Whether this call will go through pkexec, which decides how to read a
+/// failure: 126 from pkexec is a refused authorisation, not a broken firewall.
+#[cfg(target_os = "linux")]
+fn elevating() -> bool {
+    !am_root() && helper().is_some() && pkexec().is_some()
+}
+#[cfg(not(target_os = "linux"))]
+fn elevating() -> bool {
+    false
+}
+
+/// The program and argv for one verb against the local machine.
+fn local_argv(v: Verb) -> (String, Vec<String>) {
+    #[cfg(target_os = "linux")]
+    if !am_root() {
+        if let (Some(h), Some(px)) = (helper(), pkexec()) {
+            return (px.to_string(), vec![h, v.word().to_string()]);
+        }
+    }
+    let c = v.nft();
+    (
+        c[0].to_string(),
+        c[1..].iter().map(|s| s.to_string()).collect(),
+    )
+}
+
+/// Say what a local failure was actually about.
+///
+/// `Operation not permitted` on its own is a true statement that helps nobody:
+/// it does not say which permission, that the application need not have it, or
+/// what to do instead. Only the shapes that are really about privilege are
+/// rewritten — an nft that rejects a ruleset must keep saying so in its own
+/// words, because that message is the product.
+fn local_hint(out: Outcome, v: Verb, elevated: bool) -> Outcome {
+    if out.ok {
+        return out;
+    }
+    let both = format!("{} {}", out.stderr, out.stdout);
+    /* pkexec's own exit codes: 126 is "not authorised", which covers both a
+    wrong password and a dismissed dialog, and 127 is a helper it could not
+    run at all. Neither reaches nft, so neither says anything about nft. */
+    let hint = match out.code {
+        Some(126) if elevated => "The authorisation was declined, so nothing was read.".to_string(),
+        Some(127) if elevated => {
+            "polkit could not start the eFeFlow helper — reinstall the package, or check that \
+             /usr/libexec/efeflow/efeflow-nft-helper is owned by root and executable."
+                .to_string()
+        }
+        _ if both.contains("Operation not permitted")
+            || both.contains("must be root")
+            || both.contains("Permission denied") =>
+        {
+            v.hint().to_string()
+        }
+        _ => return out,
+    };
+    Outcome {
+        stderr: if out.stderr.trim().is_empty() {
+            hint
+        } else {
+            format!("{hint}\n\n{}", out.stderr.trim())
+        },
+        ..out
+    }
+}
+
 /// Spawn without giving the child a console of its own.
 ///
 /// `windows_subsystem = "windows"` makes *this* process windowless and says
@@ -194,9 +348,28 @@ fn run(target: &Target, cmd: &[&str], stdin: Option<&str>) -> Outcome {
         return Outcome::failed(e);
     }
     let (program, args) = argv(target, cmd);
-    let mut cmdline = Command::new(&program);
+    spawn_collect(&program, &args, stdin)
+}
+
+/// One of the three read-only operations, wherever it is being run.
+///
+/// Locally this is the path that may go through pkexec, so it is also where a
+/// failure gets read for what it is. Over ssh nothing changes: the remote
+/// `sudo` toggle has always been the answer there.
+fn run_verb(target: &Target, v: Verb, stdin: Option<&str>) -> Outcome {
+    match target {
+        Target::Local => {
+            let (program, args) = local_argv(v);
+            local_hint(spawn_collect(&program, &args, stdin), v, elevating())
+        }
+        Target::Ssh { .. } => run(target, v.nft(), stdin),
+    }
+}
+
+fn spawn_collect(program: &str, args: &[String], stdin: Option<&str>) -> Outcome {
+    let mut cmdline = Command::new(program);
     cmdline
-        .args(&args)
+        .args(args)
         /* The same gap on this side of the wire: a desktop launcher hands an
         application the session PATH, which on Linux is a normal user's and so
         has no sbin in it either. Harmless where the target is ssh — the
@@ -279,14 +452,14 @@ pub async fn host_probe(target: Target) -> Outcome {
 /// which make the source recognisable to anyone who has run the command.
 #[tauri::command]
 pub async fn nft_list(target: Target) -> Outcome {
-    detached(move || run(&target, &["nft", "-a", "list", "ruleset"], None)).await
+    detached(move || run_verb(&target, Verb::Read, None)).await
 }
 
 /// Validate without applying. This is the check that matters: our own analyser
 /// is an approximation, `nft -c` is the authority.
 #[tauri::command]
 pub async fn nft_check(target: Target, ruleset: String) -> Outcome {
-    detached(move || run(&target, &["nft", "-c", "-f", "-"], Some(&ruleset))).await
+    detached(move || run_verb(&target, Verb::Check, Some(&ruleset))).await
 }
 
 /// Change one rule of a running ruleset, addressed by its handle.
@@ -495,6 +668,19 @@ pub async fn nft_apply(target: Target, ruleset: String, confirmed: bool) -> Outc
     if !confirmed {
         return Outcome::failed("refusing to apply without explicit confirmation");
     }
+    /* Say this here rather than let it fail three commands later. The polkit
+    helper covers reading and validating and deliberately not this, so on a
+    local target without root the pre-flight `nft -c` is what breaks first —
+    and "validation failed: Operation not permitted" reads as a problem with
+    the ruleset, which is the one thing it is not. */
+    #[cfg(target_os = "linux")]
+    if matches!(target, Target::Local) && !am_root() {
+        return Outcome::failed(
+            "Applying a ruleset to this machine needs root. eFeFlow only asks permission to read \
+             and validate — start it with root privileges to apply here, or apply to an SSH \
+             target with sudo.",
+        );
+    }
     detached(move || {
         let check = run(&target, &["nft", "-c", "-f", "-"], Some(&ruleset));
         if !check.ok {
@@ -529,7 +715,10 @@ pub fn nft_watch(app: AppHandle, target: Target) -> Outcome {
     }
     nft_unwatch();
 
-    let (program, args) = argv(&target, &["nft", "monitor", "ruleset"]);
+    let (program, args) = match &target {
+        Target::Local => local_argv(Verb::Monitor),
+        Target::Ssh { .. } => argv(&target, Verb::Monitor.nft()),
+    };
     let mut cmdline = Command::new(&program);
     cmdline
         .args(&args)
@@ -579,5 +768,87 @@ pub fn nft_unwatch() -> Outcome {
         stdout: String::new(),
         stderr: String::new(),
         code: Some(0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn failed(code: i32, stderr: &str) -> Outcome {
+        Outcome {
+            ok: false,
+            stdout: String::new(),
+            stderr: stderr.into(),
+            code: Some(code),
+        }
+    }
+
+    /// The message nft writes about a ruleset is the product. Explaining
+    /// privileges over the top of a syntax error would bury the one line the
+    /// user actually needs to read.
+    #[test]
+    fn a_rejected_ruleset_keeps_nfts_own_words() {
+        let out = failed(1, "/dev/stdin:1:34-34: Error: syntax error, unexpected '}'");
+        let seen = local_hint(out, Verb::Check, false);
+        assert_eq!(
+            seen.stderr,
+            "/dev/stdin:1:34-34: Error: syntax error, unexpected '}'"
+        );
+    }
+
+    #[test]
+    fn a_permission_failure_says_what_to_do_instead() {
+        let out = failed(1, "Operation not permitted (you must be root)");
+        let seen = local_hint(out, Verb::Read, false);
+        assert!(seen
+            .stderr
+            .starts_with("Reading this machine's ruleset needs root"));
+        /* the original survives underneath: the first line is for the toast,
+        the rest is for whoever is diagnosing */
+        assert!(seen.stderr.contains("Operation not permitted"));
+    }
+
+    /// Declining the polkit dialog is not a firewall problem, and pkexec says
+    /// so with an exit code rather than a message.
+    #[test]
+    fn a_declined_authorisation_is_not_reported_as_a_failure_to_read() {
+        let seen = local_hint(failed(126, ""), Verb::Read, true);
+        assert_eq!(
+            seen.stderr,
+            "The authorisation was declined, so nothing was read."
+        );
+    }
+
+    /// Same code, no pkexec in the picture: 126 came from something else and
+    /// must not be dressed up as an authorisation prompt nobody saw.
+    #[test]
+    fn the_same_code_means_nothing_when_nothing_was_elevated() {
+        let seen = local_hint(
+            failed(126, "bash: nft: command not found"),
+            Verb::Read,
+            false,
+        );
+        assert_eq!(seen.stderr, "bash: nft: command not found");
+    }
+
+    #[test]
+    fn success_is_left_alone() {
+        let out = Outcome {
+            ok: true,
+            stdout: "table inet filter {}".into(),
+            stderr: String::new(),
+            code: Some(0),
+        };
+        assert!(local_hint(out, Verb::Read, false).ok);
+    }
+
+    /// The helper takes these three words and the polkit action is scoped to
+    /// the program that reads them; a rename here is a silent 'unknown verb'.
+    #[test]
+    fn the_verbs_are_the_words_the_helper_understands() {
+        assert_eq!(Verb::Read.word(), "read");
+        assert_eq!(Verb::Check.word(), "check");
+        assert_eq!(Verb::Monitor.word(), "monitor");
     }
 }

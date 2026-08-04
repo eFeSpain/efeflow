@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD polkit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/software/polkit/policyconfig-1.dtd">
+
+<!--
+  One action, covering the three things eFeFlow does to a local firewall that
+  need CAP_NET_ADMIN and do not change it: read the ruleset, validate one with
+  `nft -c`, and watch for changes with `nft monitor`.
+
+  pkexec resolves the action by the annotated program path, so the scope of
+  this authorisation is exactly what that program will do — see the helper
+  itself. Applying a ruleset is not part of it and has no action here.
+
+  auth_admin_keep on an active session: one prompt, then the editor can read
+  and validate for the rest of the session without asking again. An inactive
+  session gets no keep — coming back to a locked screen should ask.
+-->
+<policyconfig>
+  <vendor>eFeSpain</vendor>
+  <vendor_url>https://github.com/eFeSpain/efeflow</vendor_url>
+
+  <action id="com.alegoriasoft.efeflow.nft-read">
+    <description>Read the nftables ruleset</description>
+    <description xml:lang="es">Leer el ruleset de nftables</description>
+    <message>Authentication is required to read and validate this machine's firewall ruleset. eFeFlow cannot change it with this permission.</message>
+    <message xml:lang="es">Se requiere autenticación para leer y validar el ruleset del cortafuegos de esta máquina. Con este permiso eFeFlow no puede modificarlo.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/efeflow/efeflow-nft-helper</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+</policyconfig>
