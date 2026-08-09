@@ -113,12 +113,22 @@ export function lintRule(line, ctx = {}){
         "Un veredicto termina la regla — esta tiene una coincidencia después"));
   }
 
+  /* Every jump on the line, and the name only.
+     `\S+` swallowed the punctuation around it, so the commonest way of writing
+     several jumps at once — `iifname vmap { "lan0" : jump zone_lan, "dmz0" :
+     jump zone_dmz }` — reported `No chain called zone_lan,` about a chain that
+     was right there. And without /g only the first was ever looked at, so in
+     that same rule two of the three targets went unchecked: a jump to a chain
+     that really is missing, in a verdict map, was silently fine. */
   if(Array.isArray(ctx.chains)){
-    const m = e.match(/\b(?:jump|goto)\s+(\S+)/);
-    if(m && !ctx.chains.includes(m[1]))
+    const said = new Set();
+    for(const m of e.matchAll(/\b(?:jump|goto)\s+([A-Za-z_][\w.-]*)/g)){
+      if(ctx.chains.includes(m[1]) || said.has(m[1])) continue;
+      said.add(m[1]);
       out.push(F("unknown-chain",
         `No chain called ${m[1]} in this table`,
         `No hay ninguna cadena llamada ${m[1]} en esta tabla`));
+    }
   }
   /* A flowtable is reached with `flow add @ft`, so `@` does not only mean a
      set — reported against the sets alone, every offload rule in every router
@@ -247,6 +257,26 @@ export function lintNames(model){
   for(const ch of model.chains || []) check("chain", "ninguna cadena", ch.id, `${ch.table} / ${ch.id}`);
   for(const s of model.sets || []) check("set", "ningún set", s.n, s.table ? `${s.table} / ${s.n}` : s.n);
   for(const o of model.objects || []) check(o.kind, `ningún ${o.kind}`, o.name, `${o.table} / ${o.name}`);
+
+  /* A flowtable with no devices is not an incomplete flowtable, it is a syntax
+     error: nft answers `unexpected '}', expecting string` and takes the rest of
+     the file with it. The object template in objects.js writes exactly that —
+     `devices = { }` — on purpose, as a shape for the user to fill in, and
+     nothing until now said what happens if they do not. The same trap as
+     `quota over 1 gbytes`, which shipped in a template and which nft also
+     refuses; found again while checking two new samples against nft 1.1.6
+     before shipping them. */
+  for(const o of model.objects || []){
+    if(o.kind !== "flowtable") continue;
+    const devices = (o.body || []).find(l => /^devices\s*=/.test(l.trim()));
+    if(devices && /=\s*\{\s*\}\s*$/.test(devices.trim()))
+      out.push({
+        code: "flowtable-no-devices", level: "error", kind: "flowtable",
+        name: o.name, where: `${o.table} / ${o.name}`,
+        title: [`the flowtable "${o.name}" lists no devices, and nft refuses an empty list rather than ignoring it`,
+                `el flowtable "${o.name}" no lista ningún dispositivo, y nft rechaza una lista vacía en vez de ignorarla`],
+      });
+  }
   return out;
 }
 

@@ -68,4 +68,32 @@ for (const s of SAMPLES) {
     for (const a of addrs)
       assert.ok(documentation(a), `${s.id}: ${a} is neither RFC 1918 nor RFC 5737 documentation space`);
   });
+
+  /* A sample is read on the reader's own machine, and the first thing they are
+   * likely to press is "Check with nft -c". So it has to be a ruleset nft will
+   * accept anywhere, and three things quietly are not:
+   *
+   *   flowtable ft { devices = { "wan0" } }   No such file or directory
+   *   chain c { type filter hook ingress device "wan0" ... }   the same
+   *   synproxy s { mss 1460 }                 needs nft_synproxy loaded
+   *
+   * All three resolve against the running kernel rather than being parsed, so
+   * they fail on any machine that does not have that exact interface or that
+   * module — which is every machine except the one the sample describes. Found
+   * by checking two new samples against nft 1.1.6 before shipping them, which
+   * is also how `quota over 50 gbytes` was caught: nft takes bytes, kbytes and
+   * mbytes and nothing larger.
+   *
+   * `iifname "wan0"` is fine and is what the samples use: it compares a string
+   * and asks the kernel nothing. */
+  test(`${s.id} loads on a machine that is not the one it describes`, () => {
+    assert.doesNotMatch(s.nft, /hook\s+ingress\s+device/,
+      `${s.id}: a netdev chain names a device that has to exist`);
+    assert.doesNotMatch(s.nft, /devices\s*=\s*\{\s*"/,
+      `${s.id}: a flowtable names a device that has to exist`);
+    assert.doesNotMatch(s.nft, /^\s*synproxy\s+\w+\s*\{/m,
+      `${s.id}: synproxy needs a kernel module the reader may not have`);
+    assert.doesNotMatch(s.nft, /\b(over|until)\s+\d+\s*(gbytes|tbytes)\b/,
+      `${s.id}: nft takes bytes, kbytes or mbytes — it refuses anything larger`);
+  });
 }

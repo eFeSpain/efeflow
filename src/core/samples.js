@@ -293,6 +293,201 @@ table inet filter {
 	}
 }`,
   },
+  {
+    id: "campus",
+    title: { en: "Campus edge router", es: "Router de borde corporativo" },
+    blurb: {
+      en: "The big one: three zones dispatched through a verdict map, a ban list that fills itself from the traffic, named counters and a quota, and a port-forward map on the way in.",
+      es: "El grande: tres zonas repartidas con un mapa de veredictos, una lista de baneo que se llena sola con el tráfico, contadores con nombre y una cuota, y un mapa de reenvío de puertos a la entrada.",
+    },
+    nft: `table inet filter {
+	ct helper ftp-standard {
+		type "ftp" protocol tcp
+	}
+
+	counter policy_drops {
+	}
+
+	quota guest_cap {
+		over 50000 mbytes
+	}
+
+	set admins {
+		type ipv4_addr
+		flags interval
+		elements = { 10.10.0.0/24, 192.168.99.10 }
+	}
+
+	set banned {
+		type ipv4_addr
+		size 65535
+		flags dynamic,timeout
+		timeout 1h
+	}
+
+	set open_tcp {
+		type inet_service
+		flags interval
+		elements = { 22, 80, 443, 8080-8090 }
+	}
+
+	chain early {
+		type filter hook prerouting priority raw; policy accept;
+		ip frag-off & 0x1fff != 0 counter drop
+		tcp flags & (fin|syn|rst|psh|ack|urg) == 0x0 counter drop
+		tcp flags & (fin|syn) == fin|syn counter drop
+		ip saddr @banned counter drop
+	}
+
+	chain input {
+		type filter hook input priority filter; policy drop;
+		ct state established,related counter accept
+		iif "lo" counter accept
+		ct state invalid counter name "policy_drops" drop
+		meta l4proto icmp limit rate 20/second burst 40 packets counter accept
+		iifname "lan0" tcp dport 22 ip saddr @admins counter accept
+		iifname "wan0" tcp dport 443 counter accept
+		iifname "wan0" tcp flags syn tcp dport 22 counter add @banned { ip saddr timeout 1h } drop
+		counter name "policy_drops" log prefix "in-drop " drop
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+		ct state established,related counter accept
+		ct state invalid counter drop
+		iifname vmap { "lan0" : jump zone_lan, "dmz0" : jump zone_dmz, "gst0" : jump zone_guest }
+		counter name "policy_drops" drop
+	}
+
+	chain zone_lan {
+		oifname "wan0" counter accept
+		oifname "dmz0" tcp dport @open_tcp counter accept
+		counter log prefix "lan-deny " drop
+	}
+
+	chain zone_dmz {
+		oifname "wan0" ct state new tcp dport { 80, 443 } counter accept
+		counter log prefix "dmz-deny " drop
+	}
+
+	chain zone_guest {
+		oifname "wan0" quota name "guest_cap" counter drop
+		oifname "wan0" counter accept
+		counter drop
+	}
+
+	chain output {
+		type filter hook output priority filter; policy accept;
+		ct state new tcp dport 21 ct helper set "ftp-standard" counter accept
+	}
+}
+
+table ip nat {
+	map port_fwd {
+		type inet_service : ipv4_addr
+		elements = { 8443 : 10.20.0.11, 2222 : 10.20.0.12 }
+	}
+
+	chain prerouting {
+		type nat hook prerouting priority dstnat; policy accept;
+		iifname "wan0" tcp dport { 8443, 2222 } dnat to tcp dport map @port_fwd
+	}
+
+	chain postrouting {
+		type nat hook postrouting priority srcnat; policy accept;
+		oifname "wan0" ip saddr 10.10.0.0/16 counter masquerade
+	}
+}`,
+  },
+  {
+    id: "hosting",
+    title: { en: "Public dual-stack server", es: "Servidor público de doble pila" },
+    blurb: {
+      en: "A machine that forwards nothing and publishes two ports: v4 and v6 side by side, per-source rate limiting that greylists whatever floods it, a counter per service and a monthly egress quota.",
+      es: "Una máquina que no reenvía nada y publica dos puertos: v4 y v6 en paralelo, límite por origen que mete en lista gris a quien la inunda, un contador por servicio y una cuota mensual de salida.",
+    },
+    nft: `table inet web {
+	counter http_hits {
+	}
+
+	counter https_hits {
+	}
+
+	counter probes_blocked {
+	}
+
+	quota egress_month {
+		over 2000000 mbytes
+	}
+
+	set knocking {
+		type ipv4_addr
+		size 65535
+		flags dynamic,timeout
+		timeout 30s
+	}
+
+	set greylist {
+		type ipv4_addr
+		size 65535
+		flags dynamic,timeout
+		timeout 12h
+	}
+
+	set office_v4 {
+		type ipv4_addr
+		flags interval
+		elements = { 198.51.100.0/24 }
+	}
+
+	set office_v6 {
+		type ipv6_addr
+		flags interval
+		elements = { 2001:db8:c0fe::/48 }
+	}
+
+	set published {
+		type inet_service
+		elements = { 80, 443 }
+	}
+
+	chain notrack_syn {
+		type filter hook prerouting priority raw; policy accept;
+		tcp dport @published tcp flags syn notrack
+	}
+
+	chain input {
+		type filter hook input priority filter; policy drop;
+		iif "lo" counter accept
+		ct state established,related counter accept
+		ct state invalid counter name "probes_blocked" drop
+		ip saddr @greylist counter name "probes_blocked" drop
+		meta l4proto icmp icmp type { echo-request, destination-unreachable, time-exceeded } limit rate 5/second counter accept
+		meta l4proto ipv6-icmp icmpv6 type { echo-request, nd-neighbor-solicit, nd-neighbor-advert, packet-too-big } limit rate 5/second counter accept
+		ip saddr @office_v4 tcp dport 22 counter accept comment "management from the office only"
+		ip6 saddr @office_v6 tcp dport 22 counter accept comment "same, over v6"
+		tcp dport 22 counter add @greylist { ip saddr timeout 12h } drop
+		tcp dport 80 counter name "http_hits" jump rate_guard
+		tcp dport 443 counter name "https_hits" jump rate_guard
+		ct state untracked tcp dport @published counter accept
+		counter name "probes_blocked" log prefix "srv-drop " level info drop
+	}
+
+	chain rate_guard {
+		ip saddr @office_v4 counter accept
+		meter flood { ip saddr limit rate over 200/second burst 300 packets } counter add @knocking { ip saddr } drop
+		ip saddr @knocking counter drop
+		counter accept
+	}
+
+	chain output {
+		type filter hook output priority filter; policy accept;
+		oifname "eth0" quota name "egress_month" counter log prefix "quota-exceeded " drop
+		ct state new udp dport 53 counter accept
+		counter accept
+	}
+}`,
+  },
 ];
 
 /* The one the import dialog starts on. */

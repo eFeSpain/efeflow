@@ -71,6 +71,30 @@ test("a target that is not in the ruleset is caught", () => {
   clean("ip saddr @admins drop", { sets: ["admins"] });
 });
 
+/* A verdict map is how anybody writes several jumps at once, and it was the
+   one shape this could not read. `\S+` took the punctuation with the name, so
+   a chain that was right there came back as `No chain called zone_lan,` — and
+   without /g only the first target was ever looked at, so the other two could
+   name nothing at all and pass. Found by writing a router sample that
+   dispatches three zones through one map. */
+test("every jump on the line is checked, and only the name of it", () => {
+  const zones = { chains: ["zone_lan", "zone_dmz", "zone_guest"] };
+  clean('iifname vmap { "lan0" : jump zone_lan, "dmz0" : jump zone_dmz }', zones);
+
+  assert.deepEqual(
+    codes('iifname vmap { "lan0" : jump zone_lan, "x" : jump nowhere }', zones),
+    ["unknown-chain"], "a real chain listed first hid a missing one after it");
+
+  assert.deepEqual(
+    codes('iifname vmap { "a" : jump ghost1, "b" : jump ghost2 }', zones),
+    ["unknown-chain", "unknown-chain"], "only the first target was ever reported");
+
+  /* and it stays quiet about the same name twice */
+  assert.deepEqual(
+    codes('iifname vmap { "a" : jump ghost1, "b" : jump ghost1 }', zones),
+    ["unknown-chain"]);
+});
+
 /* `@` does not only mean a set: a flowtable is reached with `flow add @ft`.
    Checked against the sets alone, every offload rule in every router ruleset
    came back naming a set that does not exist. */
