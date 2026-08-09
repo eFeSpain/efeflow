@@ -118,12 +118,22 @@ test("the cost of the rebuild is stated, not left to the diff to imply", () => {
 
   for (const [what, re] of [
     ["how many rules are rebuilt", /p\.recreated/],
-    ["that handles are reassigned", /handle.{0,40}reassigned|handles se reasignan|handles is reassigned/i],
-    ["that counters go to zero", /back to zero|vuelven a cero/i],
+    ["that handles are assigned afresh", /assigned afresh|se asignan de nuevo/i],
+    ["that counters go to zero", /go to zero|vuelven a cero/i],
     ["how much traffic that costs", /p\.packets/],
     ["when the host was read", /PLAN\.at/],
   ])
     assert.match(paint, re, `the plan never says ${what}`);
+
+  /* Measured on nft 1.1.3, applying a 27-rule ruleset: 7 rules came back
+     reading the handle they read before. They are new rules and numbering
+     simply restarts and coincides — but "every handle is reassigned" is a
+     promise somebody can check, and 7 times out of 27 they would find it
+     broken and stop believing the rest of the screen. */
+  assert.doesNotMatch(paint, /every handle is reassigned|todos los handles se reasignan/i,
+    "a claim about every handle is one the kernel does not keep");
+  assert.match(paint, /coincidence|casualidad/i,
+    "and the reason a handle can look unchanged has to be said");
 });
 
 test("a rule only the host has is shown as one this deletes", () => {

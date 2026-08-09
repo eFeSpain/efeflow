@@ -16,6 +16,31 @@
  * roll back would restore the ruleset over whatever the user did next. */
 
 import * as nativeApi from "./native.js";
+import { parseNft } from "./core/parse.js";
+import { surgicalPlan } from "./core/surgical.js";
+
+/**
+ * The changes, if they can be sent as changes, or a reason they cannot.
+ *
+ * The whole-table apply rebuilds every rule in the tables it names, so every
+ * counter in them goes to zero — including the rules nobody edited. When the
+ * difference is only rules, nftables can be told about exactly those, and
+ * everything else keeps its handle and its numbers. Measured on nft 1.1.3:
+ * changing one rule of a five-rule chain this way left 34 packets of history
+ * standing where the whole-table apply left none.
+ *
+ * Read fresh, and here rather than in the caller, because the commands address
+ * rules by handle: a handle is a position in somebody else's kernel, and one
+ * read a minute ago is a guess. If the reading is stale anyway, `nft -c`
+ * refuses the file before a byte of it is written — checked on a live kernel.
+ *
+ * @returns {{ok:true, commands, ...counts}} | {{ok:false, why, detail}}
+ */
+export async function surgicalChanges({ model, target, tables, api = nativeApi }) {
+  const r = await api.nftList(target);
+  if (!r.ok) return { ok: false, why: "unreadable", detail: (r.stderr || r.stdout || "").trim() };
+  return surgicalPlan(model, parseNft(r.stdout), { tables });
+}
 
 /**
  * @param seconds  how long the host waits before restoring. 0 arms nothing,

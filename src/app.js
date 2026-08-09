@@ -29,9 +29,10 @@ import { t, lang, setLang, applyLang, onLangChange } from "./i18n.js";
 import { target, loadTarget, saveTarget, asTauriTarget, describe, probe,
          hosts, forgetHost } from "./target.js";
 import { asTarget, matching, label as hostLabel } from "./core/hosts.js";
-import { applyWithNet, keep, rollBackNow, pendingRollback } from "./apply.js";
+import { applyWithNet, surgicalChanges, keep, rollBackNow, pendingRollback } from "./apply.js";
 import { refreshCounters, checkDrift, pushRule } from "./host.js";
 import { applyPlan } from "./core/sync.js";
+import { surgicalPlan } from "./core/surgical.js";
 import * as native from "./native.js";
 
 const MODEL_HOOKS = { push: onModelChange };
@@ -46,7 +47,7 @@ document.addEventListener("click", (e) => {
 });
 
 /* hoisted: the prototype relied on <script> ordering for these */
-let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI, TOURI, APPLY, REACH, WATCH, PLAN;
+let FIND, CUR, PENDING, toastT, POS, LANES, zoom, SEL, timers, CODE_VARIANT, BASELINE, DW_TAB, TOOL, VFILTER, ctxEl, DRAG, IMPORTED, SETSEL, TOPO_MODE, PAL, PALI, TOURI, APPLY, REACH, WATCH, PLAN, SURGICAL;
 
 FIND = [];
 const $  = (s,r=document)=>r.querySelector(s);
@@ -5034,14 +5035,40 @@ function paintApplyPlan(){
      table and rebuilds it, so every rule in it is a new rule to the kernel —
      handles reassigned, counters at zero — including the ones nobody edited.
      Where handles come out the same it is because numbering restarts and
-     coincides, which is not the same as being preserved. */
+     coincides, which is not the same as being preserved.
+
+     …unless the difference is only rules, in which case nftables can be told
+     about exactly those and the rest of the table is not touched at all. Which
+     of the two it will be changes what this line has to say, so it is decided
+     here — from the reading already in hand — rather than discovered
+     afterwards. SURGICAL is what the button will try; a fresh read at apply
+     time gets the last word, and if the host has moved since, the whole-table
+     apply is still there. */
+  SURGICAL = APPLY.scope === "tables"
+    ? surgicalPlan(MODEL, PLAN.host, { tables: applyTables() })
+    : { ok: false, why: "whole-ruleset" };
+
   const when = Math.max(0, Math.round((Date.now() - PLAN.at)/1000));
   const read = t(`read ${when}s ago`, `leído hace ${when}s`);
   const said = [];
+  if(SURGICAL.ok){
+    const n = SURGICAL.replaced + SURGICAL.deleted + SURGICAL.inserted;
+    said.push(t(
+      `Only these ${n} rule${n===1?"":"s"} are touched: ${SURGICAL.replaced} replaced, ${SURGICAL.deleted} deleted, ${SURGICAL.inserted} added. The other ${SURGICAL.kept} keep their handles and their counters — nftables is told about the changes rather than handed the table.`,
+      `Solo se tocan estas ${n} regla${n===1?"":"s"}: ${SURGICAL.replaced} reemplazada${SURGICAL.replaced===1?"":"s"}, ${SURGICAL.deleted} borrada${SURGICAL.deleted===1?"":"s"}, ${SURGICAL.inserted} añadida${SURGICAL.inserted===1?"":"s"}. Las otras ${SURGICAL.kept} conservan sus handles y sus contadores — a nftables se le dicen los cambios en vez de darle la tabla entera.`));
+    cost.textContent = said.join(" ") + ` · ${read}`;
+    paintDriftWarning(p);
+    return;
+  }
+  /* "every handle is reassigned" was too strong, and the machine said so:
+     applying a 27-rule ruleset on nft 1.1.3 left 7 of them reading the number
+     they read before. They are new rules — numbering simply restarts and
+     coincides — but somebody who checks a handle and finds it unchanged will
+     conclude this screen lied to them. */
   if(p.recreated)
     said.push(t(
-      `All ${p.recreated} rules in ${p.tables.join(", ")} are deleted and rebuilt, not edited: every handle is reassigned and their counters go back to zero.`,
-      `Las ${p.recreated} reglas de ${p.tables.join(", ")} se borran y se reconstruyen, no se editan: todos los handles se reasignan y sus contadores vuelven a cero.`));
+      `All ${p.recreated} rules in ${p.tables.join(", ")} are deleted and rebuilt, not edited: handles are assigned afresh — one that comes back the same did so by coincidence — and their counters go to zero.`,
+      `Las ${p.recreated} reglas de ${p.tables.join(", ")} se borran y se reconstruyen, no se editan: los handles se asignan de nuevo —si alguno sale igual es casualidad— y sus contadores vuelven a cero.`));
   /* deleted and *not* put back — a different fate, and the worse one */
   if(p.dropped)
     said.push(t(
@@ -5055,9 +5082,15 @@ function paintApplyPlan(){
                 `${describe()} aún no tiene estas tablas — no se reemplaza nada.`));
   cost.textContent = said.join(" ") + ` · ${read}`;
 
-  /* The old warning keeps its job: something moved under you since you read
-     it. It is now about rules this will destroy, which is what it always
-     meant. */
+  paintDriftWarning(p);
+}
+
+/* The old warning keeps its job: something moved under you since you read it.
+   It is about rules this will destroy, which is what it always meant — and it
+   means it whichever of the two applies is going to run, so it is said in one
+   place that both of them reach. */
+function paintDriftWarning(p){
+  const box = $("#ap-drift");
   const gone = p.touched.reduce((a,c)=> a + c.destroy.length, 0);
   box.style.display = gone ? "" : "none";
   if(gone) box.textContent = gone === 1
@@ -5108,13 +5141,25 @@ $$("#ap-window [data-secs]").forEach(b=>b.addEventListener("click", ()=>{
 $("#ap-go")?.addEventListener("click", async ()=>{
   /* three round trips on a bad day — arm, check, load — and the last of them
      is the one that can take the link out from under itself */
+  let how = "whole";
   const r = await whilePressed($("#ap-go"), t("Applying…","Aplicando…"),
     ()=> reaching(t(`applying to ${describe()}…`, `aplicando en ${describe()}…`),
-      ()=> applyWithNet({
-        ruleset: generate(MODEL, {scope: APPLY.scope}).join("\n"),
-        target: asTauriTarget(),
-        seconds: APPLY.secs,
-      })));
+      async ()=>{
+        /* The changes, if they can be sent as changes. Asked again here, and
+           against a reading taken now: the panel's answer was worked out from
+           a photograph, and these commands address rules by handle. If the
+           host has moved since, this comes back refused and the apply that
+           always works runs instead — the same ruleset either way. */
+        let ruleset = null;
+        if(APPLY.scope === "tables"){
+          const s = await surgicalChanges({
+            model: MODEL, target: asTauriTarget(), tables: applyTables(),
+          });
+          if(s.ok){ ruleset = s.commands.join("\n") + "\n"; how = "surgical"; }
+        }
+        if(ruleset === null) ruleset = generate(MODEL, {scope: APPLY.scope}).join("\n");
+        return applyWithNet({ ruleset, target: asTauriTarget(), seconds: APPLY.secs });
+      }));
 
   if(!r.ok){
     const warn = $("#ap-warn");
@@ -5130,6 +5175,13 @@ $("#ap-go")?.addEventListener("click", async ()=>{
   showApplyStage(true);
   $("#ap-clock").style.color = "var(--v-reject)";
   $("#ap-keep").disabled = false;
+  /* Which of the two ran, said afterwards as well as before. The panel had to
+     guess from a reading a few seconds old; this is what happened. */
+  toast(how === "surgical"
+    ? t(`Sent as changes — every rule you did not touch kept its counters on ${describe()}`,
+        `Enviado como cambios — cada regla que no tocaste conservó sus contadores en ${describe()}`)
+    : t(`Applied whole to ${describe()} — counters in those tables start again`,
+        `Aplicado entero en ${describe()} — los contadores de esas tablas empiezan de nuevo`));
   if(r.armed){
     APPLY.left = r.seconds;
     $("#ap-count-t").textContent = t(
