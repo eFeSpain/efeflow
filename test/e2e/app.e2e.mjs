@@ -133,6 +133,20 @@ test("editing a rule keeps its handle, so the apply is a replacement", async () 
   assert.deepEqual(panel, "inet efeflow_live · input",
     "the panel should show the one chain that changed and nothing else");
   assert.equal(await page.evaluate(() => document.querySelector("#ap-go").disabled), false);
+
+  /* and it has to read as a change rather than as a deletion followed by an
+     unrelated addition, which is what `−` then `+` looks like */
+  const lines = await page.evaluate(() =>
+    [...document.querySelectorAll("#ap-plan .ln")].map((e) => ({
+      mark: e.querySelector("i")?.textContent,
+      cls: e.className.replace("ln ", ""),
+      rule: e.querySelector("span")?.textContent,
+    })));
+  assert.deepEqual(lines.map((l) => l.mark), ["~", "~"],
+    "one rule changed, so two lines and one mark");
+  assert.deepEqual(lines.map((l) => l.cls), ["was", "now"]);
+  assert.match(lines[0].rule, /dport 443/);
+  assert.match(lines[1].rule, /dport 8443/);
 });
 
 /* The scope decides what the apply replaces, so it decides what the screen has

@@ -140,6 +140,25 @@ test("the cost of the rebuild is stated, not left to the diff to imply", () => {
     "and the reason a handle can look unchanged has to be said");
 });
 
+/* Three fates, three marks. An edited rule was drawn `−` old / `+` new — the
+   same two marks a deletion and a creation get — with only the colour telling
+   them apart. In a chain of a dozen entries that scans as a list of deletions,
+   which is the alarming reading of the one screen that has to be read quickly
+   before a firewall changes. */
+test("a changed rule is not marked like a deleted one", () => {
+  const paint = fn("function paintApplyPlan", "$$(\"#ap-scope");
+
+  assert.match(paint, /line\("was", "~"/, "the old half of a change still reads as a deletion");
+  assert.match(paint, /line\("now", "~"/, "and the new half as an unrelated addition");
+  assert.match(paint, /line\("gone", "−"/, "`−` has to keep meaning gone");
+  assert.match(paint, /line\("new", "\+"/, "and `+` new");
+
+  /* and the pair is marked as a pair, not left to the text colour alone */
+  const css = readFileSync(new URL("../src/styles/chrome.css", import.meta.url), "utf8");
+  assert.match(css, /\.ap-plan \.ln\.was > i,\s*\n\s*\.ap-plan \.ln\.now > i/,
+    "the two halves of a change need to look like one thing");
+});
+
 test("a rule only the host has is shown as one this deletes", () => {
   const paint = fn("function paintApplyPlan", "$$(\"#ap-scope");
   assert.match(paint, /c\.destroy/, "the rules being deleted are not drawn");

@@ -534,6 +534,19 @@
   color: #b6f2cd;
   background: rgba(71, 224, 130, 0.06);
 }
+/* A rule that changed is two lines and one fate, so the pair is marked as a
+   pair: `~` in the same colour on both, the old one dimmed and the new one
+   lit. Without that it read `−` then `+`, which is what a deletion followed
+   by an unrelated addition looks like. */
+.ap-plan .ln.was,
+.ap-plan .ln.now {
+  background: rgba(240, 193, 60, 0.05);
+}
+.ap-plan .ln.was > i,
+.ap-plan .ln.now > i {
+  color: var(--warn);
+  opacity: 1;
+}
 .ap-plan .ln.was {
   color: var(--t4);
 }

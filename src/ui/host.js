@@ -574,8 +574,16 @@ function paintApplyPlan(){
       : c.isGone ? t(" — goes with the table", " — se va con la tabla") : "");
     out.appendChild(h);
     /* destroyed first: those are running right now and will not be */
+    /* Three marks for three fates, because there were two.
+       A rule you edited was drawn `−` old / `+` new — the same two marks a
+       rule being deleted and a rule being created get — and only the colour
+       told them apart. In a chain with a dozen entries that is a list of
+       deletions to anybody scanning it, which is the alarming reading of a
+       screen whose whole job is to be read quickly before a firewall changes.
+       `~` on both halves says they are one rule, and leaves `−` meaning gone
+       and `+` meaning new. */
     for(const r of c.destroy) line("gone", "−", ruleLine(r));
-    for(const ch of c.change){ line("was", "−", ruleLine(ch.from)); line("now", "+", ruleLine(ch.to)); }
+    for(const ch of c.change){ line("was", "~", ruleLine(ch.from)); line("now", "~", ruleLine(ch.to)); }
     for(const r of c.create) line("new", "+", ruleLine(r));
     if(c.keep) {
       const q = document.createElement("div");
