@@ -1171,11 +1171,21 @@ function select(chainId, i, fromCode){
         PENDING = null;
         return;
       }
-      /* The line is the rule. Only what the line cannot carry is kept: whether
-         the rule is enabled, and its comment. The counters and the handle
-         described the rule as it was, and `nft replace` does not keep those
-         either. */
-      const keep = { on: r.on, ...(r.cmt !== undefined ? { cmt: r.cmt } : {}) };
+      /* The line is the rule. What the line cannot carry is kept: whether the
+         rule is enabled, its comment, and the handle.
+
+         The handle used to go, on the grounds that `nft replace` did not keep
+         it either. Measured on nft 1.1.3, and it does: a rule replaced at
+         handle 4 is still handle 4 afterwards. Only its counters restart.
+         Dropping it cost three things at once — the rule stopped pairing with
+         its own copy on the host, so the apply diff showed an edit as a
+         deletion and an unrelated addition; the drift warning then read that
+         deletion as somebody else having added a rule since you looked, which
+         it was not; and the surgical apply had to express one edit as a delete
+         and an insert instead of the one replace nftables offers.
+         The counters do go: they described the rule as it was. */
+      const keep = { on: r.on, ...(r.cmt !== undefined ? { cmt: r.cmt } : {}),
+                     ...(r.handle !== undefined ? { handle: r.handle } : {}) };
       PENDING = null;                       /* edit() records this one itself */
       edit(t("edit rule source","editar el código de la regla"), ()=>{
         for(const k of Object.keys(r)) delete r[k];
@@ -5053,9 +5063,21 @@ function paintApplyPlan(){
   const said = [];
   if(SURGICAL.ok){
     const n = SURGICAL.replaced + SURGICAL.deleted + SURGICAL.inserted;
-    said.push(t(
-      `Only these ${n} rule${n===1?"":"s"} are touched: ${SURGICAL.replaced} replaced, ${SURGICAL.deleted} deleted, ${SURGICAL.inserted} added. The other ${SURGICAL.kept} keep their handles and their counters — nftables is told about the changes rather than handed the table.`,
-      `Solo se tocan estas ${n} regla${n===1?"":"s"}: ${SURGICAL.replaced} reemplazada${SURGICAL.replaced===1?"":"s"}, ${SURGICAL.deleted} borrada${SURGICAL.deleted===1?"":"s"}, ${SURGICAL.inserted} añadida${SURGICAL.inserted===1?"":"s"}. Las otras ${SURGICAL.kept} conservan sus handles y sus contadores — a nftables se le dicen los cambios en vez de darle la tabla entera.`));
+    /* Only the parts that happened: "1 replaced, 0 deleted, 0 added" is three
+       facts where one was wanted, and two of them are noise. */
+    const bits = [
+      SURGICAL.replaced && t(`${SURGICAL.replaced} replaced`,
+        `${SURGICAL.replaced} reemplazada${SURGICAL.replaced===1?"":"s"}`),
+      SURGICAL.deleted && t(`${SURGICAL.deleted} deleted`,
+        `${SURGICAL.deleted} borrada${SURGICAL.deleted===1?"":"s"}`),
+      SURGICAL.inserted && t(`${SURGICAL.inserted} added`,
+        `${SURGICAL.inserted} añadida${SURGICAL.inserted===1?"":"s"}`),
+    ].filter(Boolean);
+    said.push(n === 1
+      ? t(`One rule is touched — ${bits[0]}. The other ${SURGICAL.kept} keep their handles and their counters: nftables is told about the change rather than handed the table.`,
+          `Se toca una sola regla — ${bits[0]}. Las otras ${SURGICAL.kept} conservan sus handles y sus contadores: a nftables se le dice el cambio en vez de darle la tabla entera.`)
+      : t(`Only ${n} rules are touched — ${bits.join(", ")}. The other ${SURGICAL.kept} keep their handles and their counters: nftables is told about the changes rather than handed the table.`,
+          `Solo se tocan ${n} reglas — ${bits.join(", ")}. Las otras ${SURGICAL.kept} conservan sus handles y sus contadores: a nftables se le dicen los cambios en vez de darle la tabla entera.`));
     cost.textContent = said.join(" ") + ` · ${read}`;
     paintDriftWarning(p);
     return;

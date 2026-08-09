@@ -121,6 +121,45 @@ test("a comment survives an edit to the source, because the source cannot carry 
   assert.equal(theRule().cmt, "management plane");
 });
 
+/* The handle used to go with the edit, on the grounds that `nft replace` did
+ * not keep it either. Measured on nft 1.1.3: it does — a rule replaced at
+ * handle 4 is still handle 4 afterwards; only its counters restart. Dropping
+ * it cost three things, and all three showed up in one screen when the apply
+ * dialog was driven against a real firewall: the rule stopped pairing with its
+ * own copy on the host, so an edit was drawn as a deletion and an unrelated
+ * addition; the drift warning read that deletion as somebody else having added
+ * a rule since you looked, which nobody had; and the surgical apply had to
+ * spend a delete and an insert on what nftables does in one replace. */
+test("the handle survives an edit, because nft replace keeps it", async () => {
+  await boot();
+  await load();
+  const r = theRule();
+  r.handle = 7;
+  r.pkts = 4200;
+  r.bytes = 260000;
+  click($$("#chains .rule")[0]);
+  await settle(40);
+
+  await type("tcp dport 8443 accept");
+  await commit();
+
+  assert.equal(theRule().handle, 7, "an edited rule can no longer be replaced where it lives");
+  /* the counters described the rule as it was, and those really do restart */
+  assert.ok(!theRule().pkts, "the old rule's traffic was carried onto a different rule");
+});
+
+test("a rule typed from nothing still has no handle to keep", async () => {
+  await boot();
+  await load();
+  const r = theRule();
+  delete r.handle;
+  click($$("#chains .rule")[0]);
+  await settle(40);
+  await type("tcp dport 9090 accept");
+  await commit();
+  assert.equal(theRule().handle, undefined, "a handle was invented for a rule no host has");
+});
+
 test("a rule nft would refuse says so while you type it", async () => {
   await boot();
   await load();
