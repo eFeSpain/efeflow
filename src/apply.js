@@ -27,6 +27,14 @@ export async function applyWithNet({ ruleset, target, seconds = 60, api = native
   const net = seconds > 0;
   let backup = null;
 
+  /* Whether this host already had a restore counting down before we touched
+     it. `nft_arm` deliberately keeps an existing copy and only replaces the
+     token, which retires whatever timer was watching — so if our apply then
+     fails and we disarm, both timers are gone and the machine is left with no
+     net at all, by an operation that changed nothing. Somebody else's
+     countdown is not ours to cancel. */
+  const wasArmed = net && (await api.nftArmed(target)).stdout?.trim() === "armed";
+
   if (net) {
     const armed = await api.nftArm(seconds, target);
     if (!armed.ok)
@@ -38,8 +46,16 @@ export async function applyWithNet({ ruleset, target, seconds = 60, api = native
      both of those are the far side's job, not something to re-implement here */
   const applied = await api.nftApply(ruleset, target, true);
   if (!applied.ok) {
-    if (net) await api.nftDisarm(target);
-    return { ok: false, stage: "apply", error: text(applied), armed: false };
+    /* Nothing was written, so our own arming has nothing to undo — but the
+       sentinel is the only thing keeping an *earlier* countdown alive, and
+       removing it strands a host that was already waiting to be restored.
+
+       So it is left alone, and the honest cost of that is that our timer
+       fires instead of theirs: sooner, perhaps, and it reloads a copy the
+       kernel is already running, which resets that ruleset's counters. Both
+       of those are worth paying to not leave a firewall with no net on it. */
+    if (net && !wasArmed) await api.nftDisarm(target);
+    return { ok: false, stage: "apply", error: text(applied), armed: false, wasArmed };
   }
   return { ok: true, armed: net, backup, seconds };
 }

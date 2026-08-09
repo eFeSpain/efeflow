@@ -49,6 +49,22 @@ const isOpener = line => /\{$/.test(line) && !line.includes("=");
  * and named as missing by anything that jumped to it. A number that says
  * everything survived, on a file where a base chain did not, is the one
  * failure this application cannot have. */
+/** Everything from the first `#` that is not inside a string.
+ *
+ * Quote-aware because it has to be: `log prefix "web #1 "` carries one, and
+ * cutting there would leave an unterminated string and lose the statement.
+ */
+function uncomment(s){
+  let q = null;
+  for(let i = 0; i < s.length; i++){
+    const c = s[i];
+    if(q){ if(c === "\\") i++; else if(c === q) q = null; continue; }
+    if(c === '"' || c === "'") q = c;
+    else if(c === "#") return s.slice(0, i);
+  }
+  return s;
+}
+
 function splitBlocks(text){
   const pieces = [];
   let buf = "", depth = 0, str = false;
@@ -125,6 +141,17 @@ export function logicalLines(text){
   /* One physical line in, the logical lines it holds out. A line carrying no
      block brace is one logical line and goes through untouched — which is
      every line of anything nft printed, so the common path is unchanged. */
+  /* Only `# handle N` was ever taken off the end, so any other trailing
+     comment stayed on the line and became part of the rule:
+     `tcp dport 22 accept  # ssh` parsed with the verdict swallowed into the
+     expression and `continue` in its place, and reported no error at all —
+     because it re-emitted byte for byte, so the round-trip check called it a
+     perfect reproduction of a rule it had misread. nft writes comments inside
+     the rule as `comment "..."`, so this shape is what a person typed, which
+     is exactly the input the import screen exists for.
+     The comment is dropped rather than kept: adopting it as `comment "ssh"`
+     would add a statement to somebody's firewall that they did not write. The
+     round-trip then reports the line as not reproduced, which is true. */
   const emit = (pieces, ln, raw, handle) => {
     const lines = pieces.length > 1 ? expand(pieces) : pieces;
     for(const text of lines) out.push({ text, ln, raw, handle });
@@ -136,7 +163,7 @@ export function logicalLines(text){
        shown in its place. */
     const h = raw.match(/#\s*handle\s+(\d+)\s*$/);
     const handle = h ? +h[1] : null;
-    const line = raw.replace(/#\s*handle\s+\d+\s*$/, "").trim();
+    const line = uncomment(raw.replace(/#\s*handle\s+\d+\s*$/, "")).trim();
     if(pending){
       pending.text += " " + line;
       pending.handle ??= handle;
@@ -502,7 +529,29 @@ function byIndex(src, out){
    100% on a ruleset whose netdev chain had lost its device. This compares the
    whole file — parse it, emit it, and diff what we get against what we were
    given, line for line. */
-const keep = l => l && l !== "flush ruleset" && !l.startsWith("#");
+/* The preamble is excluded from both sides, because it is not content: it is
+   the instruction that says what this file replaces, and which of the two
+   forms it takes depends on the scope the export was asked for rather than on
+   anything in the ruleset. `flush ruleset` was already dropped here for that
+   reason; the scoped export's `table inet filter` / `delete table inet filter`
+   pair was not, so verifying eFeFlow's own output scored it 6/8 and pointed at
+   two lines it had itself written on purpose. Two false losses per table, on
+   the screen whose whole job is to say what was lost.
+
+   What it costs: a `delete table` somebody wrote by hand is dropped on import
+   and is no longer reported as dropped. That is the same trade already made
+   for `flush ruleset`, and the alternative — regenerating with whichever scope
+   the file implies — makes the check depend on guessing why the file exists.
+
+   Tested here rather than with OUR_PREAMBLE, which is looser than it looks: a
+   brace is a token like any other, so `table filter {` — the ip family spelled
+   short, which opens a block — matches its `table \S+ \S+$` arm and would be
+   dropped from a comparison it belongs in. A preamble line is the one that
+   opens nothing. */
+const isPreamble = l =>
+  l === "flush ruleset" ||
+  (!l.includes("{") && /^(delete\s+)?table\s+\S+(\s+\S+)?$/.test(l));
+const keep = l => l && !l.startsWith("#") && !isPreamble(l);
 const meaningful = lines => lines
   .map(l => normalise(typeof l === "string" ? l : l.text))
   .filter(keep);

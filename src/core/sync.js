@@ -26,9 +26,22 @@ const text = (r) => ruleLine(r) + (r.cmt ? ` comment "${r.cmt}"` : "");
  * @returns {{pairs, onlyModel, onlyHost}} pairs carry `by`, which is the whole
  *          point: only "handle" is strong enough to act on.
  */
-export function pairChain(mine, theirs) {
+export function pairChain(mine, theirs, { active = false } = {}) {
   const pairs = [], onlyModel = [], onlyHost = [];
   const hostLeft = (theirs?.rules || []).map((r, i) => ({ r, i }));
+
+  /* `active` is the difference between two questions that are not the same
+     one: how do these documents differ, and what will this apply do.
+     generate.js emits only the rules that are switched on, so a rule you
+     unticked is a rule that will not be there afterwards — and pairing it with
+     the host's copy made it read as unchanged. Measured: switch one rule off
+     and the apply screen said `identical: true, keep: 2, destroy: 0` while
+     applying would have deleted it from the firewall.
+
+     The index stays the model's own, because addressable() addresses by it. */
+  const mineAll = (mine?.rules || [])
+    .map((r, i) => ({ r, i }))
+    .filter((x) => !active || x.r.on);
 
   /* handles first, and across the whole chain — a rule that moved still is
      the rule it was */
@@ -37,14 +50,14 @@ export function pairChain(mine, theirs) {
 
   const takenHost = new Set();
   const mineLeft = [];
-  (mine?.rules || []).forEach((r, i) => {
+  for (const { r, i } of mineAll) {
     const hit = r.handle && byHandle.get(r.handle);
     if (hit && !takenHost.has(hit.i)) {
       takenHost.add(hit.i);
       pairs.push({ i, r, hostRule: hit.r, hostIndex: hit.i, by: "handle",
                    same: text(r) === text(hit.r) });
     } else mineLeft.push({ r, i });
-  });
+  }
 
   /* whatever is left over, lined up by what it says */
   const a = mineLeft.map((x) => text(x.r));
@@ -84,7 +97,7 @@ export function syncReport(model, host, { tables } = {}) {
   for (const ch of mine) {
     const other = theirs.find((c) => key(c) === key(ch));
     if (!other) { missing += ch.rules.filter((r) => r.on).length; continue; }
-    const r = pairChain(ch, other);
+    const r = pairChain(ch, other, { active: true });
     chains.set(key(ch), r);
     added += r.onlyHost.length;
     missing += r.onlyModel.length;
@@ -149,7 +162,7 @@ export function applyPlan(model, host, { tables } = {}) {
                     create: ch.rules.filter((r) => r.on), destroy: [], change: [], keep: 0 });
       continue;
     }
-    const r = pairChain(ch, other);
+    const r = pairChain(ch, other, { active: true });
     chains.push({
       key: key(ch), table: ch.table, chain: ch.id, isNew: false,
       create: r.onlyModel.map((x) => x.r),
@@ -170,17 +183,28 @@ export function applyPlan(model, host, { tables } = {}) {
      Two different fates, and calling both "rebuilt" would flatter the worse
      one. A table this project has is deleted and put back: the rules survive
      as text and lose their handles and counters. A table only the host has —
-     Docker's, under `flush ruleset` — is deleted and not put back at all. */
-  const ours = new Set((model?.chains || []).map((c) => c.table));
-  let recreated = 0, counting = 0, packets = 0, dropped = 0, droppedTables = [];
+     Docker's, under `flush ruleset` — is deleted and not put back at all.
+
+     `tables` first and `model.chains` only as the fallback: a table of ours
+     holding nothing but a set — or nothing but a comment and a flag — has no
+     chain to be found by, and was reported as "not yours and not rebuilt" on
+     the same screen that had just promised to replace it. The scope list is
+     what the apply names, so it is what decides. */
+  const ours = new Set(tables || (model?.chains || []).map((c) => c.table));
+  let recreated = 0, counting = 0, packets = 0, dropped = 0;
+  const droppedTables = [];
   for (const ch of theirs) {
     const kept = ours.has(ch.table);
     if (!kept && !droppedTables.includes(ch.table)) droppedTables.push(ch.table);
     for (const r of ch.rules) {
       if (kept) recreated++; else dropped++;
-      if (r.pkts == null) continue;
+      /* `ctr` is whether the rule counts at all; `pkts` is what it has counted
+         so far, and parseRule gives every rule a zero rather than a null. So
+         `pkts == null` was never true and this counted every rule in the
+         table — the screen quoted twice the counters it was about to reset. */
+      if (!(r.ctr || r.pkts)) continue;
       counting++;
-      packets += r.pkts;
+      packets += r.pkts || 0;
     }
   }
 
@@ -223,19 +247,36 @@ export function applyCounters(model, host) {
 /**
  * The handle this rule can be addressed by on the host, or null.
  *
- * Null unless the pairing was made by handle, the text still agrees, and the
- * chain holds nothing else that has drifted. That last condition is the one
- * that matters: a handle is a position in somebody else's kernel, and acting
- * on one while the chain around it has moved is how you delete a rule you
- * never looked at.
+ * Null unless the pairing was made by handle and the chain holds nothing else
+ * that has drifted. That second condition is the one that matters: a handle is
+ * a position in somebody else's kernel, and acting on one while the chain
+ * around it has moved is how you delete a rule you never looked at.
+ *
+ * `op` because the two operations do not want the same guarantee, and
+ * demanding one of them for both made the other impossible. Deleting a rule is
+ * a claim that the thing you are looking at is the thing on the host, so its
+ * text has to still agree. Replacing one is a claim that it should stop
+ * agreeing — the caller edited it, which is the entire point — so requiring
+ * the texts to match meant `replace` returned null after every edit and
+ * succeeded only when there was nothing to send. The button that changes one
+ * rule of a running firewall could not change one rule of a running firewall.
+ *
+ * What that costs, said out loud: if somebody else replaced this exact rule in
+ * place since it was read, its handle is unchanged and nothing here can tell
+ * their edit from yours, so yours wins. Nothing in the model records what the
+ * host said at the time — line numbers live beside the model rather than on
+ * the rules for the same reason, and a per-rule snapshot would ride into every
+ * saved project and undo step. The apply screen's diff is where that kind of
+ * drift is meant to be seen.
  */
-export function addressable(model, host, ch, i) {
+export function addressable(model, host, ch, i, op = "delete") {
   const other = (host?.chains || []).find((c) => key(c) === key(ch));
   if (!other) return null;
   const r = pairChain(ch, other);
   if (r.onlyHost.length || r.onlyModel.length) return null;
   const p = r.pairs.find((x) => x.i === i);
-  return p && p.by === "handle" && p.same ? p.hostRule.handle : null;
+  if (!p || p.by !== "handle") return null;
+  return op === "replace" || p.same ? p.hostRule.handle : null;
 }
 
 export { key as chainKey, UID };

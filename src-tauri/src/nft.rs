@@ -785,7 +785,13 @@ pub fn nft_watch(app: AppHandle, target: Target) -> Outcome {
         .env("PATH", local_path())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        /* Not piped. Nothing has ever read this one, and a pipe nobody reads
+        is a pipe that fills: the child blocks on write and the watch stops
+        with no explanation. Neither `nft monitor` nor ssh says enough to reach
+        a buffer's worth in practice — measured, not assumed — so this is not a
+        bug being fixed, it is a hazard not being kept for no reason. The lines
+        that matter arrive on stdout. */
+        .stderr(Stdio::null());
     no_console(&mut cmdline);
     let child = cmdline.spawn();
 
@@ -794,7 +800,13 @@ pub fn nft_watch(app: AppHandle, target: Target) -> Outcome {
         Err(e) => return Outcome::failed(format!("could not run `{program}`: {e}")),
     };
 
-    if let Some(out) = child.stdout.take() {
+    let out = child.stdout.take();
+    /* Stored before the reader starts, so a stream that ends immediately still
+    finds its own child here to reap. */
+    let pid = child.id();
+    *WATCH.lock().unwrap() = Some(child);
+
+    if let Some(out) = out {
         let app = app.clone();
         std::thread::spawn(move || {
             for line in BufReader::new(out).lines().map_while(Result::ok) {
@@ -805,10 +817,26 @@ pub fn nft_watch(app: AppHandle, target: Target) -> Outcome {
             }
             /* the stream ending is news too: the connection dropped, or nft did */
             let _ = app.emit("nft-monitor-end", ());
+
+            /* And a child nobody waits for is a zombie for as long as the
+            application runs. Only `nft_unwatch` ever reaped one, so a watch
+            that ended by itself — the commonest way for one to end, since it
+            is what a dropped connection looks like — left one behind every
+            time. Confirmed on Debian 13: the process went to state Z the
+            moment its stream closed, and a wait() cleared it.
+
+            By pid, because a watch started in the meantime is somebody else's
+            child and waiting on it would hang this thread on a process that is
+            still running. */
+            if let Ok(mut w) = WATCH.lock() {
+                if w.as_ref().map(Child::id) == Some(pid) {
+                    if let Some(mut c) = w.take() {
+                        let _ = c.wait();
+                    }
+                }
+            }
         });
     }
-
-    *WATCH.lock().unwrap() = Some(child);
     Outcome {
         ok: true,
         code: Some(0),

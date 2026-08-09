@@ -78,7 +78,7 @@ export async function pushRule({ model, chain, index, op, target, api = nativeAp
   const r = await read(target, api);
   if (!r.ok) return r;
 
-  const handle = addressable(model, r.host, chain, index);
+  const handle = addressable(model, r.host, chain, index, op);
   if (handle === null)
     return { ok: false, error: "unaddressable",
              why: "the host no longer agrees about this chain" };
