@@ -78,6 +78,15 @@ export function surgicalPlan(model, host, { tables } = {}) {
                              ["policy", "policy"], ["dev", "device"]])
       if ((ch[k] ?? null) !== (other[k] ?? null))
         return no("chain-changed", `${chainKey(ch)} · ${what}`);
+    /* `extra` is where the chain-level statements live — `flags offload`, a
+       `comment` on the chain — and a hand-written list of five fields is the
+       kind of thing that is complete on the day it is written. Leaving it out
+       meant adding `flags offload` produced no command at all: the firewall
+       unchanged and the screen saying it had been applied, which is the one
+       answer this file exists to avoid. Compared whole rather than named field
+       by field, so the next statement nftables grows is covered by default. */
+    if (JSON.stringify(ch.extra || []) !== JSON.stringify(other.extra || []))
+      return no("chain-changed", `${chainKey(ch)} · declarations`);
   }
 
   /* Sets, maps and named objects are addressed by name and edited by their own

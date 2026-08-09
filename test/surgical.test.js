@@ -145,6 +145,20 @@ test("what a chain IS cannot be changed by a rule command", () => {
    `body` — which only lists which lines the declaration has — missed an
    elements list changing from end to end, which is precisely the silence this
    guard exists to prevent. Found by this test failing on its own fixture. */
+/* A hand-written list of the five fields a chain carries is complete on the
+   day it is written. This one left out `extra`, where the chain-level
+   statements live — so adding `flags offload` produced no command at all: the
+   firewall unchanged and the screen saying it had been applied. Found by
+   listing what a parsed chain actually holds against what the guard names,
+   hours after the guard was written. */
+test("a chain-level statement is not a rule change either", () => {
+  for (const line of ['flags offload', 'comment "the front door"']) {
+    const p = plan((m, ch) => { ch.extra = [...(ch.extra || []), line]; ch.rules[1].verdict = "drop"; });
+    assert.equal(p.ok, false, `${line} produced commands that leave it out`);
+    assert.equal(p.why, "chain-changed");
+  }
+});
+
 test("a set whose elements moved is not a rule change", () => {
   const withSet = LIVE.replace("\tchain input", `\tset blocked {
 		type ipv4_addr
