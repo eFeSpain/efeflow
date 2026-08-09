@@ -79,6 +79,24 @@ It clicks nothing and claims nothing about the interface. It needs a desktop
 session logged in on the machine, and says so rather than pretending when there
 is none. It writes nothing to the firewall.
 
+### Why it does not click
+
+Driving the Linux interface was attempted and is not done. WebKitGTK has a
+remote inspector, and Tauri compiles it out of release builds — which is why
+setting `WEBKIT_INSPECTOR_SERVER` against a shipped `.deb` does nothing. The
+`e2e` Cargo feature turns it on, and on Debian 13 that works: the process
+really does open the port.
+
+```
+LISTEN 127.0.0.1:9333  users:(("eFeFlow",pid=8768,fd=15))
+```
+
+What is missing is a client. That socket answers no HTTP path — `/`,
+`/targets.json`, `/json`, `/json/list` all get nothing — and it is not CDP, so
+Playwright cannot attach. It expects WebKit's own remote-inspector handshake,
+and writing a client for that is a piece of work rather than an afternoon.
+Whoever picks it up starts from the feature being proven, not from scratch.
+
 Checked the same way as the Windows run: the helper was chowned and stripped of
 its shebang, and the binary replaced with one that exits immediately. Both
 mutations went red on exactly the right lines — and the first attempt reported

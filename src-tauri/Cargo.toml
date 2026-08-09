@@ -27,6 +27,30 @@ libc = "0.2"
 # Used by `tauri dev` / `tauri build` — do not remove.
 custom-protocol = ["tauri/custom-protocol"]
 
+# The first half of driving the Linux build, and only the first half.
+#
+# On Windows the webview is WebView2, which answers the Chrome DevTools
+# Protocol on a port an environment variable opens — so a release build is
+# drivable exactly as it ships, and `npm run e2e` does that.
+#
+# WebKitGTK has its own remote inspector, and Tauri compiles it out of release
+# builds unless this feature asks for it. That is why setting
+# WEBKIT_INSPECTOR_SERVER against a shipped Linux binary does nothing at all.
+# With it — measured on Debian 13 — the process really does open the port:
+#
+#   LISTEN 127.0.0.1:9333  users:(("eFeFlow",pid=8768,fd=15))
+#
+# What is still missing is a client. That socket does not speak HTTP and does
+# not speak CDP; it expects WebKit's own remote-inspector handshake, so nothing
+# off the shelf attaches to it and Playwright cannot. Until somebody writes
+# one, `test/e2e/linux-smoke.sh` is what covers the Linux build, and this
+# feature is here so that whoever picks it up does not have to rediscover that
+# a release build has no inspector in it at all.
+#
+#   tauri build --debug --no-bundle          (devtools are on in debug anyway)
+#   tauri build --no-bundle --features e2e   (a release build with them)
+e2e = ["tauri/devtools"]
+
 [profile.release]
 codegen-units = 1
 lto = true
