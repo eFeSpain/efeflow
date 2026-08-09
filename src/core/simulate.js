@@ -869,7 +869,13 @@ export function evaluate(input){
     /* what it was by the end: translated, tracked, and whatever else the walk
        did to it. The one the caller passed in is untouched. */
     packet: p,
-    final: final || accepted || {v:"accept", chain:chainOf(last), policy:true},
+    /* A ruleset with no chains has nothing for a packet to enter, so `last` is
+       undefined and `chainOf` answers with nothing. Handing back a verdict
+       whose chain is undefined threw on the screen that drew it — opening the
+       simulator on a blank project produced an exception and an empty panel
+       rather than a sentence. `chain: null` is the honest shape: the packet
+       really was not stopped by anything, because there is nothing. */
+    final: final || accepted || {v:"accept", chain:chainOf(last) || null, policy:true},
     sure: unsure.length === 0,
     unsure,
     /* tables this packet would have gone through if they were not parked */

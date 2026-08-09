@@ -163,7 +163,8 @@ test("no offered quota unit is one nft refuses", async () => {
   const unit = t.match(/\b(\w*bytes)\b/)[1];
   assert.ok(OK.includes(unit), `the quota template offers ${unit}, which nft refuses`);
 
-  const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  /* the object editor moved into ui/sets.js when app.js was split */
+  const app = readFileSync(new URL("../src/ui/sets.js", import.meta.url), "utf8");
   const list = app.match(/unit:\s*\[([^\]]*)\]/);
   assert.ok(list, "the unit dropdown should be findable");
   for (const u of list[1].split(",").map((s) => s.trim().replace(/"/g, "")))

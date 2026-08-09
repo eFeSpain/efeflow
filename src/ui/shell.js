@@ -43,6 +43,43 @@ let goImpl = () => {};
 export const setNavigator = (fn) => { goImpl = fn; };
 export const go = (id) => goImpl(id);
 
+/* The same arrangement, for three more things a screen asks the application to
+ * do rather than does itself: put the cursor on that rule, open a menu here,
+ * take it away. The canvas and the properties panel implement them; the set
+ * manager and the palette only need to be able to say them.
+ *
+ * A short and named list on purpose. Every entry is a wire that would
+ * otherwise have to be a shared file, and a long one would mean this had
+ * turned into somewhere to put anything. */
+const late = { select: () => {}, openCtx: () => {}, killCtx: () => {} };
+export const provide = (what) => Object.assign(late, what);
+export const select = (...a) => late.select(...a);
+export const openCtx = (...a) => late.openCtx(...a);
+export const killCtx = (...a) => late.killCtx(...a);
+
+/* nftables source, coloured.
+ *
+ * Pure, and needs nothing but `esc` — which is why it sits with the other
+ * primitives rather than with the code panel that used to own it. Three
+ * screens paint a rule: the code pane, the properties panel and the set
+ * manager. */
+const TOKEN = /(#.*$)|("(?:[^"\\]|\\.)*")|(@[A-Za-z_]\w*)|\b(accept|drop|reject|jump|goto|return|continue|masquerade|redirect|dnat|snat)\b|\b(table|chain|set|map|type|hook|priority|policy|elements|flags|comment|flush|ruleset|include|define)\b|\b(ct|meta|tcp|udp|icmp|ipv6-icmp|ip|ip6|inet|iif|oif|iifname|oifname|saddr|daddr|sport|dport|state|status|l4proto|limit|log|counter|rate|burst|prefix|to|with|filter|nat|srcnat|dstnat)\b|\b(\d[\w./:]*)\b/gm;
+const CLS = ["c-cm", "c-str", "c-st", "c-vd", "c-kw", "c-mt", "c-nm"];
+
+export function highlight(line) {
+  let out = "", last = 0, m;
+  TOKEN.lastIndex = 0;
+  while ((m = TOKEN.exec(line))) {
+    out += esc(line.slice(last, m.index));
+    let cls = "c-nm";
+    for (let g = 1; g <= 7; g++) if (m[g] !== undefined) { cls = CLS[g - 1]; break; }
+    if (cls === "c-vd" && /^(drop|reject)$/.test(m[0])) cls = "c-vdd";
+    out += `<span class="${cls}">${esc(m[0])}</span>`;
+    last = m.index + m[0].length;
+  }
+  return out + esc(line.slice(last));
+}
+
 let toastT = null;
 export function toast(msg) {
   let n = $("#toast");
