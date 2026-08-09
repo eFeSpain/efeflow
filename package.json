@@ -28,7 +28,8 @@
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml",
     "rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
     "gifs": "node scripts/gifs.mjs",
-    "e2e": "node --test test/e2e/app.e2e.mjs"
+    "e2e": "node --test test/e2e/app.e2e.mjs",
+    "e2e:linux": "node test/e2e/linux.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
