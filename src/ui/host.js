@@ -18,7 +18,7 @@ import { MODEL, ruleLine } from "../core/model.js";
 import { generate } from "../core/generate.js";
 import { project } from "../core/project.js";
 import { tableNames } from "../core/tables.js";
-import { findings, applied, rerender } from "../core/bus.js";
+import { findings, applied, rerender, onRender } from "../core/bus.js";
 import { applyPlan } from "../core/sync.js";
 import { surgicalPlan } from "../core/surgical.js";
 import { asTarget, matching, label as hostLabel } from "../core/hosts.js";
@@ -889,6 +889,9 @@ loadTarget();
 REACH = null;
 paintTargetChip(null);
 paintHostStatus(null);
+/* The chip carries its own tooltip rather than a data-tt, so nothing else
+   redraws it when the language changes. */
+onRender(() => { paintTargetChip(REACH); paintHostStatus(REACH); });
 /* Except in a browser, where the answer costs nothing: probe() settles that
    from isDesktop() alone and never reaches for a socket. Leaving it unknown
    there would only mean the apply dialog offering a button it knows cannot

@@ -27,7 +27,8 @@
     "shots": "node scripts/shots.mjs",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml",
     "rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
-    "gifs": "node scripts/gifs.mjs"
+    "gifs": "node scripts/gifs.mjs",
+    "e2e": "node --test test/e2e/app.e2e.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",

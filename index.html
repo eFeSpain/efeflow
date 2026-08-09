@@ -94,7 +94,13 @@
     <span class="tb-origin" id="tb-origin"></span>
   </div>
   <div class="tb-right">
-    <span class="tb-target" id="tb-target" data-tt="Where nft runs|Dónde se ejecuta nft">
+    <!-- No data-tt: this one's tooltip is written by paintTargetChip and says
+         which host, whether it answered, and why not. applyLang() walks every
+         [data-tt] and overwrites the title from the markup, so a static one
+         here silently replaced all of that with "Where nft runs" — and since
+         the chip deliberately does not name a host it has not contacted, the
+         destination was then nowhere on screen at all. -->
+    <span class="tb-target" id="tb-target">
       <span class="dot"></span><span id="tb-target-t">—</span></span>
     <div class="tb-win">
       <button data-win="minimize" aria-label="Minimize"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button>

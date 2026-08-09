@@ -1,0 +1,17 @@
+table inet efeflow_live { # handle 1
+	chain input { # handle 1
+		type filter hook input priority filter; policy accept;
+		iif "lo" counter packets 4210 bytes 268000 accept # handle 3
+		ct state established,related counter packets 918233 bytes 740000000 accept # handle 4
+		tcp dport 22 counter packets 91 bytes 5460 accept # handle 5
+		tcp dport 80 counter packets 0 bytes 0 accept # handle 6
+		tcp dport 443 counter packets 12044 bytes 9200000 accept # handle 7
+	}
+}
+table ip docker { # handle 2
+	chain DOCKER { # handle 1
+		type nat hook prerouting priority dstnat; policy accept;
+		iif "docker0" counter packets 7 bytes 400 return # handle 2
+		tcp dport 8080 counter packets 2231 bytes 140000 dnat to 172.17.0.2:80 # handle 3
+	}
+}
