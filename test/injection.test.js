@@ -112,3 +112,32 @@ test("the browser path declares a content security policy of its own", async () 
   assert.doesNotMatch(html, /<script(?![^>]*\ssrc=)[^>]*>/i,
     "an inline <script> would force unsafe-inline back into the policy");
 });
+
+/* Two policies apply to this document in the desktop app — this one and the
+ * one in tauri.conf.json — and a request has to pass both, so the strictest
+ * wins. tauri.conf allows `ipc: http://ipc.localhost`, which is how the
+ * frontend reaches Rust; the meta tag said `connect-src 'self'` and refused
+ * it. Every call the application made logged a violation and fell back to the
+ * slower transport. It worked, which is why it went unnoticed until a console
+ * was watched during a smoke test.
+ *
+ * The two origins do not exist in a browser, so naming them costs the browser
+ * path nothing. */
+test("the two policies do not contradict each other about the bridge", async () => {
+  const { readFileSync } = await import("node:fs");
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const conf = JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"));
+
+  const connect = (csp) => (String(csp).match(/connect-src([^;"]*)/) || [, ""])[1];
+  /* the attribute is delimited by one kind of quote and full of the other, so
+     the delimiter has to be captured rather than guessed at */
+  const meta = html.match(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*content=(["'])([\s\S]*?)\1/i);
+  assert.ok(meta, "no meta CSP to compare");
+
+  const theirs = connect(conf.app?.security?.csp ?? "");
+  assert.ok(theirs.trim(), "tauri.conf.json declares no connect-src to compare against");
+  for (const origin of theirs.trim().split(/\s+/).filter((o) => o !== "'self'"))
+    assert.ok(connect(meta[2]).includes(origin),
+      `tauri.conf.json allows ${origin} for the bridge and this page refuses it, ` +
+      `so every IPC call is a policy violation`);
+});

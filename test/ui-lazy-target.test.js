@@ -16,7 +16,11 @@ import { boot, shutdown, $, click, settle } from "./harness.js";
 
 after(shutdown);
 
-const APP = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+const APP = ["../src/app.js", "../src/ui/host.js"]
+  /* the interface, wherever it now lives: the target chip, the apply screen
+     and the live watch moved into ui/host.js when app.js was split, and an
+     assertion about them should not care which side of that they landed. */
+  .map((f) => readFileSync(new URL(f, import.meta.url), "utf8")).join("\n");
 const MAIN = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 
 /* Comments here explain what used to happen and name the call while doing it,

@@ -7,7 +7,15 @@
      of a project file used to be able to run script here. The boot guard moved
      to /boot-guard.js so that script-src can be 'self' and mean it — it is a
      classic script, so it still runs before the module below. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<!-- Two policies apply to this document in the desktop app: this one and the
+     one in tauri.conf.json, and a request has to pass both. That one allows
+     `ipc: http://ipc.localhost`, which is how the frontend reaches Rust; this
+     one said `connect-src 'self'` and so refused it, logging a violation for
+     every call the application makes and pushing the bridge onto its fallback
+     transport. It worked, which is why nobody noticed. The two origins do not
+     exist in a browser, so naming them here costs the browser preview nothing
+     and stops the desktop app fighting itself. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>eFeFlow — Visual Firewall Designer</title>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">

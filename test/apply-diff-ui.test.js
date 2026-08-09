@@ -29,7 +29,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const APP = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+const APP = ["../src/app.js", "../src/ui/host.js"]
+  /* the interface, wherever it now lives: the target chip, the apply screen
+     and the live watch moved into ui/host.js when app.js was split, and an
+     assertion about them should not care which side of that they landed. */
+  .map((f) => readFileSync(new URL(f, import.meta.url), "utf8")).join("\n");
 const HTML = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
 /* Comments here describe the defect and name the thing that caused it, so
