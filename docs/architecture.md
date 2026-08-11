@@ -14,15 +14,28 @@ src/core/        pure, DOM-free, covered by npm test
   simulate.js      packet evaluation
   lint.js          what nft would reject, before nft is asked
   expr.js          surgical edits to one match of one rule
+  surgical.js      the commands that turn one ruleset into the other
   tables.js        the table itself: family, comment, flags dormant
   objects.js       named counters, quotas, ct helpers, flowtables
   addr.js          addresses and prefixes, v4 and v6
   sync.js          which rule here is which rule there
   diff.js          LCS diff against the last import or export
+  hosts.js         the machines you look after, across projects
+  priority.js      the names netfilter gives its priorities
+  vocabulary.js    the matches the editor knows how to offer
   project.js       name, origin, and the names you keep by hand
   bus.js           one registry every derived view subscribes to
+  tour.js          the first-run walkthrough
+  html.js          escaping, so that a rule cannot be markup
   samples.js       the worked scenarios the import dialog offers
-src/app.js       the interface
+src/ui/          the screens, one file each
+  shell.js         the half-dozen helpers every screen uses
+  state.js         the three variables that genuinely cross a screen
+  history.js       edit(): the gate every mutation goes through
+  canvas.js        chains placed at (hook, priority), because that is the order
+  sets.js          sets, maps and named objects — what a rule points at
+  host.js          the target chip, the apply screen, the live watch
+src/app.js       the interface: everything not yet moved out
 src/apply.js     commit-confirm: arm, push, keep or roll back
 src/host.js      counters, drift and per-handle pushes against a live host
 src/native.js    bridge to Rust; degrades to browser equivalents
@@ -33,6 +46,27 @@ src-tauri/       nft and ssh transports, window commands
 **Anything that decides a verdict lives in `core/` and never touches the DOM.**
 That is what lets the parser be tested against a real `nft list ruleset` dump,
 and the packet evaluator against a table of cases, without a browser.
+
+`src/ui/` is newer than that rule and answers a different problem. `app.js` had
+reached five thousand lines, and the cost was not that the file was long — it
+was that a variable declared at the top was reachable from everywhere below it,
+so no section could be moved without discovering which of the other twelve
+depended on it. The split went in that order: `shell.js` and `state.js` first,
+to give the shared names an address, and then a screen at a time.
+
+It found bugs on the way out, which is the argument for continuing. `openApply`
+fired its drift check beside a probe nobody awaited, so it only ran on the
+second opening of the dialog — visible once the apply screen was a file with a
+top and a bottom rather than nine hundred lines in the middle of another one.
+
+What is left in `app.js` is what has not been moved yet: the editor, the
+simulator, the validation screen, import and export. There is no boundary
+there, only work not done.
+
+Two files are called `host`, and they are not the same thing. `src/host.js` is
+the three questions this application asks a running machine — where do these
+counters go, has this drifted, may I change this one rule — and it is logic
+with tests. `src/ui/host.js` is the screens those answers appear on.
 
 ## Two invariants worth keeping
 
@@ -89,9 +123,10 @@ each came from. Without it the code pane has to match rules back to lines by
 their text — and two chains can hold the same rule, so selecting one would light
 up all of them.
 
-## Tests, and why there are three layers
+## Tests, and why there are four layers
 
-`npm test` — 892 assertions.
+`npm test` — 987 assertions. The fourth layer is not in that number: it needs a
+built application and runs separately.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across
@@ -118,10 +153,34 @@ running app:
 | `rollback-script` | the arm script losing the copy it exists to protect |
 | `names` | a chain called `log`, which parses, round-trips, and will not load |
 
+**End-to-end** (`test/e2e/`) drives the built application:
+
+```
+npx tauri build --no-bundle
+npm run e2e
+```
+
 The interface layer exists because a green core suite is not evidence that the
 product works. The packet simulator once shipped broken while all 18 core tests
 passed: a parameter named `t` shadowed the translation helper and killed
 `runSim` on its first line, inside a handler whose exception went nowhere.
+
+The end-to-end layer exists for the same reason one level up: jsdom cannot reach
+the Tauri bridge, because there is no Rust on the other side of it. Four defects
+got past `npm test` in two days and every one was found by driving the real
+application by hand — a simulator that threw on a project with no chains, which
+is the state the application starts in; a drift check that only ran on the
+second opening of the apply dialog; an edit that dropped the rule's handle; and
+two content security policies contradicting each other about the IPC bridge.
+
+It is honest about only covering one platform. WebView2 answers the Chrome
+DevTools Protocol on a port an environment variable opens, so on Windows a
+release build is drivable exactly as it ships. WebKitGTK has its own remote
+inspector — Tauri compiles it out of release builds unless the `e2e` feature
+asks for it, and even then the socket speaks neither HTTP nor CDP but WebKit's
+own handshake, which nothing off the shelf attaches to. Until somebody writes
+that client, Linux has `test/e2e/linux-smoke.sh`, which checks the built binary
+starts and stays up.
 
 ## The fixture
 
@@ -292,21 +351,34 @@ recorded in its own commit and is not a regression.
 
 ## The Rust half
 
-CI runs `cargo fmt --check` and `cargo clippy -D warnings` over `src-tauri`,
-and neither has a counterpart in `npm test` — so a Rust change can pass
-everything locally and fail on push. `npm run rust:check` is the same pair;
-`npm run rust:fmt` fixes the formatting half.
+CI runs `cargo fmt --check`, `cargo clippy -D warnings` and `cargo test` over
+`src-tauri`, and none of the three has a counterpart in `npm test` — so a Rust
+change can pass everything locally and fail on push. `npm run rust:check` is
+the fmt-and-clippy pair; `npm run rust:fmt` fixes the formatting half.
 
 Take rustfmt's output rather than configuring around it. It is the convention
-CI enforces, and there are five hundred lines of Rust here to have an opinion
+CI enforces, and there are a thousand lines of Rust here to have an opinion
 about.
 
-One of them is not Rust. `nft_arm` is a shell script living inside a Rust
-string, and neither `cargo fmt` nor `cargo clippy` has an opinion about shell —
-which is how it came to lose the copy it exists to protect, and to keep it in
-`/tmp`. `test/rollback-script.test.js` extracts that script from this file and
-runs it against a fake `nft`, so the one part of the safety net that no
-compiler checks is at least executed by something.
+CI lints on ubuntu only, and that is a real gap rather than a detail. Anything
+reachable from exactly one `#[cfg(target_os = "linux")]` block is dead code on
+the other two platforms, and `-D warnings` turns dead code into a failed build
+— on a runner this project only starts when a tag is pushed. That is how a
+Linux-only helper word broke the macOS and Windows builds with every check
+green.
+
+**Two of these files are not Rust, and no compiler has an opinion about
+either.** `nft_arm` is a shell script living inside a Rust string, which is how
+it came to lose the copy it exists to protect and to keep it in `/tmp`;
+`test/rollback-script.test.js` extracts it from this file and runs it against a
+fake `nft`, so the one part of the safety net no compiler checks is at least
+executed by something.
+
+`packaging/linux/efeflow-nft-helper` is the other, and it has no such test.
+`Verb::word()` and the helper's `case` statement have to agree on three
+words — `read`, `check`, `monitor` — or the elevated call exits 2 with
+`unknown verb`. The Rust test asserts the three literals; it does not read the
+script. Renaming a verb on one side is a change nothing here would catch.
 
 ## Screenshots and GIFs
 
