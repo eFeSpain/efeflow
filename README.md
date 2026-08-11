@@ -114,6 +114,7 @@ Findings are derived from the ruleset on every change, never written by hand.
 | **Dormant** | a whole table loaded and not running |
 | **Unbounded set** | a set filled by traffic with no `size` or `timeout` — kernel memory a stranger decides the size of |
 | **Full set** | a set at 90% of its own `size`, past which the kernel silently refuses new elements |
+| **Element timeout** | an element carrying `timeout` in a set that never declared `flags timeout` — nft refuses the whole file for it, not the element |
 | **Merge** | rules differing only by port, which one set lookup replaces |
 | **Unused** | a set loaded into the kernel that no rule consumes |
 | **Hardening** | a chain that trusts conntrack but never drops `invalid` |
@@ -151,7 +152,7 @@ be reproduced, it tells you which one before you commit to anything.
 ## ⚠ Beta
 
 It does the whole job today: import, prove, analyse, simulate, edit, apply,
-export. 903 automated assertions stand behind it, across the parser, the
+export. 987 automated assertions stand behind it, across the parser, the
 analyser, the packet evaluator and the interface itself.
 
 What it does not have yet is mileage. **No ruleset but its author's has ever
@@ -339,7 +340,7 @@ counters, quotas, ct helpers and timeouts, editable rather than merely
 preserved. **Tables** with their own properties, including `flags dormant`.
 **Topology** derived from the interfaces your rules actually name, nothing
 declared. **Live source** that re-emits as you type, where clicking a line
-selects the rule, with five export formats. **A free-text rule editor** with a
+selects the rule, with four export formats. **A free-text rule editor** with a
 linter that tells you what `nft` would reject before `nft` is asked. **netdev
 ingress/egress**, IPv6 throughout, concatenations, `typeof`, `define` and
 `include`.
@@ -355,8 +356,10 @@ write `accept`, not `aceptar`.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 903 assertions
+npm test             # 987 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
+
+npx tauri build --no-bundle && npm run e2e   # drive the built app, not the source
 
 node bin/efeflow.mjs lint fw.nft    # the linter, straight from the clone
 ```
