@@ -980,12 +980,49 @@ mod tests {
         assert!(local_hint(out, Verb::Read, false).ok);
     }
 
-    /// The helper takes these three words and the polkit action is scoped to
-    /// the program that reads them; a rename here is a silent 'unknown verb'.
+    /// The words themselves, pinned. This is the Rust half of the agreement
+    /// and it is deliberately literal: changing one has to show up in a diff
+    /// as a changed string, not as a renamed identifier.
     #[test]
     fn the_verbs_are_the_words_the_helper_understands() {
         assert_eq!(Verb::Read.word(), "read");
         assert_eq!(Verb::Check.word(), "check");
         assert_eq!(Verb::Monitor.word(), "monitor");
+    }
+
+    /// And the other half, which nothing was checking.
+    ///
+    /// The word this sends and the word the helper answers to live in two
+    /// languages in two directories, and they agree only by having been
+    /// written on the same afternoon. Disagreeing costs an elevated call that
+    /// exits 2 with `unknown verb` — after the user has authenticated, which
+    /// is the worst moment to discover a typo. The test above pinned the Rust
+    /// side to itself and proved nothing about the script; this reads the
+    /// script.
+    #[test]
+    fn every_verb_is_an_arm_of_the_helper_case_statement() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../packaging/linux/efeflow-nft-helper"
+        );
+        let script = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("the packaged helper should be readable at {path}: {e}"));
+
+        /* `read)`, `check)`, `monitor)` — and not the `*)` fallback, which is
+        the arm that exists to refuse everything else. */
+        let arms: Vec<&str> = script
+            .lines()
+            .map(str::trim)
+            .filter_map(|l| l.strip_suffix(')'))
+            .filter(|w| !w.is_empty() && w.chars().all(|c| c.is_ascii_lowercase()))
+            .collect();
+
+        for v in [Verb::Read, Verb::Check, Verb::Monitor] {
+            assert!(
+                arms.contains(&v.word()),
+                "the helper has no `{}` arm — it answers to {arms:?}",
+                v.word()
+            );
+        }
     }
 }

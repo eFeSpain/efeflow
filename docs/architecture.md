@@ -374,11 +374,13 @@ it came to lose the copy it exists to protect and to keep it in `/tmp`;
 fake `nft`, so the one part of the safety net no compiler checks is at least
 executed by something.
 
-`packaging/linux/efeflow-nft-helper` is the other, and it has no such test.
-`Verb::word()` and the helper's `case` statement have to agree on three
-words — `read`, `check`, `monitor` — or the elevated call exits 2 with
-`unknown verb`. The Rust test asserts the three literals; it does not read the
-script. Renaming a verb on one side is a change nothing here would catch.
+`packaging/linux/efeflow-nft-helper` is the other, and it is covered the same
+way. `Verb::word()` and the helper's `case` statement have to agree on three
+words — `read`, `check`, `monitor` — or the elevated call exits 2 with `unknown
+verb`, after the user has authenticated. Two tests hold that: one pins the
+three literals on the Rust side, and one opens the script and requires each
+word to be an arm of the `case`. For a while only the first existed, which
+pinned Rust to itself and proved nothing about the shell.
 
 ## Screenshots and GIFs
 
