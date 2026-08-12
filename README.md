@@ -172,6 +172,12 @@ them, and what comes back is the one the kernel would actually be running; and
 one writes an `include` as the last line inside a table and gets it back as the
 first.
 
+Asked twice, on two kernels: nft 1.1.6 and the 1.1.3 that Debian stable ships,
+which is what most of the people this is for are running. 1.1.3 has 2,955 of
+those files — the other 83 use syntax it does not have yet — and it accepts every
+one of ours and lists back the same ruleset. A version is not a detail in a
+language this size.
+
 That is a floor, and it is a floor eighteen real defects were found under. The
 worst were files we wrote that nft would not read at all: an anonymous chain
 folded onto one line without the semicolons nft insists on, a table whose name

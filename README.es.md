@@ -173,6 +173,12 @@ en medio, y lo que vuelve es el que el kernel estaría ejecutando de verdad; y
 uno escribe un `include` como última línea dentro de una tabla y lo recupera
 como la primera.
 
+Preguntado dos veces, en dos kernels: nft 1.1.6 y el 1.1.3 que trae Debian
+estable, que es lo que corre la mayoría de la gente para la que esto está hecho.
+1.1.3 tiene 2.955 de esos ficheros —los otros 83 usan sintaxis que aún no
+conoce— y acepta todos los nuestros y lista de vuelta el mismo ruleset. Una
+versión no es un detalle en un lenguaje de este tamaño.
+
 Es un suelo, y es un suelo bajo el que aparecieron dieciocho defectos reales.
 Los peores eran ficheros que escribíamos y que nft no leía: una cadena anónima
 doblada en una sola línea sin los puntos y coma que nft exige, una tabla con un
