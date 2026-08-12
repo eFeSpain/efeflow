@@ -65,7 +65,17 @@ function uncomment(s){
   return s;
 }
 
-function splitBlocks(text){
+/**
+ * @param inChain whether this line is inside a chain body, where there are no
+ *        nested declarations and so every brace carries a value. Without it,
+ *        `icmp type {` opening a list across lines was read as a block: the
+ *        rule's whole match went with it and the rule became a bare `accept`,
+ *        which accepts everything. The looser rule below stays for table
+ *        level, where an object kind nobody has heard of yet must keep its
+ *        body — but inside a chain it is not a guess worth making, because
+ *        being wrong there widens a firewall silently.
+ */
+function splitBlocks(text, inChain = false){
   const pieces = [];
   let buf = "", depth = 0, str = false;
   for(let i = 0; i < text.length; i++){
@@ -73,7 +83,8 @@ function splitBlocks(text){
     if(str){ buf += c; if(c === '"' && text[i-1] !== "\\") str = false; continue; }
     if(c === '"'){ str = true; buf += c; continue; }
     if(c === "{" && depth === 0
-       && (BLOCK_HEAD.test(buf) || (!text.slice(i + 1).trim() && !buf.includes("=")))){
+       && (BLOCK_HEAD.test(buf)
+           || (!inChain && !text.slice(i + 1).trim() && !buf.includes("=")))){
       pieces.push((buf + c).trim());
       buf = "";
       continue;
@@ -155,9 +166,33 @@ export function logicalLines(text){
      The comment is dropped rather than kept: adopting it as `comment "ssh"`
      would add a statement to somebody's firewall that they did not write. The
      round-trip then reports the line as not reproduced, which is true. */
+  /* Which block we are inside, kept as we go.
+   *
+   * `{` means two different things and telling them apart needs to know where
+   * you are. At table level it opens a declaration's body; inside a chain
+   * there are no nested declarations, so it can only be a value list:
+   *
+   *     icmp type {
+   *         echo-request,
+   *         destination-unreachable
+   *     } accept
+   *
+   * That was read as a block. The rule's whole match went with it — the rule
+   * became a bare `accept`, which accepts everything — and the braces came
+   * back out at table level as something nft refuses to load. A firewall
+   * opened silently and a file that would not start, from one ambiguity.
+   */
+  const inside = [];
+  const KIND = /^(table|chain|set|map|flowtable|synproxy|counter|quota|limit|secmark|ct)\b/;
+  const track = (piece) => {
+    if(piece === "}") { inside.pop(); return; }
+    if(/\{$/.test(piece)) inside.push(KIND.test(piece) ? piece.match(KIND)[1] : "?");
+  };
+  const inChain = () => inside.at(-1) === "chain";
+
   const emit = (pieces, ln, raw, handle) => {
     const lines = pieces.length > 1 ? expand(pieces) : pieces;
-    for(const text of lines) out.push({ text, ln, raw, handle });
+    for(const text of lines){ out.push({ text, ln, raw, handle }); track(text); }
   };
   text.split("\n").forEach((raw, ln) => {
     /* `nft -a list ruleset` prints the handle of every rule as a trailing
@@ -193,27 +228,49 @@ export function logicalLines(text){
     if(pending){
       pending.text += " " + line;
       pending.handle ??= handle;
-      const r = splitBlocks(pending.text);
+      const r = splitBlocks(pending.text, inChain());
       if(r.open) return;
       emit(r.pieces, pending.ln, pending.text, pending.handle);
       pending = null;
       return;
     }
     if(!line || line.startsWith("#")) return;
-    const r = splitBlocks(line);
+    const r = splitBlocks(line, inChain());
     /* a value brace this line opens and does not close is a statement nft has
        wrapped: read on until it closes */
     if(r.open){ pending = { text: line, ln, handle }; return; }
     emit(r.pieces, ln, raw.trim(), handle);
   });
-  if(pending) emit(splitBlocks(pending.text).pieces, pending.ln, pending.text, pending.handle);
+  if(pending) emit(splitBlocks(pending.text, inChain()).pieces, pending.ln, pending.text, pending.handle);
   return out;
 }
 
 /* What eFeFlow itself writes above the first table. Re-importing our own
    output must not read the preamble back as somebody's prelude and stack
-   another copy of it on every round trip. */
-const OUR_PREAMBLE = /^(flush ruleset|delete table\s|table\s+\S+(\s+\S+)?$)/;
+   another copy of it on every round trip.
+ *
+ * A bare `table inet x` is only ours when a `delete table inet x` follows it —
+ * that pair is the scoped export's signature. On its own it is somebody else's
+ * line and it does work: it is how a reload is made idempotent,
+ *
+ *     table inet x            create it if it is not there
+ *     flush table inet x      now it exists, so this cannot fail
+ *     table inet x { … }      and here is what it holds
+ *
+ * and dropping the first while keeping the second left a flush with nothing to
+ * flush. nft refuses the whole file for it: "No such file or directory; did
+ * you mean table 'x' in family inet?" Three of the five rulesets we emitted
+ * unloadably were this. */
+const OURS_ALONE = /^(flush ruleset|delete table\s)/;
+const BARE_TABLE = /^table\s+(\S+)(\s+(\S+))?$/;
+const ourPreamble = (line, text) => {
+  if(OURS_ALONE.test(line)) return true;
+  const m = line.match(BARE_TABLE);
+  if(!m) return false;
+  /* the name is the last word either way: `table x` or `table inet x` */
+  const name = (m[3] ?? m[1]).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^delete table\\s+(\\S+\\s+)?${name}\\s*$`, "m").test(text);
+};
 
 export function parseNft(text){
   const chains = [], sets = [], objects = [], tables = [], errors = [], prelude = [];
@@ -256,10 +313,28 @@ export function parseNft(text){
       continue;
     }
     if((m = line.match(/^chain\s+(\S+)\s*\{$/))){
-      const c = { id: m[1], table: tableName() || "inet fw", hook: null, prio: null,
-                  type: "regular", policy: null, rules: [], extra: [], seq: seq++,
-                  ...(handle ? { handle } : {}) };
-      chains.push(c);
+      const where = tableName() || "inet fw";
+      /* A chain declared twice is one chain. nft merges them and people rely
+         on it — splitting a table across two blocks, or across two files, is
+         how a long ruleset gets organised:
+       *
+       *     table inet filter {
+       *       chain input { … rules … }        no header: adds to it
+       *     }
+       *     table inet filter {
+       *       chain input { type filter hook input priority filter
+       *                     policy drop
+       *                     … more rules … } }
+       *
+       * Read as two chains of the same name we emitted two blocks, the second
+       * redeclaring a base chain, and nft refused the file. Reopening the one
+       * that is there appends to it in the order the file gives, which is the
+       * order nft would have applied them in. */
+      const already = chains.find(c => c.table === where && c.id === m[1]);
+      const c = already ?? { id: m[1], table: where, hook: null, prio: null,
+                             type: "regular", policy: null, rules: [], extra: [], seq: seq++,
+                             ...(handle ? { handle } : {}) };
+      if(!already) chains.push(c);
       stack.push({ kind: "chain", chain: c });
       continue;
     }
@@ -276,7 +351,25 @@ export function parseNft(text){
     /* Outside every table: `define wan = "eth0"`, `include "…"`. These were
        dropped while the rules using `$wan` were kept, so an imported script
        came back out referencing a variable nothing defined. */
-    if(!f){ if(!OUR_PREAMBLE.test(line)) prelude.push(line); continue; }
+    /* `flush ruleset` is not a comment. Anything declared above it is gone by
+       the time the kernel reaches this line, and a file can perfectly well
+       hold one in the middle — two configurations pasted together is exactly
+       how, and it is a mistake worth being shown rather than absorbed. One in
+       the corpus was two firewalls in one file, and reading them as a union
+       gave a ruleset with five rules the kernel would never have loaded. A
+       screen that draws a firewall nobody is running is the worst thing this
+       application can do, so the flush is obeyed here as the kernel obeys it. */
+    if(!f && line === "flush ruleset"){
+      /* What it flushes is the kernel's: tables, chains, sets, objects. Not
+         the prelude — a `define` is nft's own textual substitution and an
+         `include` is a file it reads, and neither was ever in the kernel for a
+         flush to reach. The test that already covered this caught the first
+         attempt at it, which cleared the lot. */
+      chains.length = 0; sets.length = 0; objects.length = 0; tables.length = 0;
+      for(const k of Object.keys(ruleLines)) delete ruleLines[k];
+      continue;
+    }
+    if(!f){ if(!ourPreamble(line, text)) prelude.push(line); continue; }
     if(f.kind === "object"){ f.obj.body.push(line); continue; }
     if(f.kind === "set"){ readSetLine(f.set, line); continue; }
     /* The backstop under the keep-as-text bucket. Preserving what we cannot

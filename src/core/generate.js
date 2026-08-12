@@ -91,7 +91,32 @@ export function generateWithMap(model = MODEL, opts = {}) {
      the rules using `$wan` were kept, so an imported script came back out
      referencing a variable nothing defined. */
   if ((model.prelude || []).length) {
-    model.prelude.forEach((l) => put(l));
+    /* `flush table inet x` fails on a table that is not there, and the whole
+       file goes with it: "No such file or directory; did you mean table 'x' in
+       family inet?" The idiom people write is three lines —
+     *
+     *     table inet x { }          create it if it is not there
+     *     flush table inet x        now it exists, so this cannot fail
+     *     table inet x { … }        and here is what it holds
+     *
+     * and the prelude keeps the flush while the empty declaration above it has
+     * nowhere to live, because everything here is emitted before any table.
+     * Rather than dropping somebody's line — preserve by default is the rule
+     * of this file — the line that makes it work is written back with it. nft
+     * takes a bare `table inet x` as create-if-absent, which is what the empty
+     * block was for. Three of the four rulesets we emitted unloadably were
+     * this one shape. */
+    const created = new Set();
+    for (const l of model.prelude) {
+      const f = l.match(/^flush\s+table\s+(?:(\S+)\s+)?(\S+)\s*$/);
+      if (f) {
+        const decl = `table ${f[1] ? f[1] + " " : ""}${f[2]}`;
+        if (!created.has(decl)) { put(decl); created.add(decl); }
+      }
+      const d = l.match(/^table\s+(?:\S+\s+)?\S+\s*$/);
+      if (d) created.add(l.trim());
+      put(l);
+    }
     put("");
   }
 

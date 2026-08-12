@@ -152,16 +152,23 @@ be reproduced, it tells you which one before you commit to anything.
 ## ⚠ Beta
 
 It does the whole job today: import, prove, analyse, simulate, edit, apply,
-export. 993 automated assertions stand behind it, across the parser, the
+export. 998 automated assertions stand behind it, across the parser, the
 analyser, the packet evaluator and the interface itself.
 
-What it does not have much of is mileage. **268 rulesets off public
-repositories have now been through it — the ones nft itself accepts, out of
-534 fetched — and 219 came back byte for byte, with not one unreadable line in
-any of them.** That is a floor, not a boast: what the rest differ by is
-formatting we normalise to what nft prints, and the run that measures it is
-`npm run corpus`. It found two defects worth the whole exercise, and there is
-no reason to think they were the last.
+What it does not have much of is mileage — but it no longer has none. **534
+rulesets were fetched from public repositories; 268 of them are files nft
+itself accepts, and every one of those 268 comes back out meaning exactly what
+it meant going in.** Not "looks similar": each one was loaded into an empty
+netfilter instance and listed back, ours was loaded the same way, and the
+kernel cannot tell the two listings apart. 232 of them come back byte for
+byte as well, and no line in any of them is one this parser cannot read.
+
+That is a floor, and it is a floor five real defects were found under. Two of
+them mattered: a chain header written without its trailing semicolon — which
+nft accepts and hand-written configs very often use — silently stopped being a
+base chain, taking its `policy drop` with it; and a braced list wrapped across
+lines took its own rule's match with it, leaving a bare `accept` that accepts
+everything. The run that found them is `npm run corpus`, and it is repeatable.
 
 That is why it tells you when it is not sure instead of guessing, why the
 round-trip check reports a number rather than a thumbs-up, and why the rollback
@@ -363,11 +370,13 @@ write `accept`, not `aceptar`.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 993 assertions
+npm test             # 998 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 
 npx tauri build --no-bundle && npm run e2e   # drive the built app, not the source
-npm run corpus fetch && npm run corpus run --nft   # real rulesets off GitHub
+npm run corpus fetch                          # real rulesets off GitHub
+npm run corpus run --nft                     # can we read them and write them back
+npm run corpus kernel                        # does the kernel see the same ruleset
 
 node bin/efeflow.mjs lint fw.nft    # the linter, straight from the clone
 ```

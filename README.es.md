@@ -154,15 +154,24 @@ puede reproducir, te dice cuál antes de que te comprometas a nada.
 ## ⚠ Beta
 
 Hace el trabajo completo hoy: importar, demostrar, analizar, simular, editar,
-aplicar y exportar. Lo respaldan 993 comprobaciones automáticas, sobre el
+aplicar y exportar. Lo respaldan 998 comprobaciones automáticas, sobre el
 parser, el analizador, el evaluador de paquetes y la propia interfaz.
 
-Lo que todavía tiene poco es kilometraje. **Por él han pasado ya 268 rulesets
-de repositorios públicos —los que el propio nft acepta, de 534 descargados— y
-219 volvieron byte a byte, y no hubo una sola línea ilegible en ninguno.** Es un suelo, no un
-alarde: en lo que difiere el resto es formato que normalizamos a lo que imprime
-nft, y quien lo mide es `npm run corpus`. Encontró un defecto que justifica el
-ejercicio entero, y no hay motivo para pensar que fuera el último.
+Lo que todavía tiene poco es kilometraje — pero ya no tiene ninguno. **Se
+descargaron 534 rulesets de repositorios públicos; 268 son ficheros que el
+propio nft acepta, y los 268 salen de aquí significando exactamente lo que
+significaban al entrar.** No «se parecen»: cada uno se cargó en una instancia
+de netfilter vacía y se listó de vuelta, el nuestro se cargó igual, y el kernel
+no distingue los dos listados. 232 vuelven además byte a byte, y no hay una
+sola línea en ninguno que este parser no sepa leer.
+
+Es un suelo, y es un suelo bajo el que aparecieron cinco defectos reales. Dos
+importaban: una cabecera de cadena escrita sin su punto y coma final —que nft
+acepta y que las configuraciones a mano usan mucho— dejaba de ser una cadena
+base en silencio, llevándose su `policy drop` con ella; y una lista entre
+llaves partida en varias líneas se llevaba el match de su propia regla,
+dejando un `accept` a secas que acepta todo. Quien los encontró es
+`npm run corpus`, y es repetible.
 
 Por eso te dice cuándo no está seguro en vez de suponer, por eso el round-trip
 informa de un número y no de un visto bueno, y por eso el rollback se arma en
@@ -367,11 +376,13 @@ escribes `accept`, no `aceptar`.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 993 aserciones
+npm test             # 998 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 
 npx tauri build --no-bundle && npm run e2e   # conduce la app compilada, no el código
-npm run corpus fetch && npm run corpus run --nft   # rulesets reales de GitHub
+npm run corpus fetch                          # real rulesets off GitHub
+npm run corpus run --nft                     # can we read them and write them back
+npm run corpus kernel                        # does the kernel see the same ruleset
 
 node bin/efeflow.mjs lint fw.nft    # el linter, directo desde el clon
 ```

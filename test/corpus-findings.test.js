@@ -129,3 +129,136 @@ test("a backslash at the end of a line continues it", () => {
   assert.equal(rules[1].ctr, true, "the counter was on the continued half");
   assert.deepEqual(m.errors, [], "a continuation line parses as nothing on its own");
 });
+
+/* ── the four the kernel found ────────────────────────────────────────────
+ *
+ * Comparing text can only say a file came back written differently. Loading
+ * both into an empty netfilter instance and listing them back asks whether it
+ * came back *meaning* differently, which is the question. `npm run corpus
+ * kernel` does that; these are what it found, and all four produced either a
+ * file nft refuses or a firewall that is not the one in the file.
+ */
+
+/* A braced list wrapped across lines was read as a block, so the rule's entire
+   match went with it and the rule became a bare `accept` — which accepts
+   everything. The braces then came back out at table level, where nft refuses
+   them. A firewall opened silently, in a file that would not load. */
+test("a value list wrapped across lines stays part of its rule", () => {
+  const m = parseNft([
+    "table inet filter {",
+    "\tchain input {",
+    "\t\ttype filter hook input priority filter; policy drop;",
+    "\t\ticmp type {",
+    "\t\t\techo-request,",
+    "\t\t\tdestination-unreachable",
+    "\t\t} accept",
+    "\t}",
+    "}",
+  ].join("\n"));
+
+  assert.equal(m.chains.length, 1, "the braces were read as a chain of their own");
+  const r = m.chains[0].rules;
+  assert.equal(r.length, 1);
+  assert.match(r[0].expr, /icmp type \{ echo-request, destination-unreachable \}/,
+    "the rule lost its match and became a bare verdict");
+  assert.equal(r[0].verdict, "accept");
+  assert.deepEqual(parseNft(generate(m).join("\n")).chains[0].rules[0].expr, r[0].expr,
+    "and it survives being written out and read again");
+});
+
+/* `flush table inet x` fails on a table that does not exist, and takes the
+   whole file with it. The idiom is to declare it empty first; the declaration
+   lived above the flush and everything in the prelude is emitted before any
+   table, so the flush was left with nothing to flush. */
+test("a flush of a table is preceded by something that creates it", () => {
+  const src = [
+    "table inet x {",
+    "}",
+    "flush table inet x",
+    "table inet x {",
+    "\tchain input {",
+    "\t\ttype filter hook input priority filter; policy accept;",
+    "\t\ttcp dport 22 accept",
+    "\t}",
+    "}",
+  ].join("\n");
+  const out = generate(parseNft(src)).join("\n");
+  const flush = out.indexOf("flush table inet x");
+  const decl = out.indexOf("table inet x\n");
+  assert.ok(flush > 0, "somebody's flush was dropped");
+  assert.ok(decl >= 0 && decl < flush,
+    "nothing creates the table the flush is about, so nft refuses the file");
+});
+
+/* A chain declared twice is one chain, which is how a long ruleset gets split
+   across blocks or files. Read as two, we emitted the name twice — the second
+   time with a hook — and nft refused it. */
+test("a chain declared twice is one chain", () => {
+  const m = parseNft([
+    "table inet filter {",
+    "\tchain input {",
+    "\t\ttcp dport 22 accept",
+    "\t}",
+    "}",
+    "table inet filter {",
+    "\tchain input {",
+    "\t\ttype filter hook input priority filter; policy drop;",
+    "\t\ttcp dport 443 accept",
+    "\t}",
+    "}",
+  ].join("\n"));
+
+  const inputs = m.chains.filter((c) => c.id === "input" && c.table === "inet filter");
+  assert.equal(inputs.length, 1, "two chains of one name is a file nft will not load");
+  assert.equal(inputs[0].hook, "input", "the header from the second block reached it");
+  assert.equal(inputs[0].policy, "drop");
+  assert.deepEqual(inputs[0].rules.map((r) => r.expr), ["tcp dport 22", "tcp dport 443"],
+    "and both blocks' rules are there, in the order the file gives them");
+});
+
+/* `flush ruleset` in the middle of a file is not decoration: everything above
+   it is gone by the time the kernel reaches it. One ruleset in the corpus was
+   two firewalls pasted together, and reading them as a union produced five
+   rules the kernel would never have loaded. Drawing a firewall nobody is
+   running is the worst thing this application can do. */
+test("a flush in the middle of a file discards what came before it", () => {
+  const m = parseNft([
+    "table inet old {",
+    "\tchain input {",
+    "\t\ttype filter hook input priority filter; policy accept;",
+    "\t\ttcp dport 23 accept",
+    "\t}",
+    "}",
+    "",
+    "flush ruleset",
+    "",
+    "table inet new {",
+    "\tchain input {",
+    "\t\ttype filter hook input priority filter; policy drop;",
+    "\t\ttcp dport 22 accept",
+    "\t}",
+    "}",
+  ].join("\n"));
+
+  assert.deepEqual(m.chains.map((c) => c.table), ["inet new"],
+    "the table above the flush is not running on that machine");
+  assert.equal(m.chains[0].policy, "drop");
+});
+
+/* …but it does not reach what was never in the kernel. A `define` is nft's own
+   textual substitution and an `include` is a file it reads; neither is state a
+   flush can clear, and the rules below still need them. */
+test("and it does not discard the defines above it", () => {
+  const m = parseNft([
+    'define wan = "eth0"',
+    'include "/etc/nftables.d/*.nft"',
+    "flush ruleset",
+    "table inet filter {",
+    "\tchain input {",
+    "\t\ttype filter hook input priority filter; policy drop;",
+    "\t\tiifname $wan accept",
+    "\t}",
+    "}",
+  ].join("\n"));
+  assert.deepEqual(m.prelude, ['define wan = "eth0"', 'include "/etc/nftables.d/*.nft"']);
+});

@@ -153,7 +153,8 @@ const shapeOf = (line) => String(line)
 async function run(withNft) {
   const { parseNft, verify } = await import("../src/core/parse.js");
   if (!existsSync(CACHE)) { console.log("  nothing fetched yet — run `fetch` first\n"); return; }
-  const files = readdirSync(CACHE).filter((f) => statSync(join(CACHE, f)).isFile());
+  const files = readdirSync(CACHE)
+    .filter((f) => !f.startsWith("_") && statSync(join(CACHE, f)).isFile());
 
   const buckets = new Map();          /* shape -> {n, example, files:Set} */
   const bump = (kind, line, file) => {
@@ -199,8 +200,85 @@ async function run(withNft) {
   console.log(`  the whole list is in .corpus/_findings.json\n`);
 }
 
+/* ── asking the kernel instead of the text ───────────────────────────────
+ *
+ * `run` compares two pieces of text, and text is the wrong authority. A file
+ * that came back differently written may have lost nothing at all, and a file
+ * whose text matched exactly could have lost everything and said nothing.
+ *
+ * So: load the original into an empty netfilter instance and list it back;
+ * load our re-emission the same way and list that back. Both listings are
+ * nft's own canonical form, so comparing them asks whether the round trip
+ * changed what the ruleset *means*. That is the question, and it is the only
+ * one whose answer is not our own opinion.
+ *
+ * scripts/differ.mjs does exactly this and is the tool for it — but it needs
+ * node on the machine that has nft, and WSL here has none. So the JavaScript
+ * stays on this side, the two loads happen in one crossing, and each of them
+ * is inside a network namespace of its own that did not exist a moment before.
+ */
+async function kernel() {
+  const { parseNft } = await import("../src/core/parse.js");
+  const { generate } = await import("../src/core/generate.js");
+  const files = readdirSync(CACHE).filter((f) => !f.startsWith("_") && statSync(join(CACHE, f)).isFile());
+  const acceptable = nftAcceptable();
+  if (!acceptable) { console.log("  no nft to ask\n"); return; }
+
+  const mine = join(CACHE, "_reemit");
+  mkdirSync(mine, { recursive: true });
+  const pairs = [];
+  for (const f of files) {
+    if (!acceptable.has(f)) continue;
+    try {
+      writeFileSync(join(mine, f), generate(parseNft(readFileSync(join(CACHE, f), "utf8"))).join("\n") + "\n");
+      pairs.push(f);
+    } catch (e) { console.log(`  ${f}: generate threw — ${String(e.message).split("\n")[0]}`); }
+  }
+
+  /* One crossing. `list ruleset` without -a, because handles are the kernel's
+     to hand out and comparing them would be comparing load order, not meaning. */
+  const script = `
+    ok=0; bad=0
+    for f in "$1"/*; do
+      [ -f "$f" ] || continue
+      n="$(basename "$f")"
+      [ -f "$2/$n" ] || continue
+      # Counters are runtime state, not policy: a file that came out of a
+      # ruleset listing carries real packet counts, and putting them back into
+      # a fresh kernel would be restoring somebody traffic they never had. A
+      # bare counter is the right thing to emit, so this is not a difference.
+      # differ.mjs has always normalised them; this had not, and called six
+      # rulesets changed in meaning over a number nobody should restore.
+      norm() { sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter/g'; }
+      a=$(unshare -rn sh -c '/usr/sbin/nft -f "$1" >/dev/null 2>&1 && /usr/sbin/nft list ruleset' sh "$f" 2>/dev/null | norm)
+      b=$(unshare -rn sh -c '/usr/sbin/nft -f "$1" >/dev/null 2>&1 && /usr/sbin/nft list ruleset' sh "$2/$n" 2>/dev/null | norm)
+      if [ -z "$b" ]; then printf 'REFUSED\\t%s\\n' "$n"
+      elif [ "$a" = "$b" ]; then ok=$((ok+1)); printf 'SAME\\t%s\\n' "$n"
+      else bad=$((bad+1)); printf 'MOVED\\t%s\\n' "$n"; fi
+    done
+    printf 'TOTALS\\t%s\\t%s\\n' "$ok" "$bad"`;
+  const wp = (p) => execFileSync("wsl", ["wslpath", "-a", p.replace(/\\/g, "/")], { encoding: "utf8" }).trim();
+  const out = execFileSync("wsl", ["-e", "sh", "-c", script, "sh", wp(CACHE), wp(mine)],
+                           { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 1_800_000 });
+
+  const rows = out.split("\n").map((l) => l.split("\t")).filter((r) => r[0]);
+  const same = rows.filter((r) => r[0] === "SAME").map((r) => r[1]);
+  const moved = rows.filter((r) => r[0] === "MOVED").map((r) => r[1]);
+  const refused = rows.filter((r) => r[0] === "REFUSED").map((r) => r[1]);
+
+  console.log(`\n── ${pairs.length} rulesets, put through the kernel twice ──\n`);
+  console.log(`  ${same.length} the kernel cannot tell apart from the original`);
+  console.log(`  ${moved.length} whose meaning moved`);
+  console.log(`  ${refused.length} where nft refused what we wrote\n`);
+  for (const f of [...refused, ...moved].slice(0, 20))
+    console.log(`  ${refused.includes(f) ? "REFUSED" : "MOVED  "}  ${f.slice(0, 68)}`);
+  writeFileSync(join(CACHE, "_kernel.json"), JSON.stringify({ same, moved, refused }, null, 1));
+  console.log(`\n  the lists are in .corpus/_kernel.json\n`);
+}
+
 const cmd = process.argv[2];
 if (cmd === "fetch") await fetchCorpus();
+else if (cmd === "kernel") await kernel();
 else if (cmd === "run") await run(process.argv.includes("--nft"));
 else console.log(`
   node scripts/corpus.mjs fetch        search GitHub, cache to .corpus/
