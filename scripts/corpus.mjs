@@ -17,7 +17,7 @@
  * a machine with nft — WSL counts — that check runs in a network namespace so
  * nothing touches the host's firewall.
  *
- *   node scripts/corpus.mjs fetch     search GitHub, cache to .corpus/
+ *   node scripts/corpus.mjs fetch [--pages N]   search GitHub, cache to .corpus/
  *   node scripts/corpus.mjs run       parse and verify everything cached
  *   node scripts/corpus.mjs run --nft also ask nft whether each file is valid
  *
@@ -37,18 +37,54 @@ const CACHE = join(repo, ".corpus");
 /* ── fetching ───────────────────────────────────────────────────────────── */
 
 /* Several queries rather than one, because a single one returns a single
-   flavour of file. Each names something only a real ruleset would carry. */
+   flavour of file. Each names something only a real ruleset would carry.
+ *
+ * The first ten found what people write most: hooks, conntrack, counters. The
+ * rest name the parts of nftables this parser has the least evidence about,
+ * which is where the next defect is — a corpus assembled out of what somebody
+ * thought to search for contains what they thought of, and that bias is the
+ * thing to attack deliberately.
+ *
+ * The families matter as much as the statements. Almost every ruleset on
+ * GitHub is `inet` or `ip`; `bridge`, `netdev` and `arp` are rare and are
+ * exactly where a parser that assumed two families would fall over. */
 const QUERIES = [
+  /* what everyone writes */
   '"hook input priority" extension:nft',
   '"hook prerouting priority" extension:nft',
   '"table inet" "counter" extension:nft',
-  '"flowtable" "hook ingress" extension:nft',
   '"ct state" "jump" extension:nft',
   '"nft -f" filename:nftables.conf',
   '"type filter hook" filename:nftables.conf',
   '"meta l4proto" extension:nft',
-  '"vmap" "dport" extension:nft',
   '"add rule" "handle" extension:nft',
+  /* the other families */
+  '"table bridge" extension:nft',
+  '"table netdev" extension:nft',
+  '"table arp" extension:nft',
+  '"hook ingress" "device" extension:nft',
+  /* statements this parser has the least evidence about */
+  '"flowtable" "hook ingress" extension:nft',
+  '"synproxy" extension:nft',
+  '"secmark" extension:nft',
+  '"tproxy to" extension:nft',
+  '"numgen" extension:nft',
+  '"jhash" extension:nft',
+  '"fib daddr" extension:nft',
+  '"osf name" extension:nft',
+  '"queue num" extension:nft',
+  '"dup to" extension:nft',
+  '"meta mark set" extension:nft',
+  '"vmap" "dport" extension:nft',
+  '"typeof" "set" extension:nft',
+  '"ct helper" extension:nft',
+  '"quota over" extension:nft',
+  '"flags dynamic" extension:nft',
+  '"limit rate over" extension:nft',
+  '"socket" "transparent" extension:nft',
+  '"rt mtu" extension:nft',
+  '"iifgroup" extension:nft',
+  '"log prefix" "group" extension:nft',
 ];
 
 const token = () => {
@@ -68,45 +104,59 @@ const api = async (url, tok) => {
   return r.json();
 };
 
-async function fetchCorpus() {
+async function fetchCorpus(pages) {
   const tok = token();
   mkdirSync(CACHE, { recursive: true });
   const seen = new Set(readdirSync(CACHE).map((f) => f));
-  let added = 0, skipped = 0;
+  let added = 0, skipped = 0, asked = 0;
 
-  for (const [i, q] of QUERIES.entries()) {
-    /* code search allows ten a minute; a whole minute between them is simpler
-       than reading the headers and getting it slightly wrong */
-    if (i) await new Promise((r) => setTimeout(r, 7000));
-    process.stdout.write(`  ${q}\n`);
-    let hits;
-    try {
-      hits = await api(`https://api.github.com/search/code?q=${encodeURIComponent(q)}&per_page=100`, tok);
-    } catch (e) {
-      console.log(`    skipped: ${e.message}`);
-      continue;
-    }
-    for (const it of hits.items || []) {
-      /* one name per repo+path, flattened so the cache is a flat directory */
-      const name = `${it.repository.full_name}__${it.path}`.replace(/[^\w.-]+/g, "_");
-      if (seen.has(name)) { skipped++; continue; }
+  /* Code search allows ten requests a minute and caps any one query at a
+     thousand results however many pages are asked for — so the ceiling is the
+     query list, not the paging. Seven seconds between requests is simpler than
+     reading the rate headers and getting it slightly wrong. */
+  const wait = () => new Promise((r) => setTimeout(r, 7000));
+
+  for (const q of QUERIES) {
+    let kept = 0;
+    for (let page = 1; page <= pages; page++) {
+      if (asked++) await wait();
+      let hits;
       try {
-        const raw = `https://raw.githubusercontent.com/${it.repository.full_name}/${it.repository.default_branch || "HEAD"}/${it.path}`;
-        const r = await fetch(raw, { headers: { "User-Agent": "efeflow" } });
-        if (!r.ok) continue;
-        const text = await r.text();
-        /* a file that names no table and no chain is not a ruleset, whatever
-           its extension says — templates and fragments are most of the noise */
-        if (!/^\s*table\s+\S+/m.test(text) || !/\bchain\b/.test(text)) continue;
-        if (text.length > 400_000) continue;
-        writeFileSync(join(CACHE, name), text);
-        seen.add(name);
-        added++;
-      } catch { /* a file that will not download is not a finding */ }
+        hits = await api(`https://api.github.com/search/code?q=${encodeURIComponent(q)}&per_page=100&page=${page}`, tok);
+      } catch (e) {
+        console.log(`  ${q} p${page}: ${e.message}`);
+        break;
+      }
+      if (!(hits.items || []).length) break;
+      const before = added;
+      await keepAll(hits.items, seen, () => added++, () => skipped++);
+      kept += added - before;
+      if (hits.items.length < 100) break;      /* the last page of this query */
     }
-    console.log(`    ${added} kept so far`);
+    console.log(`  ${String(kept).padStart(3)} new   ${q}`);
   }
-  console.log(`\n  ${added} new, ${skipped} already had, ${readdirSync(CACHE).length} in the corpus\n`);
+  console.log(`\n  ${added} new, ${skipped} already had, ${readdirSync(CACHE).filter((f) => !f.startsWith("_")).length} in the corpus\n`);
+}
+
+async function keepAll(items, seen, onAdd, onSkip) {
+  for (const it of items) {
+    /* one name per repo+path, flattened so the cache is a flat directory */
+    const name = `${it.repository.full_name}__${it.path}`.replace(/[^\w.-]+/g, "_");
+    if (seen.has(name)) { onSkip(); continue; }
+    seen.add(name);                    /* asked for once, whatever comes back */
+    try {
+      const raw = `https://raw.githubusercontent.com/${it.repository.full_name}/${it.repository.default_branch || "HEAD"}/${it.path}`;
+      const r = await fetch(raw, { headers: { "User-Agent": "efeflow" } });
+      if (!r.ok) continue;
+      const text = await r.text();
+      /* a file that names no table and no chain is not a ruleset, whatever its
+         extension says — templates and fragments are most of the noise */
+      if (!/^\s*table\s+\S+/m.test(text) || !/\bchain\b/.test(text)) continue;
+      if (text.length > 400_000) continue;
+      writeFileSync(join(CACHE, name), text);
+      onAdd();
+    } catch { /* a file that will not download is not a finding */ }
+  }
 }
 
 /* ── running ────────────────────────────────────────────────────────────── */
@@ -131,7 +181,7 @@ function nftAcceptable() {
   try {
     const wslPath = execFileSync("wsl", ["wslpath", "-a", CACHE.replace(/\\/g, "/")], { encoding: "utf8" }).trim();
     const out = execFileSync("wsl", ["-e", "sh", "-c", script, "sh", wslPath],
-                             { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 900_000 });
+                             { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, timeout: 3_600_000 });
     return new Set(out.split("\n").map((s) => s.trim()).filter(Boolean));
   } catch (e) {
     console.log(`  could not ask nft (${String(e.message).split("\n")[0]}) — counting every file instead`);
@@ -166,6 +216,30 @@ async function run(withNft) {
 
   const acceptable = withNft ? nftAcceptable() : null;
   let clean = 0, invalid = 0, checked = 0, totalLines = 0, lostLines = 0;
+
+  /* Why a file is not reproduced whole, which is a different question from
+     which line it was. Two of the reasons are the parser doing exactly what it
+     should and are expected to stay: a ruleset that declares one table in nine
+     blocks comes back as one block, and a ruleset with a `flush ruleset` in the
+     middle of it comes back without the firewall the kernel would have thrown
+     away. Both are text losses and neither is a defect, so counting them apart
+     is the difference between a list to work through and a list to read. */
+  const reasons = new Map();
+  const reason = (text) => {
+    const lines = text.split("\n");
+    const firstTable = lines.findIndex((l) => /^\s*table\s/.test(l) && l.includes("{"));
+    const flush = lines.findIndex((l) => /^\s*flush\s+ruleset\s*$/.test(l));
+    if (firstTable >= 0 && flush > firstTable) return "a flush ruleset in the middle of the file";
+    /* `table inet x {}` is a declaration of the same table as `table inet x {`.
+       It is how a scoped reload is made safe — declare it so the delete under it
+       cannot fail on a box that has never seen it — and counting only the second
+       form left fifteen rulesets filed under "look at this one" when what they
+       are is a table declared twice. */
+    const decls = lines.map((l) => l.trim().replace(/\{\s*\}$/, "{"))
+                       .filter((l) => /^(table|chain|set|map)\s+\S+.*\{$/.test(l));
+    if (decls.length !== new Set(decls).size) return "a table or chain declared more than once";
+    return "something else — look at this one";
+  };
   for (const f of files) {
     const text = readFileSync(join(CACHE, f), "utf8");
     if (acceptable && !acceptable.has(f)) { invalid++; continue; }
@@ -183,10 +257,24 @@ async function run(withNft) {
       : d.src === "—" ? bump("invented", d.out, f)
       : bump("changed", `${d.src}   ⇢   ${d.out}`, f);
     if (!v.diffs.length) clean++;
+    else {
+      const r = reason(text);
+      const b = reasons.get(r) || { n: 0, files: [] };
+      b.n++;
+      if (b.files.length < 3) b.files.push(f);
+      reasons.set(r, b);
+    }
   }
 
   console.log(`\n── ${checked} rulesets${withNft ? ` (${invalid} nft itself refuses, left out)` : ""} ──\n`);
   console.log(`  ${clean} reproduced entirely · ${totalLines - lostLines}/${totalLines} lines (${(100 * (totalLines - lostLines) / totalLines).toFixed(1)}%)\n`);
+
+  if (reasons.size) {
+    console.log(`  ${checked - clean} not reproduced whole, and why:\n`);
+    for (const [r, b] of [...reasons].sort((a, c) => c[1].n - a[1].n))
+      console.log(`  ${String(b.n).padStart(4)} × ${r}\n         ${b.files.join("\n         ")}`);
+    console.log();
+  }
 
   const worst = [...buckets.values()].sort((a, b) => b.n - a.n);
   console.log(`  ${worst.length} distinct shapes we do not reproduce, commonest first:\n`);
@@ -249,7 +337,16 @@ async function kernel() {
       # bare counter is the right thing to emit, so this is not a difference.
       # differ.mjs has always normalised them; this had not, and called six
       # rulesets changed in meaning over a number nobody should restore.
-      norm() { sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter/g'; }
+      #
+      # And the clock, for the same reason. A set element with a timeout is
+      # listed with the time it has left — 'timeout 5m expires 4m59s996ms' —
+      # which is four milliseconds of the kernel doing its job, measured from
+      # whenever the load happened. Two loads are never at the same instant, so
+      # without this a ruleset with a timeout can never compare equal to itself.
+      norm() {
+        sed -E -e 's/counter packets [0-9]+ bytes [0-9]+/counter/g' \\
+               -e 's/ expires [0-9a-z]+//g'
+      }
       a=$(unshare -rn sh -c '/usr/sbin/nft -f "$1" >/dev/null 2>&1 && /usr/sbin/nft list ruleset' sh "$f" 2>/dev/null | norm)
       b=$(unshare -rn sh -c '/usr/sbin/nft -f "$1" >/dev/null 2>&1 && /usr/sbin/nft list ruleset' sh "$2/$n" 2>/dev/null | norm)
       if [ -z "$b" ]; then printf 'REFUSED\\t%s\\n' "$n"
@@ -259,7 +356,7 @@ async function kernel() {
     printf 'TOTALS\\t%s\\t%s\\n' "$ok" "$bad"`;
   const wp = (p) => execFileSync("wsl", ["wslpath", "-a", p.replace(/\\/g, "/")], { encoding: "utf8" }).trim();
   const out = execFileSync("wsl", ["-e", "sh", "-c", script, "sh", wp(CACHE), wp(mine)],
-                           { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 1_800_000 });
+                           { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, timeout: 5_400_000 });
 
   const rows = out.split("\n").map((l) => l.split("\t")).filter((r) => r[0]);
   const same = rows.filter((r) => r[0] === "SAME").map((r) => r[1]);
@@ -277,7 +374,12 @@ async function kernel() {
 }
 
 const cmd = process.argv[2];
-if (cmd === "fetch") await fetchCorpus();
+if (cmd === "fetch") {
+  /* GitHub caps a query at a thousand results, so ten pages is the ceiling
+     and asking for more only costs requests. */
+  const n = +(process.argv[process.argv.indexOf("--pages") + 1] || 0);
+  await fetchCorpus(process.argv.includes("--pages") && n > 0 ? Math.min(n, 10) : 1);
+}
 else if (cmd === "kernel") await kernel();
 else if (cmd === "run") await run(process.argv.includes("--nft"));
 else console.log(`

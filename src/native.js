@@ -72,16 +72,29 @@ export async function nftList(target = LOCAL) {
   return invoke("nft_list", { target });
 }
 
+/* nft wants a newline after the last line, and will not read a file without
+   one: a ruleset ending in `include "/etc/nftables.d/*.nft"` came back
+ *
+ *     syntax error, unexpected end of file, expecting newline or semicolon
+ *
+ * which is nft complaining about the missing newline and reads like a complaint
+ * about the include. Measured on nft 1.1.6. The file export has always added
+ * one; the check and the apply built their text with join("\n") and did not, so
+ * a project whose last line was an include could not be checked or applied and
+ * said something untrue about why. Added here because this is the one door
+ * every ruleset goes through on its way to nft, locally or over ssh. */
+export const complete = (ruleset) => (ruleset.endsWith("\n") ? ruleset : ruleset + "\n");
+
 /* The authority on whether a ruleset is valid. Our analyser is an
    approximation; this is the real parser. */
 export async function nftCheck(ruleset, target = LOCAL) {
   if (!inTauri) return unavailable("Validating with nft -c");
-  return invoke("nft_check", { target, ruleset });
+  return invoke("nft_check", { target, ruleset: complete(ruleset) });
 }
 
 export async function nftApply(ruleset, target = LOCAL, confirmed = false) {
   if (!inTauri) return unavailable("Applying a ruleset");
-  return invoke("nft_apply", { target, ruleset, confirmed });
+  return invoke("nft_apply", { target, ruleset: complete(ruleset), confirmed });
 }
 
 /* ── commit-confirm ───────────────────────────────────────────────────

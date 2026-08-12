@@ -39,7 +39,8 @@ export function blankRuleset(){
    `include` lines above the first table. The last of those were dropped while
    the rules using `$wan` were kept, so an imported script came back out
    referencing a variable nothing defined. */
-export const MODEL = { chains: [], sets: [], objects: [], tables: [], prelude: [] };
+export const MODEL = { chains: [], sets: [], objects: [], tables: [], prelude: [],
+                       preludeAt: [] };
 
 /* Every verdict the parser can produce needs an entry in both, because the
    canvas paints a pill from them per rule. `goto` shares the colour of `jump`

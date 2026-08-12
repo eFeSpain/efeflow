@@ -154,24 +154,30 @@ puede reproducir, te dice cuál antes de que te comprometas a nada.
 ## ⚠ Beta
 
 Hace el trabajo completo hoy: importar, demostrar, analizar, simular, editar,
-aplicar y exportar. Lo respaldan 998 comprobaciones automáticas, sobre el
+aplicar y exportar. Lo respaldan 1.020 comprobaciones automáticas, sobre el
 parser, el analizador, el evaluador de paquetes y la propia interfaz.
 
 Lo que todavía tiene poco es kilometraje — pero ya no tiene ninguno. **Se
-descargaron 534 rulesets de repositorios públicos; 268 son ficheros que el
-propio nft acepta, y los 268 salen de aquí significando exactamente lo que
+descargaron 4.337 rulesets de repositorios públicos; 3.038 son ficheros que el
+propio nft acepta, y los 3.038 salen de aquí significando exactamente lo que
 significaban al entrar.** No «se parecen»: cada uno se cargó en una instancia
 de netfilter vacía y se listó de vuelta, el nuestro se cargó igual, y el kernel
-no distingue los dos listados. 232 vuelven además byte a byte, y no hay una
-sola línea en ninguno que este parser no sepa leer.
+no distingue los dos listados. 3.017 vuelven además byte a byte —el 99,8% de
+84.100 líneas— y no hay una sola línea en ninguno que este parser no sepa leer.
 
-Es un suelo, y es un suelo bajo el que aparecieron cinco defectos reales. Dos
-importaban: una cabecera de cadena escrita sin su punto y coma final —que nft
-acepta y que las configuraciones a mano usan mucho— dejaba de ser una cadena
-base en silencio, llevándose su `policy drop` con ella; y una lista entre
-llaves partida en varias líneas se llevaba el match de su propia regla,
-dejando un `accept` a secas que acepta todo. Quien los encontró es
-`npm run corpus`, y es repetible.
+Los veintiuno que no vuelven byte a byte están todos explicados, y ninguno es
+una diferencia de significado: diecinueve declaran una misma tabla o cadena en
+varios bloques, que nft fusiona y esto también, así que vuelve siendo la única
+cosa que es; uno son dos firewalls pegados en un fichero con un `flush ruleset`
+en medio, y lo que vuelve es el que el kernel estaría ejecutando de verdad; y
+uno escribe un `include` como última línea dentro de una tabla y lo recupera
+como la primera.
+
+Es un suelo, y es un suelo bajo el que aparecieron dieciocho defectos reales.
+Los peores eran ficheros que escribíamos y que nft no leía: una cadena anónima
+doblada en una sola línea sin los puntos y coma que nft exige, una tabla con un
+guion en el nombre, un `include` movido por encima de la tabla a la que su
+fichero añade reglas. Quien los encontró es `npm run corpus`, y es repetible.
 
 Por eso te dice cuándo no está seguro en vez de suponer, por eso el round-trip
 informa de un número y no de un visto bueno, y por eso el rollback se arma en
@@ -376,7 +382,7 @@ escribes `accept`, no `aceptar`.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 998 aserciones
+npm test             # 1.020 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 
 npx tauri build --no-bundle && npm run e2e   # conduce la app compilada, no el código

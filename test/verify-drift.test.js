@@ -64,14 +64,20 @@ test("lines genuinely lost are named, and nothing else is dragged in with them",
 });
 
 /* A line that comes back different is a different problem from one that does
-   not come back, and each has to be reported as itself. `table filter {` is
-   the ip family spelled short, and it comes back spelled long. */
+   not come back, and each has to be reported as itself: one diff naming both
+   sides, not a loss followed by an arrival that nobody can connect to it.
+ *
+ * This used to be shown with `table filter {` against `table ip filter {`,
+ * which no longer differs — writing the family nft assumes is nft's spelling,
+ * not a line we failed to reproduce. That is the right answer and it made a
+ * poor fixture, so the drift here is a port number: whatever else we learn to
+ * normalise, 8443 is never going to be 443. */
 test("a line that changes is reported as a change, not as a loss", () => {
-  const v = verify(CLEAN.replace("table inet filter {", "table filter {"));
-  assert.equal(v.diffs.length, 1, JSON.stringify(v.diffs));
-  assert.equal(v.diffs[0].src, "table filter {");
-  assert.equal(v.diffs[0].out, "table ip filter {");
-  assert.equal(v.ok, v.total - 1);
+  const rt = roundTrip(CLEAN.replace("tcp dport 443", "tcp dport 8443"), parseNft(CLEAN));
+  assert.equal(rt.diffs.length, 1, JSON.stringify(rt.diffs));
+  assert.equal(rt.diffs[0].src, "tcp dport 8443 accept");
+  assert.equal(rt.diffs[0].out, "tcp dport 443 accept");
+  assert.equal(rt.ok, rt.total - 1);
 });
 
 test("the rule-level check drifts no more than the whole-file one", () => {

@@ -39,6 +39,14 @@ export const serialise = () =>
          you back a ruleset without its flowtables and without its table flags */
       objects: MODEL.objects,
       tables: MODEL.tables,
+      /* The `define`s and `include`s an imported ruleset came with. The reader
+         below has always looked for them and this never wrote them, so saving a
+         project and opening it again lost every one — the ruleset came back out
+         using `$wan` with nothing left to say what `$wan` was, and the file it
+         exported did not load. `preludeAt` goes with them: a line without its
+         position is a line moved to the top of the file. */
+      prelude: MODEL.prelude,
+      preludeAt: MODEL.preludeAt,
     },
     null,
     2,
@@ -54,6 +62,10 @@ export function deserialise(text) {
     objects: o.objects || [],
     tables: o.tables || [],
     prelude: o.prelude || [],
+    /* Parallel to `prelude`: how many tables each of its lines sat below. Every
+       project saved before this existed has none, and none means zero — the top
+       of the file, which is where they all used to go. */
+    preludeAt: o.preludeAt || [],
     scratch: { ifaces: [], networks: [], ...(o.scratch || {}) },
   };
 }

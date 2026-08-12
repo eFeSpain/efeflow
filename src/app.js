@@ -2069,6 +2069,7 @@ $("#imp-go").addEventListener("click", ()=>{
     MODEL.objects = p.objects;
     MODEL.tables  = p.tables;
     MODEL.prelude = p.prelude;
+    MODEL.preludeAt = p.preludeAt || [];
   });
   openProject();
   $$(".scrim").forEach(s=>s.classList.remove("on"));
@@ -2548,7 +2549,9 @@ $("#scrim-export").addEventListener("click", e=>{
 });
 /* the code drawer's copy button */
 $$(".dw-hd .tb.icon")[0]?.addEventListener("click", ()=>{
-  navigator.clipboard?.writeText(generate().join("\n"));
+  /* with the newline nft needs at the end, because what this is for is pasting
+     it into a file and running it */
+  navigator.clipboard?.writeText(generate().join("\n") + "\n");
   toast(t("Ruleset copied to clipboard","Ruleset copiado al portapapeles"));
 });
 
@@ -2584,6 +2587,7 @@ filePick.addEventListener("change", ()=>{
         edit(t("open project","abrir proyecto"), ()=>{
           MODEL.chains = o.chains; MODEL.sets = o.sets;
           MODEL.objects = o.objects; MODEL.tables = o.tables; MODEL.prelude = o.prelude;
+          MODEL.preludeAt = o.preludeAt || [];
         });
         /* the name and the scratch lists are part of the project, not the
            ruleset, so they sit outside the undo snapshot */
@@ -2720,7 +2724,7 @@ function startEmpty(){
   edit(t("new ruleset","ruleset nuevo"), ()=>{
     const e = blankRuleset();
     MODEL.chains = e.chains; MODEL.sets = e.sets;
-    MODEL.objects = []; MODEL.tables = []; MODEL.prelude = [];
+    MODEL.objects = []; MODEL.tables = []; MODEL.prelude = []; MODEL.preludeAt = [];
   });
   showProject();
   go("editor");

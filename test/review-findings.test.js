@@ -158,18 +158,34 @@ test("eFeFlow's own output verifies as its own output", () => {
   }
 });
 
-/* A table header is not a preamble line, however short the family is spelled.
-   `table filter {` opens a block; `table filter` does not. */
-test("a table that opens a block is still compared", () => {
+/* A table header is not a preamble line, however short the family is spelled:
+   `table filter {` opens a block, `table filter` does not, and dropping the
+   first from the comparison would hide whatever happened to its contents.
+ *
+ * It is compared — six lines here, the header among them — and it agrees.
+ * `table filter` *is* `table ip filter`: ip is the family nft assumes when none
+ * is written and it prints the one it assumed, so writing it out is nft's own
+ * spelling rather than a line we failed to reproduce. Seventy-two of these
+ * across three thousand corpus rulesets made it the largest remaining class of
+ * difference that meant nothing. */
+test("a table that opens a block is compared, and the family it implies agrees", () => {
   const v = verify(`table filter {
 	chain input {
 		type filter hook input priority filter; policy drop;
 		tcp dport 22 accept
 	}
 }`);
-  assert.equal(v.diffs.length, 1, JSON.stringify(v.diffs));
-  assert.equal(v.diffs[0].src, "table filter {");
-  assert.equal(v.diffs[0].out, "table ip filter {");
+  assert.deepEqual(v.diffs, [], JSON.stringify(v.diffs));
+  assert.equal(v.total, 6, "the table header has to be one of the lines counted");
+});
+
+/* Only where nft would have assumed it, though. A family that was written
+   stays written, and a table named after one is not one. */
+test("a family that was written is not rewritten", () => {
+  for(const head of ["table inet filter {", "table bridge br0 {", "table netdev raw {"]){
+    const v = verify([head, "\tchain c {", "\t\ttcp dport 22 accept", "\t}", "}"].join("\n"));
+    assert.deepEqual(v.diffs, [], `${head}: ${JSON.stringify(v.diffs)}`);
+  }
 });
 
 /* ── 6 & 7. the two numbers under the diff ──────────────────────────────── */

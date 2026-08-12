@@ -104,6 +104,43 @@ function splitBlocks(text, inChain = false){
   return { pieces, open: depth > 0 };
 }
 
+/* The braces a fragment has opened and not closed, as positions, outermost
+   first. Quote-aware: a `{` inside `log prefix "a { b"` opens nothing. */
+function openBraces(s){
+  const at = [];
+  let str = false;
+  for(let i = 0; i < s.length; i++){
+    const c = s[i];
+    if(str){ if(c === '"' && s[i-1] !== "\\") str = false; continue; }
+    if(c === '"'){ str = true; continue; }
+    if(c === "{") at.push(i);
+    else if(c === "}") at.pop();
+  }
+  return at;
+}
+
+/* Whether what is still open is an anonymous chain — `jump { … }` or
+   `goto { … }` — and only that, with no value list open inside it.
+ *
+ * It matters because an anonymous chain is the one construct nft prints across
+ * lines and will not read back on one. Every statement in it needs its own
+ * semicolon, the last one included:
+ *
+ *     jump { tcp sport 1 drop tcp sport 2 drop }     refused
+ *     jump { tcp sport 1 drop; tcp sport 2 drop }    refused
+ *     jump { tcp sport 1 drop; tcp sport 2 drop; }   loads
+ *
+ * — measured on nft 1.1.6, not assumed. Lines here are joined into one so the
+ * rule stays one rule, and joining them with spaces produced the first of those
+ * three. Thirty-odd rulesets in the corpus contain an anonymous chain, every one
+ * of them printed by nft itself, and the file we wrote back for each of them was
+ * a file nft would not load. Nothing in the round-trip text check could see it:
+ * both sides of that comparison were joined the same way and agreed perfectly. */
+const anonChainOpen = (s) => {
+  const at = openBraces(s);
+  return at.length === 1 && /\b(jump|goto)\s*$/.test(s.slice(0, at[0]));
+};
+
 /* Top-level `;`, keeping the separator — `priority 0` is not `priority 0;`,
    and the chain-header pattern below wants the one it was written with. */
 function statements(text){
@@ -226,6 +263,9 @@ export function logicalLines(text){
     }
 
     if(pending){
+      /* inside an anonymous chain, each line is a statement of its own and has
+         to keep the semicolon that says so */
+      if(anonChainOpen(pending.text) && !/[;{]$/.test(pending.text)) pending.text += ";";
       pending.text += " " + line;
       pending.handle ??= handle;
       const r = splitBlocks(pending.text, inChain());
@@ -274,6 +314,41 @@ const ourPreamble = (line, text) => {
 
 export function parseNft(text){
   const chains = [], sets = [], objects = [], tables = [], errors = [], prelude = [];
+  /* Where each prelude line sat among the tables — how many of them had already
+     been declared above it.
+   *
+   * Everything outside a table used to be hoisted to the top of the file, and
+   * for a `define` that is exactly right: a definition after its use is not a
+   * definition. For anything else it is wrong, and for two of them it is a file
+   * that does not load. An `include` is nft reading another file *at that
+   * point*, and the thing people put in the included file is
+   *
+   *     add rule ip filter input tcp dport 8080 accept
+   *
+   * which needs the table to exist. Asked of nft 1.1.6: the file loads as
+   * written and is refused with the include moved above the table — "Could not
+   * process rule: No such file or directory". Seventy-six of the rulesets in
+   * the corpus write it that way, and the same applies to the 2,042 top-level
+   * `add`, 401 `delete` and 192 `flush` lines that follow a table.
+   *
+   * Parallel to `prelude` rather than folded into it, because `prelude` is a
+   * list of strings in every saved project and in every undo snapshot. A
+   * project saved before this existed has no positions, every line is treated
+   * as sitting above the first table, and that is what it used to do.
+   *
+   * Worked out at the end rather than as each line is read, because a table
+   * declared twice is one table and comes out once. The idiom
+   *
+   *     table inet x { }          create it if it is not there
+   *     flush table inet x        now it exists, so this cannot fail
+   *     table inet x { … }        and here is what it holds
+   *
+   * has a table above the flush and the same table below it, and writing the
+   * flush after the table it appears to follow would flush away everything the
+   * file had just put into it. So what counts is a table whose *last*
+   * declaration is above the line: those are the ones nft has finished with by
+   * the time it reaches it. */
+  const preludeLn = [], lastDecl = new Map();
   const ruleLines = {};
   /* Where each member sat among its siblings, so a table comes back out in the
      order it went in. nft prints named objects before sets and sets before
@@ -297,12 +372,48 @@ export function parseNft(text){
   };
 
   for(const { text: line, ln, raw, handle } of logicalLines(text)){
-    if(/^\}\s*;?$/.test(line)){ close(); continue; }
+    if(/^\}\s*;?$/.test(line)){
+      /* A closing brace inside a kept-verbatim body belongs to that body. A
+         `tunnel` object holds one:
+       *
+       *     tunnel geneve-t {
+       *         id 10
+       *         geneve {
+       *             class 0x1 opt-type 0x1 data "0x12345678"
+       *         }
+       *     }
+       *
+       * and with every `}` closing the frame, the nested block ended the object
+       * early and came back out as a sibling of it — `geneve { … }` promoted to
+       * a member of the table, which nft has no such thing as and refuses. */
+      const f0 = top();
+      if(f0?.kind === "object" && f0.depth > 0){ f0.depth--; f0.obj.body.push(line); continue; }
+      close();
+      continue;
+    }
 
     let m;
     /* `table inet filter {` — and `table filter {`, where the family is ip */
-    if((m = line.match(/^table\s+(\w+)(?:\s+(\S+))?\s*\{$/))){
-      stack.push({ kind: "table", name: m[2] ? `${m[1]} ${m[2]}` : `ip ${m[1]}` });
+    /* `\w+` for the family, which is a closed list of short words, was a fair
+       guess — but the same group reads the *name* when only one word is written,
+       and a name is whatever nft accepts. `table driver-fw {` has a hyphen in
+       it, missed this branch entirely, and went into the prelude with its
+       opening brace: an unbalanced line above the first table, and everything
+       the table held read as belonging to nothing. nft refused the file we
+       wrote. `[^\s{]+` is what BLOCK_HEAD above has always used.
+     *
+     * `add` and `create` are read as the same declaration. nft's default verb is
+     * add, so `add table x { … }` and `table x { … }` are the same file, and
+     * without the prefix here the block was not a block: its body went into the
+     * prelude, its opening brace with it, and the file we wrote had a brace
+     * nothing closed. `create` differs from `add` only in failing when the table
+     * is already there, and nothing we write can be in that position — every
+     * export flushes the ruleset or deletes the tables it is about first — so it
+     * comes back out as the declaration it is. */
+    if((m = line.match(/^(?:add\s+|create\s+)?table\s+([^\s{]+)(?:\s+([^\s{]+))?\s*\{$/))){
+      const name = m[2] ? `${m[1]} ${m[2]}` : `ip ${m[1]}`;
+      if(!stack.length) lastDecl.set(name, ln);
+      stack.push({ kind: "table", name });
       continue;
     }
     if((m = line.match(/^(set|map)\s+(\S+)\s*\{$/))){
@@ -341,8 +452,10 @@ export function parseNft(text){
     /* Anything else that opens a block inside a table is an object nftables
        has and this model does not: a flowtable, a named counter or quota, a
        ct helper or timeout, a synproxy. Keep the body verbatim. */
-    if(isOpener(line) && tableName()){
-      stack.push({ kind: "object",
+    /* — unless one is already open, in which case this is a block *of* that body
+         and goes into it with everything else */
+    if(isOpener(line) && tableName() && top()?.kind !== "object"){
+      stack.push({ kind: "object", depth: 0,
                    obj: { table: tableName(), ...splitObject(line), body: [], seq: seq++ } });
       continue;
     }
@@ -367,10 +480,20 @@ export function parseNft(text){
          attempt at it, which cleared the lot. */
       chains.length = 0; sets.length = 0; objects.length = 0; tables.length = 0;
       for(const k of Object.keys(ruleLines)) delete ruleLines[k];
+      /* No table declared above this line survives it, so none of them counts
+         towards where a prelude line goes. */
+      lastDecl.clear();
       continue;
     }
-    if(!f){ if(!ourPreamble(line, text)) prelude.push(line); continue; }
-    if(f.kind === "object"){ f.obj.body.push(line); continue; }
+    if(!f){
+      if(!ourPreamble(line, text)){ prelude.push(line); preludeLn.push(ln); }
+      continue;
+    }
+    if(f.kind === "object"){
+      if(isOpener(line)) f.depth++;
+      f.obj.body.push(line);
+      continue;
+    }
     if(f.kind === "set"){ readSetLine(f.set, line); continue; }
     /* The backstop under the keep-as-text bucket. Preserving what we cannot
        model is right for an object kind nobody has heard of; it is wrong for a
@@ -433,7 +556,15 @@ export function parseNft(text){
   }
   while(stack.length) close();                        /* an unterminated file */
 
-  return { chains, sets, objects, tables, prelude, errors, ruleLines };
+  /* How many tables are finished above each prelude line — counting only the
+     ones that are still here, since a table the flush took with it is not going
+     to be written above anything. */
+  const finished = tables
+    .map(t => lastDecl.get(t.name))
+    .filter(v => v !== undefined);
+  const preludeAt = preludeLn.map(ln => finished.filter(v => v < ln).length);
+
+  return { chains, sets, objects, tables, prelude, preludeAt, errors, ruleLines };
 }
 
 /* Three of nftables' object kinds are two words, and telling them from a kind
@@ -585,9 +716,73 @@ export function parseRule(line){
 }
 
 /* ── round-trip proof: re-emit each rule and compare to its source ── */
-export const normalise = s => s.replace(/#\s*handle\s+\d+\s*$/,"")
-                        .replace(/\bcounter\s+packets\s+\d+\s+bytes\s+\d+/,"counter")
-                        .replace(/\s+/g," ").replace(/\s+;/g,";").replace(/;$/,"").trim();
+/* Every counter on the line, not the first one.
+ *
+ * A rule can carry more than one: an anonymous chain written across lines
+ *
+ *     tcp flags syn jump {
+ *         tcp option maxseg size 1-500 counter packets 0 bytes 0 drop
+ *         tcp sport 0 counter packets 0 bytes 0 drop
+ *     }
+ *
+ * is one logical line with two of them. Stripping only the first meant the two
+ * sides of the comparison lost *different* ones — the source lost the counter
+ * of the first branch, our re-emission lost the counter it had lifted out and
+ * put back — so the line was reported as changed when both sides said exactly
+ * the same thing. Sixty-one occurrences across the corpus, and the largest
+ * remaining class of difference that meant nothing.
+ *
+ * Dropping the figures at all is deliberate and is not a change of meaning:
+ * packets and bytes are what the kernel has counted so far, so a fresh load of
+ * either text produces the same ruleset. Whether the *statement* is there is a
+ * different question, and that one is compared. */
+/* Whitespace, made uniform everywhere it means nothing and left alone where it
+   means something. One pass, because both jobs need to know whether they are
+   inside a string:
+ *
+ *   - a run of spaces between statements is one space. Collapsing every run in
+ *     the line collapsed the ones inside quotes too, so `log prefix "two
+ *     spaces"` compared equal to a rule with one — a real difference in what a
+ *     firewall writes to the log, invisible to the check that exists to find
+ *     exactly that.
+ *
+ *   - a statement written up against the value before it,
+ *
+ *         log prefix "Invalid conntrack state: "counter drop
+ *
+ *     is the same rule as `" counter drop` and nft prints the space. A regex
+ *     cannot tell the quote that closes a string from the one that opens the
+ *     next, and putting the space after an opening one rewrites the prefix. */
+const tidy = (s) => {
+  let out = "", str = false;
+  for(let i = 0; i < s.length; i++){
+    const c = s[i];
+    if(str){
+      out += c;
+      if(c === "\\"){ out += s[++i] ?? ""; continue; }
+      if(c === '"'){
+        str = false;
+        if(/[A-Za-z0-9]/.test(s[i + 1] ?? "")) out += " ";
+      }
+      continue;
+    }
+    if(c === '"'){ out += c; str = true; continue; }
+    if(/\s/.test(c)){
+      if(!/\s$/.test(out) && out !== "") out += " ";
+      continue;
+    }
+    out += c;
+  }
+  return out;
+};
+
+export const normalise = s => tidy(
+                          s.replace(/#\s*handle\s+\d+\s*$/,"")
+                           .replace(/\bcounter\s+packets\s+\d+\s+bytes\s+\d+/g,"counter"))
+                        /* nft prints `priority filter; policy drop` and people
+                           write `priority filter;policy drop` */
+                        .replace(/;(?=policy\b)/, "; ")
+                        .replace(/\s+;/g,";").replace(/;$/,"").trim();
 
 export function roundTrip(text, parsed){
   const srcRules = [];
@@ -714,20 +909,121 @@ const meaningful = lines => lines
    header written that way — so the policy below it was reported as a change
    into a line the source never had. */
 const CHAIN_HEAD = /^type\s+\w+\s+hook\s+\S+(\s+device\s+\S+)?\s+priority\s+(-?\w+(\s*[+-]\s*\d+)?)\s*;?$/;
+/* `elements={a, b}` and `elements = { a, b }` are the same set. nft prints the
+   second and people write the first, and comparing the text of the two counted
+   it as a line we failed to reproduce — the same kind of nothing as a chain
+   header split across lines. Only the spacing nft decides is touched, and only
+   on a line that is an elements list, so a value with braces inside a rule is
+   left exactly as it was written. */
+const spaceElements = (s) => /^elements\s*=/.test(s)
+  ? s.replace(/^elements\s*=\s*\{\s*/, "elements = { ")
+     .replace(/,\s*\}\s*$/, " }")            /* nft prints no trailing comma */
+     .replace(/\s*\}\s*$/, " }")
+     .replace(/\s*,\s*/g, ", ")
+  : s;
+
+/* `table nat` is `table ip nat`: ip is the family nft assumes when none is
+   written, and it prints the one it assumed. Writing it out is the more precise
+   of the two and is what nft would have said — so the difference is nft's
+   spelling, not a line we failed to reproduce. Seventy-two of them across the
+   corpus, which made it the largest remaining class of nothing. */
+const FAMILIES = new Set(["ip", "ip6", "inet", "arp", "bridge", "netdev"]);
+const spellFamily = (s) => {
+  const m = s.match(/^(delete\s+|add\s+|flush\s+)?table\s+(\S+)(\s*\{)?\s*$/);
+  if(!m || FAMILIES.has(m[2])) return s;
+  return `${m[1] ?? ""}table ip ${m[2]}${m[3] ? " {" : ""}`;
+};
+
+/* `add table x {` declares the table that `table x {` declares — add is nft's
+   default verb, and `create` differs only in failing when the table is already
+   there, which nothing we write can be: every export flushes or deletes first.
+   So the declaration comes back written as a declaration, and the difference is
+   nft's spelling rather than a line lost.
+ *
+ * Only the form that opens a block. A bare `add table inet t` with no brace is a
+ * top-level command, it is kept exactly as it was written, and rewriting it here
+ * would report a difference where there is none. */
+const declaredTable = (s) =>
+  s.replace(/^(?:add|create)\s+(table\s+\S+(?:\s+\S+)?\s*\{)$/, "$1");
+
+/* `set cat_conferencing{` is `set cat_conferencing {`, and `table ip portknock{`
+   is `table ip portknock {`. nft prints the space and this writes it, so without
+   it the two compared as different lines. The second word is for the table form,
+   where the family comes first. */
+const spaceOpener = (s) =>
+  s.replace(/^((?:table|chain|set|map|flowtable|synproxy|counter|quota|limit|secmark)\s+\S+(?:\s+\S+)?)\{$/,
+            "$1 {");
+
 function canonicalHeaders(rows){
-  const out = [];
-  for(const r of rows){
-    const prev = out.at(-1);
-    const policy = r.text.match(/^policy\s+(\w+)\s*;?$/);
-    if(policy && prev && CHAIN_HEAD.test(prev.text)){
-      prev.text = `${prev.text.replace(/;$/, "")}; policy ${policy[1]}`;
-      continue;
+  const kept = rows.map(r =>
+    ({ ...r, text: spellFamily(declaredTable(spaceOpener(spaceElements(r.text)))) }));
+
+  /* A `policy` statement is a statement of the chain body, and nft takes it
+     anywhere in there — including after the rules, which is where one corpus
+     ruleset put it:
+   *
+   *     chain input {
+   *         type filter hook input priority 0;
+   *         … eight rules …
+   *         policy drop;
+   *     }
+   *
+   * Looking only at the line above meant that header folded to the `accept`
+   * nft applies when nothing says otherwise, and the check then reported
+   * `policy accept` becoming `policy drop` — a firewall going from open to
+   * closed, on a file where the parser had read the policy perfectly and
+   * emitted it correctly. A false alarm of that shape costs more than a
+   * missing one: it is the number the import screen shows, and somebody who
+   * catches it lying once has no reason to believe the rest.
+   *
+   * So the policy is looked for through the whole of the chain it belongs to,
+   * and nft's default is only assumed when the chain really does not name one. */
+  const drop = new Set();
+  for(let i = 0; i < kept.length; i++){
+    if(!CHAIN_HEAD.test(kept[i].text)) continue;
+    let found = null;
+    for(let j = i + 1; j < kept.length && kept[j].text !== "}"; j++){
+      const p = kept[j].text.match(/^policy\s+(\w+)\s*;?$/);
+      if(p){ found = p[1]; drop.add(j); break; }
     }
-    out.push({ ...r });
+    kept[i].text = `${kept[i].text.replace(/;$/, "")}; policy ${found ?? "accept"}`;
   }
-  /* and a header with no policy at all is nft's default, said out loud */
-  for(const r of out)
-    if(CHAIN_HEAD.test(r.text)) r.text = `${r.text.replace(/;$/, "")}; policy accept`;
+  const folded = kept.filter((_, i) => !drop.has(i));
+
+  /* Then the top of the chain, which nft writes as the chain's comment and then
+     its header, whatever order they were written in and wherever in the body
+     they were. Both are statements *about* the chain rather than rules in it, so
+   *
+   *     chain INPUT {
+   *         iifname lo accept
+   *         type filter hook input priority 0; policy drop;
+   *         comment "the one that matters"
+   *
+   * is the chain nft prints the other way up — the rule is the first rule in it
+   * either way — and comparing it as written reported two lines lost and two
+   * arrived a few rows further down. Keyed on the line that opens the chain
+   * rather than on the header, because a regular chain has no header and still
+   * has a comment that belongs at the top. */
+  const CHAIN_OPEN = /^chain\s+\S+\s*\{$/;
+  const HEADER = /^type\s+\w+\s+hook\s+/;
+  const out = [];
+  for(let i = 0; i < folded.length; i++){
+    out.push(folded[i]);
+    if(!CHAIN_OPEN.test(folded[i].text)) continue;
+    let end = i + 1;
+    while(end < folded.length && folded[end].text !== "}") end++;
+    const body = folded.slice(i + 1, end);
+    const take = (re) => {
+      const k = body.findIndex(r => re.test(r.text));
+      return k < 0 ? null : body.splice(k, 1)[0];
+    };
+    const comment = take(/^comment\s+"/);
+    const header = take(HEADER);
+    if(comment) out.push(comment);
+    if(header) out.push(header);
+    out.push(...body);
+    i = end - 1;
+  }
   return out;
 }
 
@@ -742,7 +1038,21 @@ export function verify(text){
   const rows = canonicalHeaders(logicalLines(text)
     .map(l => ({ text: normalise(l.text), ln: l.ln + 1 }))
     .filter(r => keep(r.text)));
-  const out = meaningful(generate(parsed));
+  /* Both sides through the same mill.
+   *
+   * These canonicalisations say what two spellings of one thing have in common,
+   * and applying them to the source alone measured our output with a different
+   * ruler than the file it was being compared against. A ruleset that wrote
+   * `elements={ 22, 80, }` came back written the way it was written — which is
+   * the right thing for us to do with a line we do not model — and the source
+   * side had meanwhile been tidied to `elements = { 22, 80 }`, so the two
+   * disagreed about a line neither of them had touched.
+   *
+   * Nothing here can hide a real difference: each rule maps a spelling onto the
+   * one nft itself prints, so two lines only meet if nft would have printed
+   * them the same. */
+  const out = canonicalHeaders(meaningful(generate(parsed)).map(text => ({ text })))
+    .map(r => r.text);
 
   const r = compare(rows.map(x => x.text), out);
   /* `i` indexes the source side: for a line that changed or vanished it is the

@@ -21,7 +21,8 @@ const HIST = { past: [], future: [], max: 80 };
 
 /* Everything the ruleset is made of, including the parts nothing edits. */
 export const snapshot = () => JSON.stringify(
-  { c: MODEL.chains, s: MODEL.sets, o: MODEL.objects, tb: MODEL.tables, pr: MODEL.prelude });
+  { c: MODEL.chains, s: MODEL.sets, o: MODEL.objects, tb: MODEL.tables, pr: MODEL.prelude,
+    pa: MODEL.preludeAt });
 
 function restore(str) {
   const o = JSON.parse(str);
@@ -30,6 +31,7 @@ function restore(str) {
   MODEL.objects = o.o || [];
   MODEL.tables = o.tb || [];
   MODEL.prelude = o.pr || [];
+  MODEL.preludeAt = o.pa || [];
 }
 
 /* What to do once the ruleset has changed under everybody. Registered at boot

@@ -152,23 +152,31 @@ be reproduced, it tells you which one before you commit to anything.
 ## ⚠ Beta
 
 It does the whole job today: import, prove, analyse, simulate, edit, apply,
-export. 998 automated assertions stand behind it, across the parser, the
+export. 1,020 automated assertions stand behind it, across the parser, the
 analyser, the packet evaluator and the interface itself.
 
-What it does not have much of is mileage — but it no longer has none. **534
-rulesets were fetched from public repositories; 268 of them are files nft
-itself accepts, and every one of those 268 comes back out meaning exactly what
-it meant going in.** Not "looks similar": each one was loaded into an empty
-netfilter instance and listed back, ours was loaded the same way, and the
-kernel cannot tell the two listings apart. 232 of them come back byte for
-byte as well, and no line in any of them is one this parser cannot read.
+What it does not have much of is mileage — but it no longer has none. **4,337
+rulesets were fetched from public repositories; 3,038 of them are files nft
+itself accepts, and every one of those 3,038 comes back out meaning exactly
+what it meant going in.** Not "looks similar": each one was loaded into an empty
+netfilter instance and listed back, ours was loaded the same way, and the kernel
+cannot tell the two listings apart. 3,017 come back byte for byte as well —
+99.8% of 84,100 lines — and no line in any of them is one this parser cannot
+read.
 
-That is a floor, and it is a floor five real defects were found under. Two of
-them mattered: a chain header written without its trailing semicolon — which
-nft accepts and hand-written configs very often use — silently stopped being a
-base chain, taking its `policy drop` with it; and a braced list wrapped across
-lines took its own rule's match with it, leaving a bare `accept` that accepts
-everything. The run that found them is `npm run corpus`, and it is repeatable.
+The twenty-one that are not byte-perfect are all accounted for, and none of them
+is a difference in meaning: nineteen declare one table or chain in several
+blocks, which nft merges and so does this, so it comes back as the one thing it
+is; one is two firewalls pasted into one file with a `flush ruleset` between
+them, and what comes back is the one the kernel would actually be running; and
+one writes an `include` as the last line inside a table and gets it back as the
+first.
+
+That is a floor, and it is a floor eighteen real defects were found under. The
+worst were files we wrote that nft would not read at all: an anonymous chain
+folded onto one line without the semicolons nft insists on, a table whose name
+has a hyphen in it, an `include` moved above the table whose rules it adds to.
+The run that found them is `npm run corpus`, and it is repeatable.
 
 That is why it tells you when it is not sure instead of guessing, why the
 round-trip check reports a number rather than a thumbs-up, and why the rollback
@@ -370,7 +378,7 @@ write `accept`, not `aceptar`.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 998 assertions
+npm test             # 1,020 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 
 npx tauri build --no-bundle && npm run e2e   # drive the built app, not the source

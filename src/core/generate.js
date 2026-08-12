@@ -90,7 +90,17 @@ export function generateWithMap(model = MODEL, opts = {}) {
      definition after its use is not a definition. These were dropped while
      the rules using `$wan` were kept, so an imported script came back out
      referencing a variable nothing defined. */
-  if ((model.prelude || []).length) {
+  /* A prelude line goes back where it was: `preludeAt[i]` is how many tables
+     were declared above it. Group 0 is written here, above every table, and the
+     rest follow the table they were written after — see the note in parse.js
+     for why moving them is not a cosmetic matter. */
+  const preludeAt = model.preludeAt || [];
+  const preludeGroup = (k) => (model.prelude || [])
+    .filter((_, i) => (preludeAt[i] || 0) === k);
+  const preludeFrom = (k) => (model.prelude || [])
+    .filter((_, i) => (preludeAt[i] || 0) >= k);
+
+  if (preludeGroup(0).length) {
     /* `flush table inet x` fails on a table that is not there, and the whole
        file goes with it: "No such file or directory; did you mean table 'x' in
        family inet?" The idiom people write is three lines —
@@ -107,7 +117,7 @@ export function generateWithMap(model = MODEL, opts = {}) {
      * block was for. Three of the four rulesets we emitted unloadably were
      * this one shape. */
     const created = new Set();
-    for (const l of model.prelude) {
+    for (const l of preludeGroup(0)) {
       const f = l.match(/^flush\s+table\s+(?:(\S+)\s+)?(\S+)\s*$/);
       if (f) {
         const decl = `table ${f[1] ? f[1] + " " : ""}${f[2]}`;
@@ -120,12 +130,22 @@ export function generateWithMap(model = MODEL, opts = {}) {
     put("");
   }
 
+  /* In the order the file declared them, which is `tableInfo` — the parser
+     records one entry per table as it closes. Deriving the order from the
+     members instead put every table that has none at the end, because it is
+     only named by its own declaration: `table ip t3 { }` between two full
+     tables came out after both of them, and `nft list ruleset` prints tables in
+     the order they were created, so the two listings differed. Three of the four
+     rulesets whose meaning the kernel said had moved were this and nothing else.
+   *
+   * Then anything named only by a member, which is how a table made in the
+   * editor arrives — there is no declaration for it to have recorded. */
   const tables = [
     ...new Set([
+      ...tableInfo.map((t) => t.name),
       ...chains.map((c) => c.table),
       ...sets.map((s) => s.table).filter(Boolean),
       ...objects.map((o) => o.table).filter(Boolean),
-      ...tableInfo.map((t) => t.name),
     ]),
   ];
   if (!tables.length) tables.push("inet fw");
@@ -145,11 +165,20 @@ export function generateWithMap(model = MODEL, opts = {}) {
     put("");
   }
 
-  tables.forEach((tb) => {
+  tables.forEach((tb, ti) => {
     put(`table ${tb} {`);
 
     /* table-level statements: `flags dormant`, `comment "…"`. Losing the first
-       turns a firewall its author had deliberately parked back on. */
+       turns a firewall its author had deliberately parked back on.
+     *
+     * All of it at the top, including what nft never prints because it was never
+     * in the kernel to print: a `define` scoped to this table, and an `include`
+     * of the files that belong to it. One corpus ruleset writes its include as
+     * the last line inside the table and gets it back as the first, which is one
+     * line of one file in three thousand — and moving them to the bottom to fix
+     * that put every table-scoped `define` below the rules that use it, which is
+     * a file that does not load. There is no nft answer to appeal to here, since
+     * nft has nothing to say about a line it never sees, so the safe order wins. */
     const info = tableInfo.find((t) => t.name === tb);
     if (info?.extra.length) {
       info.extra.forEach((l) => put(`\t${l}`));
@@ -186,7 +215,16 @@ export function generateWithMap(model = MODEL, opts = {}) {
       if (m.k === "object") {
         const o = m.o;
         put(`\t${o.kind}${o.name ? " " + o.name : ""} {`);
-        o.body.forEach((l) => put(`\t\t${l}`));
+        /* An object body can hold a block of its own — a `tunnel` has a
+           `geneve { … }` in it — so the indentation follows the braces rather
+           than being one fixed depth. Cosmetic to nft and not to a person
+           reading it. */
+        let deep = 2;
+        o.body.forEach((l) => {
+          if (/^\}/.test(l)) deep--;
+          put("\t".repeat(Math.max(2, deep)) + l);
+          if (/\{$/.test(l)) deep++;
+        });
       } else if (m.k === "set") {
         const s = m.s;
         put(`\t${s.kind === "map" ? "map" : "set"} ${s.n} {`);
@@ -194,6 +232,14 @@ export function generateWithMap(model = MODEL, opts = {}) {
       } else {
         const ch = m.c;
         put(`\tchain ${ch.id} {`);
+        /* A chain's comment goes above its header, because that is where nft
+           itself prints it — asked of nft 1.1.6 rather than assumed. Thirty-three
+           chains across the corpus were written that way and came back with the
+           comment underneath, which is the round-trip check reporting a line as
+           lost and then found for no reason at all. Everything else a chain
+           carries stays below the header, where nft puts it. */
+        const extra = ch.extra || [];
+        extra.filter((l) => /^comment\s/.test(l)).forEach((l) => put(`\t\t${l}`));
         if (ch.hook) {
           /* nft prints known priorities by name, so a `priority dstnat` that
              comes back as `priority -100` is a diff on every chain header */
@@ -201,7 +247,7 @@ export function generateWithMap(model = MODEL, opts = {}) {
           const dev = ch.dev ? ch.dev + " " : "";
           put(`\t\ttype ${ch.type} hook ${ch.hook} ${dev}priority ${prio}; policy ${ch.policy};`);
         }
-        (ch.extra || []).forEach((l) => put(`\t\t${l}`));
+        extra.filter((l) => !/^comment\s/.test(l)).forEach((l) => put(`\t\t${l}`));
         ch.rules.forEach((r, i) => {
           if (!r.on) return;
           put(`\t\t${ruleLine(r)}${r.cmt ? ` comment "${r.cmt}"` : ""}`, { uid: UID(ch), i });
@@ -217,6 +263,15 @@ export function generateWithMap(model = MODEL, opts = {}) {
     }
     put("}");
     put("");
+
+    /* the prelude lines written after this table — and after the last table,
+       everything that was left, so a line whose table has since been deleted in
+       the editor is still written rather than dropped */
+    const after = ti === tables.length - 1 ? preludeFrom(ti + 1) : preludeGroup(ti + 1);
+    if (after.length) {
+      after.forEach((l) => put(l));
+      put("");
+    }
   });
 
   if (L.at(-1) === "") {
