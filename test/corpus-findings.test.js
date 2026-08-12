@@ -90,3 +90,42 @@ test("but a policy we got wrong is still a difference", () => {
   assert.doesNotMatch(out, /policy drop/,
     "the check must still see a policy that changed under it");
 });
+
+/* ── a rule continued onto the next line ─────────────────────────────────
+ *
+ * A trailing backslash continues a line, and nft reads the pair as one rule.
+ * Seventy-one of the five hundred and thirty-four rulesets fetched wrote at
+ * least one that way — four hundred and ten lines between them — usually to
+ * put the comment on a line of its own:
+ *
+ *     iifname lo accept \
+ *     comment "Accept any localhost traffic"
+ *
+ * Read as two, the rule lost its comment and the comment became a line that
+ * parsed as nothing, and everything after it in the chain shifted. It was why
+ * the worst file in the corpus came back at 71%.
+ */
+test("a backslash at the end of a line continues it", () => {
+  const text = [
+    "table inet filter {",
+    "\tchain input {",
+    "\t\ttype filter hook input priority 0; policy drop;",
+    "\t\tiifname lo accept \\",
+    '\t\tcomment "Accept any localhost traffic"',
+    "\t\ttcp dport { 80, 443 } \\",
+    "\t\t\tcounter accept",
+    "\t}",
+    "}",
+  ].join("\n");
+
+  const m = parseNft(text);
+  const rules = m.chains[0].rules;
+  assert.equal(rules.length, 2, "the continuations were read as rules of their own");
+  assert.equal(rules[0].expr, "iifname lo");
+  assert.equal(rules[0].verdict, "accept");
+  assert.equal(rules[0].cmt, "Accept any localhost traffic",
+    "the comment was on the next line, and belongs to the rule above it");
+  assert.equal(rules[1].expr, "tcp dport { 80, 443 }");
+  assert.equal(rules[1].ctr, true, "the counter was on the continued half");
+  assert.deepEqual(m.errors, [], "a continuation line parses as nothing on its own");
+});

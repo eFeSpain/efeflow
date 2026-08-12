@@ -152,16 +152,16 @@ be reproduced, it tells you which one before you commit to anything.
 ## ⚠ Beta
 
 It does the whole job today: import, prove, analyse, simulate, edit, apply,
-export. 992 automated assertions stand behind it, across the parser, the
+export. 993 automated assertions stand behind it, across the parser, the
 analyser, the packet evaluator and the interface itself.
 
 What it does not have much of is mileage. **268 rulesets off public
-repositories have now been through it — the ones nft itself accepts, out of 534
-fetched — and 213 of them came back byte for byte, 96.3% of all their lines.**
-That is a floor, not a boast: what the remainder differ by is formatting we
-normalise to what nft prints, and the run that measures it is
-`npm run corpus`. It found one defect worth the whole exercise, and there is
-no reason to think it was the last.
+repositories have now been through it — the ones nft itself accepts, out of
+534 fetched — and 219 came back byte for byte, with not one unreadable line in
+any of them.** That is a floor, not a boast: what the rest differ by is
+formatting we normalise to what nft prints, and the run that measures it is
+`npm run corpus`. It found two defects worth the whole exercise, and there is
+no reason to think they were the last.
 
 That is why it tells you when it is not sure instead of guessing, why the
 round-trip check reports a number rather than a thumbs-up, and why the rollback
@@ -363,7 +363,7 @@ write `accept`, not `aceptar`.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 992 assertions
+npm test             # 993 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 
 npx tauri build --no-bundle && npm run e2e   # drive the built app, not the source

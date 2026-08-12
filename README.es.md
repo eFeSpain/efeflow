@@ -154,12 +154,12 @@ puede reproducir, te dice cuál antes de que te comprometas a nada.
 ## ⚠ Beta
 
 Hace el trabajo completo hoy: importar, demostrar, analizar, simular, editar,
-aplicar y exportar. Lo respaldan 992 comprobaciones automáticas, sobre el
+aplicar y exportar. Lo respaldan 993 comprobaciones automáticas, sobre el
 parser, el analizador, el evaluador de paquetes y la propia interfaz.
 
 Lo que todavía tiene poco es kilometraje. **Por él han pasado ya 268 rulesets
 de repositorios públicos —los que el propio nft acepta, de 534 descargados— y
-213 volvieron byte a byte, el 96,3% de todas sus líneas.** Es un suelo, no un
+219 volvieron byte a byte, y no hubo una sola línea ilegible en ninguno.** Es un suelo, no un
 alarde: en lo que difiere el resto es formato que normalizamos a lo que imprime
 nft, y quien lo mide es `npm run corpus`. Encontró un defecto que justifica el
 ejercicio entero, y no hay motivo para pensar que fuera el último.
@@ -367,7 +367,7 @@ escribes `accept`, no `aceptar`.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 992 aserciones
+npm test             # 993 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 
 npx tauri build --no-bundle && npm run e2e   # conduce la app compilada, no el código

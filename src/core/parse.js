@@ -138,6 +138,9 @@ function expand(pieces){
 export function logicalLines(text){
   const out = [];
   let pending = null;
+  /* a line held open by a trailing backslash, waiting for the one that
+     finishes it — separate from `pending`, which is an unclosed brace */
+  let cont = null;
   /* One physical line in, the logical lines it holds out. A line carrying no
      block brace is one logical line and goes through untouched — which is
      every line of anything nft printed, so the common path is unchanged. */
@@ -163,7 +166,30 @@ export function logicalLines(text){
        shown in its place. */
     const h = raw.match(/#\s*handle\s+(\d+)\s*$/);
     const handle = h ? +h[1] : null;
-    const line = uncomment(raw.replace(/#\s*handle\s+\d+\s*$/, "")).trim();
+    let line = uncomment(raw.replace(/#\s*handle\s+\d+\s*$/, "")).trim();
+
+    /* A backslash at the end of a line continues it, and nft reads the pair as
+       one rule. Seventy-one of five hundred and thirty-four rulesets fetched
+       off public repositories write at least one that way — usually to put the
+       comment on its own line:
+
+           iifname lo accept \
+           comment "Accept any localhost traffic"
+
+       Read as two lines, the rule loses its comment and the comment becomes a
+       line of its own that parses as nothing, and everything after it in the
+       chain shifts. It was why the worst file in the corpus came back at 71%.
+       Joined here rather than in the branches below, because a continuation is
+       a fact about the file rather than about what is being continued. */
+    if(cont !== null){
+      line = cont + " " + line;
+      cont = null;
+    }
+    if(/\\$/.test(line)){
+      cont = line.replace(/\\$/, "").trim();
+      return;
+    }
+
     if(pending){
       pending.text += " " + line;
       pending.handle ??= handle;
