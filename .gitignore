@@ -26,3 +26,6 @@ Thumbs.db
 # swept eight of them into a commit along with the address of a test machine
 .*.mjs
 .vm*
+
+# Other people's rulesets, fetched for testing. Not ours to commit.
+.corpus/

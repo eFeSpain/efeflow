@@ -270,7 +270,19 @@ export function parseNft(text){
        did not merely lose the offset: the line missed this branch entirely,
        reached parseRule() below, and came back as a rule whose verdict was the
        `drop` out of `policy drop;`. */
-    if((m = line.match(/^type\s+(\w+)\s+hook\s+(\w+)\s+(.*?)priority\s+(-?\w+(?:\s*[+-]\s*\d+)?)\s*;(?:\s*policy\s+(\w+)\s*;?)?/))){
+    /* The semicolon is optional, and requiring it cost the chain everything it
+       is. nft prints one and accepts a file without it, and a hand-written
+       config very often has none — measured across 268 real rulesets off
+       public repositories, it is one of the commonest ways to write this.
+       Without the branch the line fell through to nothing at all: `hook` stayed
+       null, `type` fell back to "regular", and a base chain silently became an
+       ordinary one. It is then attached to no hook, so netfilter never calls
+       it, the simulator never walks it and the canvas never places it on the
+       packet's path — and the ruleset that comes back out has an input chain
+       that is not an input chain. nft accepts that file without a word.
+       A policy written on the line below is read by the branch further down,
+       and reaches the same place. */
+    if((m = line.match(/^type\s+(\w+)\s+hook\s+(\w+)\s+(.*?)priority\s+(-?\w+(?:\s*[+-]\s*\d+)?)\s*;?(?:\s*policy\s+(\w+)\s*;?)?\s*$/))){
       cur.type = m[1];
       cur.hook = m[2];
       /* a netdev chain names the device it is attached to, and without it the
@@ -556,6 +568,50 @@ const meaningful = lines => lines
   .map(l => normalise(typeof l === "string" ? l : l.text))
   .filter(keep);
 
+/* A chain header, as nft prints it rather than as a person types it.
+ *
+ * `nft list ruleset` writes one line:
+ *
+ *   type filter hook input priority filter; policy drop;
+ *
+ * and a hand-written config very often writes two, without the semicolons, and
+ * very often leaves the policy out because accept is the default. Both load,
+ * both mean the same thing, and this check was calling the difference a loss —
+ * twice per chain, and then a third time as the line-by-line comparison
+ * slipped a row and reported the neighbours too.
+ *
+ * Measured on 268 real rulesets fetched from public repositories and filtered
+ * to the ones nft itself accepts: this one difference accounted for roughly
+ * four hundred of five hundred and forty-six reported losses. A file that was
+ * understood perfectly told its author that a dozen lines had not been. The
+ * number that screen shows is the whole of its argument, so a pessimistic one
+ * is not a harmless one.
+ *
+ * What is not weakened: a policy we got *wrong* still differs after the fold,
+ * because the folded line carries it.
+ */
+/* `priority filter + 10` is a priority. The branch that reads chain headers
+   has known that for a while; this one did not, and folded nothing onto a
+   header written that way — so the policy below it was reported as a change
+   into a line the source never had. */
+const CHAIN_HEAD = /^type\s+\w+\s+hook\s+\S+(\s+device\s+\S+)?\s+priority\s+(-?\w+(\s*[+-]\s*\d+)?)\s*;?$/;
+function canonicalHeaders(rows){
+  const out = [];
+  for(const r of rows){
+    const prev = out.at(-1);
+    const policy = r.text.match(/^policy\s+(\w+)\s*;?$/);
+    if(policy && prev && CHAIN_HEAD.test(prev.text)){
+      prev.text = `${prev.text.replace(/;$/, "")}; policy ${policy[1]}`;
+      continue;
+    }
+    out.push({ ...r });
+  }
+  /* and a header with no policy at all is nft's default, said out loud */
+  for(const r of out)
+    if(CHAIN_HEAD.test(r.text)) r.text = `${r.text.replace(/;$/, "")}; policy accept`;
+  return out;
+}
+
 export function verify(text){
   const parsed = parseNft(text);
   /* Line numbers are carried alongside, because a diff nobody can point at is
@@ -564,9 +620,9 @@ export function verify(text){
      kept that promise was the import dialog, which has the source on screen
      next to the answer. The CLI printed the same finding with no line and no
      text at all — it was reading fields this function has never returned. */
-  const rows = logicalLines(text)
+  const rows = canonicalHeaders(logicalLines(text)
     .map(l => ({ text: normalise(l.text), ln: l.ln + 1 }))
-    .filter(r => keep(r.text));
+    .filter(r => keep(r.text)));
   const out = meaningful(generate(parsed));
 
   const r = compare(rows.map(x => x.text), out);
