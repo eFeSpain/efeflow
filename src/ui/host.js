@@ -238,7 +238,12 @@ $("#scrim-target").addEventListener("click", e=>{
   }
   const c = e.target.closest("[data-target]");
   if(c){ tgDraft.kind = c.dataset.target; syncTargetForm(); }
-  if(e.target.closest("#tg-sudo")){ tgDraft.sudo = !tgDraft.sudo; syncTargetForm(); }
+  /* Flip the state and let the global .sw-toggle handler paint the class —
+     the same contract every other switch keeps (see app.js, "a global handler
+     already flips every .sw-toggle"). This one painted as well, so the two
+     flips cancelled: after every click the switch showed the opposite of the
+     draft, and "off" went to the host as sudo. */
+  if(e.target.closest("#tg-sudo")){ tgDraft.sudo = !tgDraft.sudo; }
 });
 $$("#tg-host, #tg-user, #tg-port").forEach(n=>n.addEventListener("input", ()=>{
   tgDraft.host = $("#tg-host").value.trim();

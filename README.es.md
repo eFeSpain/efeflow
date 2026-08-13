@@ -154,7 +154,7 @@ puede reproducir, te dice cuál antes de que te comprometas a nada.
 ## ⚠ Beta
 
 Hace el trabajo completo hoy: importar, demostrar, analizar, simular, editar,
-aplicar y exportar. Lo respaldan 1.023 comprobaciones automáticas, sobre el
+aplicar y exportar. Lo respaldan 1.025 comprobaciones automáticas, sobre el
 parser, el analizador, el evaluador de paquetes y la propia interfaz.
 
 Lo que todavía tiene poco es kilometraje — pero ya no tiene ninguno. **Se
@@ -388,7 +388,7 @@ escribes `accept`, no `aceptar`.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 1.023 aserciones
+npm test             # 1.025 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 
 npx tauri build --no-bundle && npm run e2e   # conduce la app compilada, no el código

@@ -84,3 +84,37 @@ test("nothing throws once the deferred work has landed", async () => {
   await settle(900);
   assert.deepEqual(errors.map((e) => (e && e.stack) || String(e)), []);
 });
+
+/* ── the sudo switch tells the truth ─────────────────────────────────────
+   Reported from the running app, mid-parachute-jump: "a pesar de desactivar
+   sudo: sudo: command not found". A global document handler flips every
+   .sw-toggle's class; the target dialog flipped the draft AND painted the
+   class itself, so the two cancelled — after every click the switch showed
+   the opposite of the draft, and the user's "off" reached the host as sudo.
+   The ssh-argv shim caught it; this pins both halves. */
+test("clicking the sudo switch flips the state and the paint together", async () => {
+  await boot();
+  const { target, saveTarget } = await import("../src/target.js");
+  saveTarget({ kind: "ssh", host: "lab.example", user: "", port: "", sudo: true });
+  click("#tb-target");
+  await settle(50);
+
+  click("#tg-sudo");
+  await settle(20);
+  assert.equal($("#tg-sudo").classList.contains("on"), false,
+    "one click must show off — two handlers used to cancel each other");
+
+  click("#tg-save");
+  await settle(20);
+  assert.equal(target.sudo, false, "and what was shown is what was saved");
+});
+
+test("the estate learns a sudo change instead of restoring the old one", async () => {
+  await boot();
+  const { saveTarget, hosts } = await import("../src/target.js");
+  saveTarget({ kind: "ssh", host: "lab.example", user: "", port: "", sudo: true });
+  saveTarget({ kind: "ssh", host: "lab.example", user: "", port: "", sudo: false });
+  const entry = hosts.find((h) => h.host === "lab.example");
+  assert.equal(entry?.sudo, false,
+    "picking the host from the list used to silently turn sudo back on");
+});

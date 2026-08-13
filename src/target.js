@@ -85,9 +85,15 @@ export const currentHost = () => matching(hosts, target);
 export function saveTarget(patch) {
   Object.assign(target, patch);
   localStorage.setItem(KEY, JSON.stringify(target));
-  /* pointing somewhere new is how a host gets into the list */
-  if (target.kind === "ssh" && target.host && !matching(hosts, target)) {
-    hosts = addHost(hosts, target).list;
+  /* pointing somewhere new is how a host gets into the list — and pointing
+     at a known one teaches the list what changed. The entry used to keep the
+     sudo it was created with forever, so picking the host back out of the
+     list silently restored a setting the user had already turned off. */
+  if (target.kind === "ssh" && target.host) {
+    const known = matching(hosts, target);
+    if (!known) hosts = addHost(hosts, target).list;
+    else if (known.sudo !== target.sudo) hosts = updateHost(hosts, known.id, { sudo: target.sudo });
+    else return target;
     persistHosts();
   }
   return target;
