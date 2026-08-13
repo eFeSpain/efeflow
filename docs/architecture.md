@@ -21,6 +21,7 @@ src/core/        pure, DOM-free, covered by npm test
   sync.js          which rule here is which rule there
   diff.js          LCS diff against the last import or export
   hosts.js         the machines you look after, across projects
+  mentions.js      what the rules mention: interfaces and addresses, derived
   priority.js      the names netfilter gives its priorities
   vocabulary.js    the matches the editor knows how to offer
   project.js       name, origin, and the names you keep by hand
@@ -33,8 +34,12 @@ src/ui/          the screens, one file each
   state.js         the three variables that genuinely cross a screen
   history.js       edit(): the gate every mutation goes through
   canvas.js        chains placed at (hook, priority), because that is the order
+  editor.js        the object library, the properties panel, every rule edit
+  simulator.js     core/simulate.js, drawn — the lane, the trace, the verdict
+  findings.js      core/analyse.js, drawn — the list, the grade, the badges
   sets.js          sets, maps and named objects — what a rule points at
   host.js          the target chip, the apply screen, the live watch
+  project-io.js    import with its round-trip review, export, the project file
 src/app.js       the interface: everything not yet moved out
 src/apply.js     commit-confirm: arm, push, keep or roll back
 src/host.js      counters, drift and per-handle pushes against a live host
@@ -59,9 +64,14 @@ fired its drift check beside a probe nobody awaited, so it only ran on the
 second opening of the dialog — visible once the apply screen was a file with a
 top and a bottom rather than nine hundred lines in the middle of another one.
 
-What is left in `app.js` is what has not been moved yet: the editor, the
-simulator, the validation screen, import and export. There is no boundary
-there, only work not done.
+What is left in `app.js` is what has not been moved yet: the code pane and its
+variants, the topology, the dashboard, the palette, the chain and table
+dialogs, renaming, the tutorial, and boot. There is no boundary there, only
+work not done. Where a moved screen still needs a verb from one of those — the
+editor opening the chain dialog, import calling openProject — the verb arrives
+through a provide*() late binding, so the import graph keeps its one
+direction: app.js knows the screens, a screen knows app.js only as named
+functions that resolve at call time.
 
 Two files are called `host`, and they are not the same thing. `src/host.js` is
 the three questions this application asks a running machine — where do these
