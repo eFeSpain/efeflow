@@ -133,10 +133,10 @@ each came from. Without it the code pane has to match rules back to lines by
 their text — and two chains can hold the same rule, so selecting one would light
 up all of them.
 
-## Tests, and why there are four layers
+## Tests, and why there are five layers
 
-`npm test` — 987 assertions. The fourth layer is not in that number: it needs a
-built application and runs separately.
+`npm test` — 1,023 assertions. The last two layers are not in that number:
+one needs a real browser, one a built application, and both run separately.
 
 **Core** exercises the pure functions: the parser against
 `test/fixtures/flawed.nft`, import → generate → import as a fixed point across
@@ -162,6 +162,16 @@ running app:
 | `ssh-target` | a way to reach a host that does not validate where it is going |
 | `rollback-script` | the arm script losing the copy it exists to protect |
 | `names` | a chain called `log`, which parses, round-trips, and will not load |
+
+**Browser journeys** (`npm run e2e:browser`) drive the production build in a
+real Chromium — vite preview serving `dist/`, Playwright at the wheel, and
+native.js in the browser mode it has always had. jsdom stubs every
+measurement, so this is where layout is layout: the chain cards are asserted
+not to overlap by their real bounding boxes, a drag is a real DataTransfer,
+and a click on a button that is not visible fails the way it fails a person.
+The Tauri bridge is deliberately absent — that is the next layer's job — and
+the suite is journeys, not units: eight of them, on every push, on the ubuntu
+CI that could never run the layer below.
 
 **End-to-end** (`test/e2e/`) drives the built application:
 
@@ -190,7 +200,8 @@ inspector — Tauri compiles it out of release builds unless the `e2e` feature
 asks for it, and even then the socket speaks neither HTTP nor CDP but WebKit's
 own handshake, which nothing off the shelf attaches to. Until somebody writes
 that client, Linux has `test/e2e/linux-smoke.sh`, which checks the built binary
-starts and stays up.
+starts and stays up — and the browser journeys above, which cover everything
+except the bridge on every push.
 
 ## The fixture
 

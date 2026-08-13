@@ -57,6 +57,34 @@ jobs:
       - name: Evaluator against the kernel
         run: npm run oracle -- --require
 
+  # The frontend in a real engine, on every push. jsdom stubs every
+  # measurement, so layout, CSS and real drag events pass it untouched — and
+  # the built-app e2e runs only on Windows, only before a release. This drives
+  # the production build in the Chromium that `npm run shots` already
+  # depends on; the Tauri bridge stays the Windows run's job.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      # ~120MB once, then the cache answers; the version is pinned by the
+      # lockfile, so the key follows it
+      - name: Cache the engine
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: A real engine
+        run: npx playwright install --with-deps chromium
+      - name: Journeys
+        run: npm run e2e:browser
+
   rust:
     runs-on: ubuntu-22.04
     steps:

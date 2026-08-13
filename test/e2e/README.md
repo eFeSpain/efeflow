@@ -109,4 +109,7 @@ now refuses to report on a run that did not happen.
 The entry requirement is that a scenario covers something jsdom cannot: the
 bridge, the real webview, or the first draw of a screen. Anything that can be
 asserted about the source or about a module belongs in `test/` with the other
-986, which run in a second and on every platform.
+thousand, which run in a second and on every platform — and a scenario that
+needs a real engine but not the bridge belongs in `browser.e2e.mjs`
+(`npm run e2e:browser`), which drives the production build in Chromium on
+every push, ubuntu included.
