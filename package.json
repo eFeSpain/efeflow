@@ -17,7 +17,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test \"test/*.test.js\"",
+    "test": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./test/readme-count.reporter.mjs --test-reporter-destination=stderr \"test/*.test.js\"",
     "differ": "node scripts/differ.mjs",
     "oracle": "node scripts/oracle.mjs",
     "tauri": "tauri",
