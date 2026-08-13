@@ -472,17 +472,34 @@ export function parseNft(text){
        gave a ruleset with five rules the kernel would never have loaded. A
        screen that draws a firewall nobody is running is the worst thing this
        application can do, so the flush is obeyed here as the kernel obeys it. */
-    if(!f && line === "flush ruleset"){
+    const flushM = !f && line.match(/^flush ruleset(?:\s+(ip6|ip|inet|arp|bridge|netdev))?$/);
+    if(flushM){
       /* What it flushes is the kernel's: tables, chains, sets, objects. Not
          the prelude — a `define` is nft's own textual substitution and an
          `include` is a file it reads, and neither was ever in the kernel for a
-         flush to reach. The test that already covered this caught the first
-         attempt at it, which cleared the lot. */
-      chains.length = 0; sets.length = 0; objects.length = 0; tables.length = 0;
-      for(const k of Object.keys(ruleLines)) delete ruleLines[k];
-      /* No table declared above this line survives it, so none of them counts
-         towards where a prelude line goes. */
-      lastDecl.clear();
+         flush to reach.
+
+         A bare flush empties everything; `flush ruleset bridge` and its
+         siblings only that one family, exactly as the kernel does. Those used
+         to vanish outright — the preamble filter matched them as "ours" (they
+         start `flush ruleset`) but the handler here wanted the exact string,
+         so a family-qualified flush fell through and was dropped, silently. A
+         corpus of 1,673 real rulesets found the one file that carried one. */
+      const fam = flushM[1];
+      const famOf = (name) => String(name).split(/\s+/)[0];
+      const flushed = (name) => !fam || famOf(name) === fam;
+      const prune = (arr, nameOf) => {
+        const kept = arr.filter((x) => !flushed(nameOf(x)));
+        arr.length = 0; arr.push(...kept);
+      };
+      prune(chains, (c) => c.table);
+      prune(sets, (s) => s.table);
+      prune(objects, (o) => o.table);
+      prune(tables, (t) => t.name);
+      for(const k of Object.keys(ruleLines)) if(flushed(k)) delete ruleLines[k];
+      /* A table flushed here no longer counts towards where a prelude line
+         goes; one left standing in another family still does. */
+      for(const name of [...lastDecl.keys()]) if(flushed(name)) lastDecl.delete(name);
       continue;
     }
     if(!f){
@@ -875,7 +892,7 @@ function byIndex(src, out){
    dropped from a comparison it belongs in. A preamble line is the one that
    opens nothing. */
 const isPreamble = l =>
-  l === "flush ruleset" ||
+  /^flush ruleset(\s+(ip6|ip|inet|arp|bridge|netdev))?$/.test(l) ||
   (!l.includes("{") && /^(delete\s+)?table\s+\S+(\s+\S+)?$/.test(l));
 const keep = l => l && !l.startsWith("#") && !isPreamble(l);
 const meaningful = lines => lines

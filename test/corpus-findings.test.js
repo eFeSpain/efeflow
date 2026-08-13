@@ -573,3 +573,28 @@ test("a log prefix is compared by every character of it", () => {
   const drifted = roundTrip(one, parseNft(one.replace("two  spaces", "two spaces")));
   assert.equal(drifted.diffs.length, 1, JSON.stringify(drifted.diffs));
 });
+
+/* A family-qualified `flush ruleset bridge` — `ip`, `inet`, `netdev`, `arp`
+   too — vanished on the round trip. It matched the preamble filter that drops
+   `flush ruleset` (it starts with those two words) but not the handler that
+   obeys the flush, which wanted the exact string — so it fell through both and
+   was lost, silently. A corpus of 1,673 real rulesets nft accepts found the
+   one file that carried one: a bridge topology that opens `flush ruleset
+   bridge` before its table.
+
+   Two halves, both here: the line survives the round trip now, and the flush
+   is obeyed for the right family only — a bridge flush leaves an ip table
+   standing, because that is what the kernel would do. */
+test("a family-qualified flush ruleset survives the round trip", () => {
+  for (const fam of ["ip", "ip6", "inet", "arp", "bridge", "netdev"]) {
+    const src = `flush ruleset ${fam}\ntable bridge filter {\n\tchain c {\n\t\ttype filter hook forward priority -200; policy accept;\n\t\tiifname "node0" oifname "node1" accept\n\t}\n}`;
+    assert.deepEqual(verify(src).diffs, [], `flush ruleset ${fam}: ${JSON.stringify(verify(src).diffs)}`);
+  }
+});
+
+test("a family flush empties only that family, as the kernel does", () => {
+  const src = `table ip keep {\n\tchain c { type filter hook input priority 0; policy drop; }\n}\nflush ruleset bridge\ntable bridge gone {\n\tchain d { type filter hook forward priority -200; policy accept; }\n}`;
+  const p = parseNft(src);
+  const families = [...new Set(p.chains.map((c) => c.table.split(" ")[0]))].sort();
+  assert.deepEqual(families, ["bridge", "ip"], "the ip table declared before the bridge flush must survive it");
+});
