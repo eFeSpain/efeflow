@@ -686,7 +686,11 @@ function paintApplyPlan(){
  * running there, and applying removes them. */
 function paintDriftWarning(p){
   const box = $("#ap-drift");
-  const gone = p.touched.reduce((a,c)=> a + c.destroy.length, 0);
+  /* `drift`, not `destroy`: the rules being removed that you do not hold — a
+     ban, a colleague's hotfix — rather than every removal, which would count
+     the rules you disabled yourself and cry wolf. The plan diff below still
+     shows all of them, marked; this box is only for the ones worth an alarm. */
+  const gone = p.touched.reduce((a,c)=> a + (c.drift?.length || 0), 0);
   box.style.display = gone ? "" : "none";
   if(gone) box.textContent = gone === 1
     ? t(`${describe()} is running 1 rule this ruleset does not have. Applying removes it — check it is not one you meant to keep.`,

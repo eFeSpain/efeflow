@@ -131,6 +131,30 @@ test("a rule only the host has is one this destroys, not one you are missing", (
   assert.equal(input.keep, 1, "iif lo is the same on both sides");
 });
 
+/* Reported from the parachute jump: three rules disabled by hand, and the
+   drift warning said three rules had "appeared on the host since you read it".
+   A disabled rule is filtered out of the pairing, so its host copy lands among
+   the deletions looking exactly like a rule that drifted — but it is one you
+   chose to remove, not one that appeared behind your back. `destroy` still
+   holds it, because applying does remove it; `drift` does not, because a drift
+   warning is about what you do not know, and this one you do. */
+test("a rule you disabled is destroyed but is not drift", () => {
+  const m = parseNft(MINE);
+  /* iif lo is identical on both sides — a clean disable, not a pending edit */
+  const lo = m.chains[0].rules.find((r) => /iif lo/.test(r.expr));
+  lo.on = false;
+
+  const input = applyPlan(m, live(), { tables: OURS }).chains.find((c) => c.chain === "input");
+
+  assert.ok(input.destroy.some((r) => /iif lo/.test(r.expr)),
+    "disabling a rule does remove it from the host, so it is a deletion");
+  assert.ok(!input.drift.some((r) => /iif lo/.test(r.expr)),
+    "but a rule you disabled must not be counted as drift");
+  assert.ok(input.drift.some((r) => /10\.0\.0\.9/.test(r.expr)),
+    "the rule that actually appeared on the host still is drift");
+  assert.equal(input.drift.length, 1, "one genuine drift, not two");
+});
+
 test("a chain the host has inside a table being replaced goes with the table", () => {
   /* a whole chain of theirs, in our table, that we know nothing about — it is
      deleted with the table and has to be shown, not quietly dropped */

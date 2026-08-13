@@ -115,9 +115,21 @@ export async function applyWithNet({ ruleset, target, seconds = 60, api = native
    stderr that opens exactly this way (see src-tauri/src/nft.rs). That message
    is proof the connection was alive — the refusal travelled back over it — and
    so proof the host is untouched. Anything else that comes back from a failed
-   apply, transport error included, is not that proof. */
-function looksLikeValidationFailure(o) {
-  return /validation failed, nothing was applied/.test(o.stderr || "");
+   apply, transport error included, is not that proof.
+ *
+ * This regex and the Rust `format!` that produces the string are one contract
+ * held together by nothing but two hand-written copies of the same words, on
+ * the path where getting it wrong strands a firewall. So it is exported and
+ * test/apply-lockout-contract.test.js reads nft.rs and holds the two to each
+ * other: change the message on the Rust side and that test fails, rather than
+ * this predicate silently ceasing to recognise it. The failure is toward
+ * safety either way — an unrecognised refusal is treated as a lockout and the
+ * net stays up — but a safety contract nothing checks is one word away from
+ * not being one. */
+/** The exact phrase, once, so the predicate and the contract test share it. */
+export const VALIDATION_FAILURE_MARK = "validation failed, nothing was applied";
+export function looksLikeValidationFailure(o) {
+  return (o.stderr || "").includes(VALIDATION_FAILURE_MARK);
 }
 
 /** Keep what is running: the scheduled restore finds no sentinel and expires. */

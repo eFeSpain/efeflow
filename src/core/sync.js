@@ -159,14 +159,25 @@ export function applyPlan(model, host, { tables } = {}) {
     seen.add(key(ch));
     if (!other) {
       chains.push({ key: key(ch), table: ch.table, chain: ch.id, isNew: true,
-                    create: ch.rules.filter((r) => r.on), destroy: [], change: [], keep: 0 });
+                    create: ch.rules.filter((r) => r.on), destroy: [], drift: [], change: [], keep: 0 });
       continue;
     }
     const r = pairChain(ch, other, { active: true });
+    const destroy = r.onlyHost.map((x) => x.r);
+    /* A host rule with no partner is a deletion — but not always drift. A rule
+       you switched off is still in your model, filtered out of the pairing by
+       `active`, so its host copy lands here looking exactly like a rule that
+       appeared behind your back. It is not: it is one you chose to remove, and
+       warning about it the way you warn about a fail2ban ban somebody is about
+       to wipe is the boy crying wolf on the one screen that must not.
+       `drift` is the honest subset — destroyed rules that match nothing you
+       hold, disabled ones included — which is what a drift warning is for. */
+    const knownText = new Set(ch.rules.map((x) => text(x)));
     chains.push({
       key: key(ch), table: ch.table, chain: ch.id, isNew: false,
       create: r.onlyModel.map((x) => x.r),
-      destroy: r.onlyHost.map((x) => x.r),
+      destroy,
+      drift: destroy.filter((hr) => !knownText.has(text(hr))),
       change: r.pairs.filter((p) => !p.same).map((p) => ({ from: p.hostRule, to: p.r })),
       keep: r.pairs.filter((p) => p.same).length,
     });
@@ -174,8 +185,10 @@ export function applyPlan(model, host, { tables } = {}) {
   /* a chain the host has inside a table we are replacing goes with the table */
   for (const ch of theirs)
     if (!seen.has(key(ch)))
+      /* A whole chain the host has and the model does not: every rule of it is
+         gone after this, and none is one you hold — so all of it is drift. */
       chains.push({ key: key(ch), table: ch.table, chain: ch.id, isGone: true,
-                    create: [], destroy: ch.rules, change: [], keep: 0 });
+                    create: [], destroy: ch.rules, drift: ch.rules, change: [], keep: 0 });
 
   /* The part a diff cannot say. Every rule in a table that gets deleted and
      rebuilt is a new rule to the kernel, whatever its text says.
