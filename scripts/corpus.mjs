@@ -20,6 +20,8 @@
  *   node scripts/corpus.mjs fetch [--pages N]   search GitHub, cache to .corpus/
  *   node scripts/corpus.mjs run       parse and verify everything cached
  *   node scripts/corpus.mjs run --nft also ask nft whether each file is valid
+ *   node scripts/corpus.mjs kernel    load original and re-emission into an
+ *                                     empty netfilter and compare the listings
  *
  * The corpus is other people's code and is not committed: .corpus/ is ignored.
  * What comes back into the repository is a minimal reproduction of each shape
@@ -161,6 +163,54 @@ async function keepAll(items, seen, onAdd, onSkip) {
 
 /* ── running ────────────────────────────────────────────────────────────── */
 
+/* Where nft can be asked, probed once.
+ *
+ * The scripts below are plain POSIX shell around `unshare` and nft, and the
+ * machine this was written on could only reach such a thing through the WSL
+ * next door — so WSL was wired in as if it were the only door, and on a Linux
+ * box with everything native the run degraded to "could not ask nft" and
+ * quietly counted Jinja. differ.mjs had the answer all along: probe for what
+ * is actually there.
+ *
+ * Native needs two facts: `unshare -rn` works (user namespaces allowed), and
+ * an nft exists — asked of PATH first and then the sbin directories a desktop
+ * user's PATH does not have. The probe order native-then-WSL is not a
+ * preference: no real machine has both, it just skips a hop on one that did.
+ *
+ * The chosen host hands back `run(script, args, opts)` and `path(p)`; the
+ * script sees the nft it should use as `$NFT`, exported so it survives into
+ * the shell `unshare` starts.
+ */
+const NFT_BINS = ["nft", "/usr/sbin/nft", "/sbin/nft", "/usr/local/sbin/nft"];
+let HOST; /* undefined = not probed yet, null = probed and nothing there */
+function nftHost() {
+  if (HOST !== undefined) return HOST;
+  const works = (file, args) => {
+    try {
+      execFileSync(file, args, { stdio: ["ignore", "ignore", "ignore"] });
+      return true;
+    } catch { return false; }
+  };
+  /* `prefix` is what stands between us and a shell: nothing when this machine
+     is the host, `wsl -e` when the host is next door. */
+  const sh = (nft, prefix) => (script, args, opts = {}) => {
+    const argv = [...prefix, "sh", "-c", `NFT=${nft}; export NFT\n${script}`, "sh", ...args];
+    return execFileSync(argv[0], argv.slice(1), { encoding: "utf8", ...opts });
+  };
+  if (works("unshare", ["-rn", "true"])) {
+    const nft = NFT_BINS.find((b) => works(b, ["--version"]));
+    if (nft) return (HOST = { name: `this machine's ${nft}`, run: sh(nft, []), path: (p) => p });
+  }
+  if (works("wsl", ["-e", "true"])) {
+    return (HOST = {
+      name: "WSL's /usr/sbin/nft",
+      run: sh("/usr/sbin/nft", ["wsl", "-e"]),
+      path: (p) => execFileSync("wsl", ["wslpath", "-a", p.replace(/\\/g, "/")], { encoding: "utf8" }).trim(),
+    });
+  }
+  return (HOST = null);
+}
+
 /** Which of the cached files nft itself accepts.
  *
  * Asked in one crossing rather than one per file: a corpus scraped off GitHub
@@ -172,16 +222,19 @@ async function keepAll(items, seen, onAdd, onSkip) {
  * the firewall of the machine running it.
  */
 function nftAcceptable() {
+  const host = nftHost();
+  if (!host) {
+    console.log("  could not ask nft (no native unshare+nft, no WSL) — counting every file instead");
+    return null;
+  }
   const script = `
     cd "$1" || exit 1
     for f in *; do
       [ -f "$f" ] || continue
-      if unshare -rn /usr/sbin/nft -c -f "$f" >/dev/null 2>&1; then printf '%s\\n' "$f"; fi
+      if unshare -rn "$NFT" -c -f "$f" >/dev/null 2>&1; then printf '%s\\n' "$f"; fi
     done`;
   try {
-    const wslPath = execFileSync("wsl", ["wslpath", "-a", CACHE.replace(/\\/g, "/")], { encoding: "utf8" }).trim();
-    const out = execFileSync("wsl", ["-e", "sh", "-c", script, "sh", wslPath],
-                             { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, timeout: 3_600_000 });
+    const out = host.run(script, [host.path(CACHE)], { maxBuffer: 256 * 1024 * 1024, timeout: 3_600_000 });
     return new Set(out.split("\n").map((s) => s.trim()).filter(Boolean));
   } catch (e) {
     console.log(`  could not ask nft (${String(e.message).split("\n")[0]}) — counting every file instead`);
@@ -301,9 +354,11 @@ async function run(withNft) {
  * one whose answer is not our own opinion.
  *
  * scripts/differ.mjs does exactly this and is the tool for it — but it needs
- * node on the machine that has nft, and WSL here has none. So the JavaScript
- * stays on this side, the two loads happen in one crossing, and each of them
- * is inside a network namespace of its own that did not exist a moment before.
+ * node on the machine that has nft, and when that machine is a WSL it has
+ * none. So the JavaScript stays on this side whoever the host is, the loads
+ * happen in one crossing, and each of them is inside a network namespace of
+ * its own that did not exist a moment before. On a native Linux the crossing
+ * is free, and the shape costs nothing for staying the same.
  */
 async function kernel() {
   const { parseNft } = await import("../src/core/parse.js");
@@ -347,16 +402,16 @@ async function kernel() {
         sed -E -e 's/counter packets [0-9]+ bytes [0-9]+/counter/g' \\
                -e 's/ expires [0-9a-z]+//g'
       }
-      a=$(unshare -rn sh -c '/usr/sbin/nft -f "$1" >/dev/null 2>&1 && /usr/sbin/nft list ruleset' sh "$f" 2>/dev/null | norm)
-      b=$(unshare -rn sh -c '/usr/sbin/nft -f "$1" >/dev/null 2>&1 && /usr/sbin/nft list ruleset' sh "$2/$n" 2>/dev/null | norm)
+      a=$(unshare -rn sh -c '"$NFT" -f "$1" >/dev/null 2>&1 && "$NFT" list ruleset' sh "$f" 2>/dev/null | norm)
+      b=$(unshare -rn sh -c '"$NFT" -f "$1" >/dev/null 2>&1 && "$NFT" list ruleset' sh "$2/$n" 2>/dev/null | norm)
       if [ -z "$b" ]; then printf 'REFUSED\\t%s\\n' "$n"
       elif [ "$a" = "$b" ]; then ok=$((ok+1)); printf 'SAME\\t%s\\n' "$n"
       else bad=$((bad+1)); printf 'MOVED\\t%s\\n' "$n"; fi
     done
     printf 'TOTALS\\t%s\\t%s\\n' "$ok" "$bad"`;
-  const wp = (p) => execFileSync("wsl", ["wslpath", "-a", p.replace(/\\/g, "/")], { encoding: "utf8" }).trim();
-  const out = execFileSync("wsl", ["-e", "sh", "-c", script, "sh", wp(CACHE), wp(mine)],
-                           { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, timeout: 5_400_000 });
+  const host = nftHost(); /* non-null: nftAcceptable above already answered */
+  const out = host.run(script, [host.path(CACHE), host.path(mine)],
+                       { maxBuffer: 256 * 1024 * 1024, timeout: 5_400_000 });
 
   const rows = out.split("\n").map((l) => l.split("\t")).filter((r) => r[0]);
   const same = rows.filter((r) => r[0] === "SAME").map((r) => r[1]);
@@ -386,4 +441,5 @@ else console.log(`
   node scripts/corpus.mjs fetch        search GitHub, cache to .corpus/
   node scripts/corpus.mjs run          parse and verify what is cached
   node scripts/corpus.mjs run --nft    and only count files nft itself accepts
+  node scripts/corpus.mjs kernel       ask the kernel whether meaning survived
 `);
