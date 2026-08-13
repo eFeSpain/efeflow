@@ -381,6 +381,24 @@ Take rustfmt's output rather than configuring around it. It is the convention
 CI enforces, and there are a thousand lines of Rust here to have an opinion
 about.
 
+Those thousand lines are one file on purpose, and the question of splitting
+nft.rs has been asked and answered: not yet. The surgical apply was the test —
+a whole feature landed without adding a line here, because it rides the two
+commands that already existed — and the disease that made splitting app.js
+profitable (top-level names reachable from everywhere) is one the compiler
+does not permit. Splitting today would also move the file
+test/rollback-script.test.js reads by path, and multiply the
+`cfg(target_os = "linux")` surfaces where one wrong attribute breaks the two
+platforms that only compile at release time.
+
+**But the answer expires if the file grows.** Any of these means splitting
+before adding, not after: a third transport beside local and ssh; a second
+polkit action (the write action deliberately not granted today); the watch
+growing reconnection or a second stream; or the tests outgrowing the code
+they test. The seams are already drawn in the file's own section banners —
+transport, privileges, commands, watch — and whoever crosses one of those
+thresholds should cut along them rather than discover new ones.
+
 CI lints on ubuntu only, and that is a real gap rather than a detail. Anything
 reachable from exactly one `#[cfg(target_os = "linux")]` block is dead code on
 the other two platforms, and `-D warnings` turns dead code into a failed build
