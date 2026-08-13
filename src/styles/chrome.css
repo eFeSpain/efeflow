@@ -1002,7 +1002,14 @@
   margin-top: 10px;
 }
 
-/* ── WebKitGTK has poor backdrop-filter; keep the layering, drop the blur ── */
+/* ── the solid surface, for where the glass should not be ──────────────────
+   Two reasons to drop the blur, one class and one media query.
+
+   `.no-glass` is set by JS when the webview cannot do backdrop-filter well —
+   which used to be all of Linux and is now only the old WebKitGTK builds that
+   still render it dirty (see native.js). And `prefers-reduced-transparency` is
+   the standard the other way round: the machine can do it, but the person has
+   asked their desktop not to. Both land on the same solid fill. */
 :root.no-glass .glass,
 :root.no-glass .modal,
 :root.no-glass .palette,
@@ -1010,6 +1017,13 @@
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   background: #171d24;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass, .modal, .palette, .props.floating {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: #171d24;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

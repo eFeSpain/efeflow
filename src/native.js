@@ -35,12 +35,25 @@ export const ready = (async () => {
   return platform;
 })();
 
-/* Linux ships WebKitGTK, whose backdrop-filter support has historically been
-   poor. The stylesheet reads this to swap glass for a solid surface. */
+/* The glass surfaces — modals, the palette, floating panels — blur what is
+   behind them with backdrop-filter. Linux was blanket-excluded because
+   WebKitGTK rendered that badly; on a current one (2.50, Debian 13) it is
+   clean and fluid, verified on the running app, so the exclusion is no longer
+   a whole platform. It is now the honest question the platform cannot answer
+   for us: can this webview do it at all? A build too old to support
+   backdrop-filter would show a see-through surface with no blur — worse than a
+   solid one — so those keep the solid fill. Everything that supports it gets
+   the glass, and CSS hands the reduced-transparency preference the same solid
+   fill the other way (see chrome.css). */
+const canBlur = () =>
+  typeof CSS !== "undefined" && CSS.supports &&
+  (CSS.supports("backdrop-filter", "blur(1px)") ||
+   CSS.supports("-webkit-backdrop-filter", "blur(1px)"));
+
 export function applyPlatformClass() {
   const root = document.documentElement;
   root.dataset.os = platform.os;
-  if (platform.os === "linux") root.classList.add("no-glass");
+  if (platform.os === "linux" && !canBlur()) root.classList.add("no-glass");
   if (inTauri) root.classList.add("desktop");
 }
 
