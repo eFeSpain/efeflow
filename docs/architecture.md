@@ -283,7 +283,41 @@ not; without either, or without `nft`, it says so and stops.
 CI runs it with `--require`, which turns "could not run" into a failure. A skip
 that reports success is the green tick that only means nobody checked.
 
-`npm run oracle` asks the same of the evaluator. A real packet goes through a
+`npm run corpus` is the same question at scale: it fetches real rulesets off
+GitHub — the ones nobody wrote to be parsed — keeps only what nft itself
+accepts, and asks whether each survives parse-and-re-emit both by text and, in
+`corpus kernel`, by the netlink comparison above. The corpus is not committed
+(it is other people's code); what comes back to the repository is a minimal
+reproduction of each shape that broke, as an ordinary test. A run of 1,673
+accepted rulesets found the family-qualified flush that `test/corpus-findings`
+now guards; the kernel could not tell 1,670 of them apart from the original.
+
+### One the round trip does not yet survive
+
+Two of that run's three kernel differences were the same Proxmox ruleset listing
+its chains in another order — identical chain for chain, 100% on the round-trip
+check the user sees, a firewall that behaves the same. The third is real and
+not yet fixed, and is written down here so whoever picks it up starts with the
+reproduction rather than the search.
+
+A ruleset written entirely in the braceless incremental forms — `add table ip
+t`, `add chain ip t c`, `add rule ip t c …`, with no `table { … }` block
+anywhere — re-emits unloadable. The `add table` and `add chain` lines are not
+block openers, so the parser keeps them as prelude; export then writes its own
+`flush ruleset` after the prelude, which deletes the table and chain the
+prelude just declared, and the `add rule` lines that follow have nothing to
+attach to. nft refuses the file.
+
+It is rare — one file in 1,673, and that one a Vim syntax-highlighting fixture
+rather than a firewall — because the pure-incremental style with no blocks is
+uncommon, and the common near-miss is safe: Proxmox writes `add chain` up top
+and then a `table { chain { … } }` block that re-declares it, so the block
+survives the flush. The fix is to model the braceless declarations as empty
+tables and chains rather than shelve them in the prelude, so export emits them
+as blocks that outlive its flush — and the guard against getting it wrong is
+that the Proxmox ruleset, which works today, must still round-trip. It touches
+the parser, which is the safety-critical half, so it waits for a change of its
+own rather than riding in on the end of another. A real packet goes through a
 real netfilter instance with one counter per expression under test, and the
 counters say which of them matched it; the simulator is asked about the same
 packet, described the same way. Four go through: a TCP SYN, a UDP datagram,
