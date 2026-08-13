@@ -23,8 +23,10 @@ test("chain rows are assigned after the cards are in the document", async () => 
 
 test("layout no longer estimates card height from rule count", async () => {
   const { default: _ } = { default: null };
+  /* the layout lives in ui/canvas.js since the split; reading app.js here
+     made both assertions vacuously true of a file that no longer lays out */
   const src = await import("node:fs").then((fs) =>
-    fs.readFileSync(new URL("../src/app.js", import.meta.url), "utf8"),
+    fs.readFileSync(new URL("../src/ui/canvas.js", import.meta.url), "utf8"),
   );
   assert.ok(
     !/rules\.length\s*\*\s*33/.test(src),

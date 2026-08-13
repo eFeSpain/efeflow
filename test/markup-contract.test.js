@@ -1,13 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 /* app.js and index.html are two halves of one contract. Nothing enforces it,
    and a missing id fails silently at whatever moment that code path first
    runs — often inside a timer, where the exception disappears. */
 
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-const js = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+/* Every module that touches the DOM, not just app.js. The first extraction
+   round moved five screens into src/ui/ and this file kept reading app.js
+   alone — so every id those screens look up had silently left the contract.
+   A guard that covers less every refactor is a guard that expires. */
+const sources = [
+  ["src/app.js", readFileSync(new URL("../src/app.js", import.meta.url), "utf8")],
+  ...readdirSync(new URL("../src/ui/", import.meta.url))
+    .filter((f) => f.endsWith(".js"))
+    .map((f) => [`src/ui/${f}`, readFileSync(new URL(`../src/ui/${f}`, import.meta.url), "utf8")]),
+];
+const js = sources.map(([, s]) => s).join("\n");
 const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 
 const ids = new Set([...html.matchAll(/\bid="([\w-]+)"/g)].map((m) => m[1]));
@@ -29,7 +39,7 @@ const created = (id) =>
 
 test("every id the interface looks up exists in the markup", () => {
   const missing = new Map();
-  for (const [file, src] of [["src/app.js", js], ["src/main.js", main]]) {
+  for (const [file, src] of [...sources, ["src/main.js", main]]) {
     for (const m of src.matchAll(/\$\("#([\w-]+)"/g)) {
       const id = m[1];
       if (ids.has(id) || created(id)) continue;

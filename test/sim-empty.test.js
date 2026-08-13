@@ -31,7 +31,7 @@ test("a ruleset with no chains gives a verdict rather than an exception", () => 
 
 /* The other half: the screen has to have something to say about it. */
 test("and the screen says so instead of naming a chain that is not there", () => {
-  const app = readFileSync(new URL("../src/app.js", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../src/ui/simulator.js", import.meta.url), "utf8");
   const at = app.indexOf("function finish(){");
   assert.ok(at > 0, "the verdict banner is gone");
   const body = app.slice(at, at + 2200);
