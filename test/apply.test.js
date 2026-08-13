@@ -56,14 +56,51 @@ test("a host that cannot be armed is a host that is not touched", async () => {
 
 /* An armed rollback over a ruleset that was never applied is worse than no net
    at all: a minute later it restores the old ruleset over whatever came next. */
-test("an apply that fails takes the net down with it", async () => {
-  const api = fake({ apply: no("Error: syntax error, unexpected string") });
+/* A refusal is proof the host is untouched: nft's own pre-flight `nft -c`
+   turned the file away, and the refusal travelled back, so the connection was
+   alive and nothing was written. Only then is it safe to take the net down. */
+test("an apply that nft refused takes the net down with it", async () => {
+  const api = fake({
+    apply: no("validation failed, nothing was applied:\nError: syntax error"),
+  });
   const r = await applyWithNet({ ruleset: "nonsense", target: TARGET, seconds: 60, api });
 
   assert.deepEqual(api.calls, ["armed", "arm", "apply", "disarm"]);
   assert.equal(r.ok, false);
   assert.equal(r.stage, "apply");
   assert.equal(r.armed, false, "nothing is pending on the host");
+});
+
+/* The scenario the parachute jump exposed, and the one this whole file exists
+   for. An apply that loads a lockout ruleset cuts the connection carrying it,
+   so its reply never comes back — the apply "fails" with a transport error,
+   not nft's refusal. It may have applied. We cannot ask, because asking needs
+   the connection. Disarming here is the one unrecoverable mistake: it would
+   strand the firewall with no way back, if the disarm even reached it.
+
+   So the net stays up, no disarm is attempted, and the caller is told it is a
+   lockout — the host's own timer is the net now. */
+test("an apply whose connection dropped keeps the net up and does not disarm", async () => {
+  const api = fake({ apply: no("client_loop: send disconnect: Broken pipe") });
+  const r = await applyWithNet({ ruleset: "table inet filter {}", target: TARGET, seconds: 60, api });
+
+  assert.deepEqual(api.calls, ["armed", "arm", "apply"], "it must not reach for disarm");
+  assert.equal(r.ok, false);
+  assert.equal(r.stage, "lockout");
+  assert.equal(r.armed, true, "the net is still up on the host");
+  assert.equal(r.seconds, 60, "and the caller can start the countdown");
+});
+
+/* Same reasoning even on a host that was clear before: uncertainty about
+   whether the ruleset applied outweighs the tidiness of removing our own
+   sentinel. A restored-to-identical ruleset costs some counters; a firewall
+   with no net costs the machine. */
+test("a dropped connection keeps the net up even on a previously clear host", async () => {
+  const api = fake({ armed: ok("clear\n"), apply: no("Timeout, server fw1 not responding.") });
+  const r = await applyWithNet({ ruleset: "x", target: TARGET, seconds: 60, api });
+  assert.deepEqual(api.calls, ["armed", "arm", "apply"]);
+  assert.equal(r.stage, "lockout");
+  assert.equal(r.armed, true);
 });
 
 /* …unless the net was not ours to take down.
@@ -76,7 +113,7 @@ test("an apply that fails takes the net down with it", async () => {
 test("a failed apply does not cancel a rollback that was already pending", async () => {
   const api = fake({
     armed: ok("armed\n"),
-    apply: no("Error: syntax error, unexpected string"),
+    apply: no("validation failed, nothing was applied:\nError: syntax error"),
   });
   const r = await applyWithNet({ ruleset: "nonsense", target: TARGET, seconds: 60, api });
 
@@ -90,7 +127,10 @@ test("a failed apply does not cancel a rollback that was already pending", async
    sentinel removed, because leaving ours behind would restore the old ruleset
    over whatever the user does in the next minute. */
 test("a clear host still has our own arming taken back", async () => {
-  const api = fake({ armed: ok("clear\n"), apply: no("nope") });
+  const api = fake({
+    armed: ok("clear\n"),
+    apply: no("validation failed, nothing was applied:\nError: unknown chain"),
+  });
   const r = await applyWithNet({ ruleset: "x", target: TARGET, seconds: 60, api });
   assert.deepEqual(api.calls, ["armed", "arm", "apply", "disarm"]);
   assert.equal(r.wasArmed, false);

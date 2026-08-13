@@ -673,19 +673,26 @@ function paintApplyPlan(){
   paintDriftWarning(p);
 }
 
-/* The old warning keeps its job: something moved under you since you read it.
-   It is about rules this will destroy, which is what it always meant — and it
-   means it whichever of the two applies is going to run, so it is said in one
-   place that both of them reach. */
+/* Rules running on the host that this apply will remove.
+ *
+ * This counted the deletions and blamed them all on the host: "added there
+ * since you read it". Two things put a rule on the far side of this diff, and
+ * that is only one of them — the other is that you disabled or deleted it here,
+ * which is the commoner one, and the parachute jump caught the warning saying
+ * three rules had appeared on a firewall when they had done nothing of the
+ * kind. The screen cannot tell the two apart — it compares the model with the
+ * host now, not with the host as you read it — so it no longer pretends to.
+ * The fact is true either way and is the fact worth stating: these rules are
+ * running there, and applying removes them. */
 function paintDriftWarning(p){
   const box = $("#ap-drift");
   const gone = p.touched.reduce((a,c)=> a + c.destroy.length, 0);
   box.style.display = gone ? "" : "none";
   if(gone) box.textContent = gone === 1
-    ? t(`${describe()} has 1 rule that this does not — added there since you read it. Applying deletes it.`,
-        `${describe()} tiene 1 regla que esto no — añadida allí desde que lo leíste. Aplicar la borra.`)
-    : t(`${describe()} has ${gone} rules that this does not — added there since you read it. Applying deletes them.`,
-        `${describe()} tiene ${gone} reglas que esto no — añadidas allí desde que lo leíste. Aplicar las borra.`);
+    ? t(`${describe()} is running 1 rule this ruleset does not have. Applying removes it — check it is not one you meant to keep.`,
+        `${describe()} está ejecutando 1 regla que este ruleset no tiene. Aplicar la borra — comprueba que no sea una que quisieras conservar.`)
+    : t(`${describe()} is running ${gone} rules this ruleset does not have. Applying removes them — check none is one you meant to keep.`,
+        `${describe()} está ejecutando ${gone} reglas que este ruleset no tiene. Aplicar las borra — comprueba que ninguna sea una que quisieras conservar.`);
 }
 
 function openApply(){
@@ -748,6 +755,32 @@ $("#ap-go")?.addEventListener("click", async ()=>{
         if(ruleset === null) ruleset = generate(MODEL, {scope: APPLY.scope}).join("\n");
         return applyWithNet({ ruleset, target: asTauriTarget(), seconds: APPLY.secs });
       }));
+
+  /* The connection dropped mid-apply. This is the shape of a lockout — the
+     rule that cuts you off is loaded by the very apply whose reply then never
+     arrives — and the worst thing this screen can do here is what it used to:
+     sit on "Applying…" forever while the host, on its own detached timer,
+     quietly restores. The net is up. So the countdown runs, and it says what
+     is happening rather than freezing. */
+  if(!r.ok && r.stage === "lockout"){
+    applied();
+    showApplyStage(true);
+    $("#ap-clock").style.color = "var(--v-reject)";
+    /* Keep would have to reach the host to confirm, and the connection this
+       just lost is the one it would use. Offer rollback-now for the same
+       reason it might still work later; leave keep, but the honest path here
+       is to do nothing. */
+    $("#ap-keep").disabled = false;
+    APPLY.left = r.seconds;
+    $("#ap-count-t").textContent = t(
+      `The connection to ${describe()} dropped while applying — which is what a lockout looks like. If the ruleset took, ${describe()} restores itself when this reaches zero. Doing nothing is the safe move; you do not need this window.`,
+      `La conexión con ${describe()} se cortó al aplicar — que es justo lo que parece un lockout. Si el ruleset entró, ${describe()} se restaura solo cuando esto llegue a cero. No hacer nada es lo seguro; no necesitas esta ventana.`);
+    tickCountdown();
+    APPLY.timer = setInterval(tickCountdown, 1000);
+    toast(t(`Lost the connection to ${describe()} mid-apply — the host's own timer is the net now`,
+            `Se perdió la conexión con ${describe()} al aplicar — ahora la red es el temporizador de la propia máquina`));
+    return;
+  }
 
   if(!r.ok){
     const warn = $("#ap-warn");

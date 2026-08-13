@@ -365,6 +365,19 @@ fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
                 "BatchMode=yes".into(),
                 "-o".into(),
                 "ConnectTimeout=8".into(),
+                /* ConnectTimeout only bounds getting connected. Once a session
+                is up, a firewall that stops answering — which is exactly what
+                applying a lockout ruleset does to the very session carrying
+                `nft -f` — leaves ssh waiting on TCP, which can be fifteen
+                minutes. These make it give up in ~15s: probe every five, three
+                unanswered probes and it is gone. The lockout is meant to end
+                with the host's own timer restoring; the editor should find out
+                it lost the connection in seconds, not sit on "Applying…" while
+                a dead socket runs down a kernel clock. */
+                "-o".into(),
+                "ServerAliveInterval=5".into(),
+                "-o".into(),
+                "ServerAliveCountMax=3".into(),
             ];
             if let Some(p) = port {
                 args.push("-p".into());

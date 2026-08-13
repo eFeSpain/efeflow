@@ -71,18 +71,53 @@ export async function applyWithNet({ ruleset, target, seconds = 60, api = native
      both of those are the far side's job, not something to re-implement here */
   const applied = await api.nftApply(ruleset, target, true);
   if (!applied.ok) {
-    /* Nothing was written, so our own arming has nothing to undo — but the
-       sentinel is the only thing keeping an *earlier* countdown alive, and
-       removing it strands a host that was already waiting to be restored.
+    /* A failed apply splits two ways, and telling them apart is the whole of
+       the safety here — because the way you find out an apply *worked* is that
+       it cut the connection carrying it. The rule that locks you out is loaded
+       by the same `nft -f` whose reply then never comes back.
 
-       So it is left alone, and the honest cost of that is that our timer
-       fires instead of theirs: sooner, perhaps, and it reloads a copy the
-       kernel is already running, which resets that ruleset's counters. Both
-       of those are worth paying to not leave a firewall with no net on it. */
-    if (net && !wasArmed) await api.nftDisarm(target);
-    return { ok: false, stage: "apply", error: text(applied), armed: false, wasArmed };
+       So "the apply failed" can mean two opposite things:
+
+         nothing was applied — nft's own pre-flight `nft -c` refused the file,
+           which it does while the connection is plainly still alive, since the
+           refusal came back. The host is untouched.
+
+         we cannot tell — the connection dropped during `nft -f`. It may have
+           loaded and locked us out, or died for another reason. We do not
+           know, and we cannot ask, because asking needs the connection.
+
+       Disarming is only safe in the first case. In the second, the net is the
+       only thing that will put the firewall back, and taking it down — if the
+       disarm even reaches the host — is the one unrecoverable mistake this
+       code can make. So certainty is required to disarm, and the only thing
+       that certifies "nothing applied" is nft's pre-check refusing it. */
+    /* With no net there is nothing to protect and nothing to take down: a
+       failed apply is just a failed apply. The lockout branch below is only
+       meaningful when a rollback is actually armed on the host. */
+    if (!net) return { ok: false, stage: "apply", error: text(applied), armed: false };
+
+    if (looksLikeValidationFailure(applied)) {
+      if (!wasArmed) await api.nftDisarm(target);
+      return { ok: false, stage: "apply", error: text(applied), armed: false, wasArmed };
+    }
+
+    /* Could not tell whether it applied. The net stays up, no disarm is
+       attempted, and the caller is told the connection went down mid-apply:
+       if the ruleset took, the host restores itself when the timer runs out,
+       and doing nothing is now the safe move. */
+    return { ok: false, stage: "lockout", error: text(applied),
+             armed: true, backup, seconds, wasArmed };
   }
   return { ok: true, armed: net, backup, seconds };
+}
+
+/* nft_apply runs `nft -c -f -` before it writes, and on a rejection returns a
+   stderr that opens exactly this way (see src-tauri/src/nft.rs). That message
+   is proof the connection was alive — the refusal travelled back over it — and
+   so proof the host is untouched. Anything else that comes back from a failed
+   apply, transport error included, is not that proof. */
+function looksLikeValidationFailure(o) {
+  return /validation failed, nothing was applied/.test(o.stderr || "");
 }
 
 /** Keep what is running: the scheduled restore finds no sentinel and expires. */
