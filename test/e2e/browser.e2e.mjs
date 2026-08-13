@@ -150,6 +150,23 @@ test("the simulator reaches a verdict without being asked", async () => {
   assert.ok(["ACCEPT", "DROP", "REJECT"].includes(verdict), `unexpected verdict ${verdict}`);
 });
 
+test("changing the packet stales the trace; Simular runs it", async () => {
+  /* the report that motivated it: a parameter change used to fire the whole
+     animation — now it has to say the shown trace is the old one, visibly,
+     and wait for the button. Visibly is this engine's department. */
+  await page.click('#sim-dir [data-dir="fwd"]');
+  await page.waitForSelector("#s-sim.stale #sim-stale", { state: "visible" });
+  /* the dimming is a .2s transition — wait for it to land, then hold it */
+  await page.waitForFunction(() => +getComputedStyle(document.querySelector("#lane")).opacity < 0.6);
+  await page.click("#run-sim");
+  await page.waitForSelector("#vb.show", { timeout: 20000 });
+  assert.equal(await page.$eval("#s-sim", (n) => n.classList.contains("stale")), false,
+    "running must clear the staleness");
+  await page.click('#sim-dir [data-dir="in"]');
+  await page.click("#run-sim");
+  await page.waitForSelector("#vb.show", { timeout: 20000 });
+});
+
 /* ── the export dialog opens counted ────────────────────────────────────
    The regression this pins: go("export") used to reach a wrapper only app.js
    had, so any other module opened the dialog with stale stats. One navigator

@@ -48,17 +48,30 @@ test("the step counter is written, which is where the shadowed helper threw", as
   assert.match($("#tr-count").textContent, /\d+\s*(steps|pasos)/);
 });
 
-test("changing a control re-runs and can change the verdict", async () => {
+/* Reported from the running app: "cada vez que cambio un parámetro me
+   dispara la simulación, y no — solo debería al pulsar Simular". A change
+   now marks the stage stale instead of running; the trace that no longer
+   answers the form's question is dimmed and says so. Simular runs. */
+test("changing a control marks the trace stale instead of re-running", async () => {
   await boot();
   await importFixture();
   enterSim();
   await until(() => $("#vb").classList.contains("show"), { timeout: 8000 });
 
   click('[data-preset="dnat"]');
+  assert.ok($("#s-sim").classList.contains("stale"),
+    "a changed packet must mark the shown trace as the old one");
+  assert.match($("#sim-stale").textContent, /Simulate|Simular/,
+    "and the bar must name the way forward");
+
+  click("#run-sim");
   await until(() => $("#vb").classList.contains("show"), { timeout: 8000 });
+  assert.ok(!$("#s-sim").classList.contains("stale"),
+    "running clears the staleness — the trace answers the form again");
   const withNat = $("#vb-txt").textContent.trim();
 
   click("#opt-nat"); // skip the nat hooks
+  click("#run-sim");
   await until(() => $("#vb").classList.contains("show"), { timeout: 8000 });
   const withoutNat = $("#vb-txt").textContent.trim();
 
@@ -72,6 +85,7 @@ test("direction rewrites the path through the hooks", async () => {
   await importFixture();
   enterSim();
   click('#sim-dir [data-dir="out"]');
+  click("#run-sim");
   await until(() => $$("#lane .hop").length > 0);
   const chains = $$("#lane .hop .c").map((n) => n.textContent.trim());
   assert.ok(chains.includes("output"), `egress should traverse output, got ${chains}`);

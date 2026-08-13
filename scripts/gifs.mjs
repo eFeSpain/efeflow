@@ -189,7 +189,9 @@ const simulate = {
   setup: preload,
   act: async (page) => {
     await tap(page, '.rb[data-go="sim"]', 1400);
-    await tap(page, '[data-preset="dnat"]', 5400);
+    await tap(page, '[data-preset="dnat"]', 600);
+    /* a changed packet no longer runs itself — the recording presses the button */
+    await tap(page, '#run-sim', 5400);
   },
 };
 

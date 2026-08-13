@@ -885,6 +885,25 @@ pre.code{margin:0;padding:10px 0 18px;font:450 11.5px/1.65 var(--mono);letter-sp
 #step-bar.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 #step-bar .lbl{font-family:var(--mono);letter-spacing:0;text-transform:none}
 
+/* ── the trace gone stale ─────────────────────────────────────────────
+   The form describes one packet and the stage still shows another. The old
+   trace stays readable — comparing is half the point — but dimmed under a
+   bar that says why, and clicking the bar is the same as pressing Simular. */
+#sim-stale{
+  position:absolute;left:50%;top:16px;transform:translate(-50%,-10px);z-index:30;
+  display:flex;align-items:center;gap:9px;padding:8px 12px;border-radius:var(--r-md);
+  font-size:12px;color:var(--t1);border:1px solid rgba(240,193,60,.38);
+  /* near-solid on purpose: it floats over the dimmed verdict text, and a
+     translucent wash let that text bleed through the sentence on top of it */
+  background:rgba(19,29,33,.96);box-shadow:var(--lift);
+  opacity:0;pointer-events:none;cursor:pointer;
+  transition:opacity .18s var(--ease),transform .22s var(--ease);
+}
+#sim-stale .ico{color:var(--warn);flex:none}
+#s-sim.stale #sim-stale{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+#s-sim.stale #lane,#s-sim.stale #trace,#s-sim.stale #vb{
+  opacity:.38;filter:saturate(.55);transition:opacity .2s var(--ease)}
+
 .sim-trace{background:var(--base);border-left:1px solid var(--line);display:flex;flex-direction:column}
 .trace-body{flex:1;overflow-y:auto;font-family:var(--mono);font-size:11px}
 .tr{display:grid;grid-template-columns:38px 1fr;gap:8px;padding:5px 12px;border-bottom:1px solid rgba(255,255,255,.035)}

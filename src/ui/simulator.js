@@ -78,6 +78,30 @@ const STEP = {
    nothing happening. Fast enough to feel like a trace, slow enough to follow. */
 const RULE_MS = 95, HOP_MS = 210;
 
+/* Changing the packet no longer runs the trace — reported from the running
+   app: "cada vez que cambio un parámetro me dispara la simulación, y no".
+   But the verdict on screen describes the packet that was simulated, and the
+   form now describes another one — leaving the banner standing unmarked would
+   be the worst thing this screen can do: a confident answer to a question
+   nobody is asking any more. So the stage says so, dimmed under a bar that
+   names the way forward, until Simular (or Enter, or arriving afresh) runs
+   the packet the form actually describes. */
+function staleSim(){
+  stopSim();
+  const stage = $(".sim-stage");
+  if(!stage || !$("#lane .hop")) return;   /* nothing simulated yet — nothing is stale */
+  let bar = $("#sim-stale");
+  if(!bar){
+    bar = el("div","glass"); bar.id = "sim-stale";
+    bar.addEventListener("click", ()=>{ readForm(); runSim(); });
+    stage.appendChild(bar);
+  }
+  bar.innerHTML = `<svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span>${t("The packet changed — this trace is the old one. Press Simulate.",
+              "El paquete ha cambiado — este trazado es el anterior. Pulsa Simular.")}</span><kbd>↵</kbd>`;
+  $("#s-sim")?.classList.add("stale");
+}
+
 /* Leaving the screen stops the trace. It used to keep firing its chain of
    timers into a pane nobody was looking at. */
 export function stopSim(){
@@ -88,6 +112,7 @@ export function stopSim(){
 
 export function runSim(){
   stopSim();
+  $("#s-sim")?.classList.remove("stale");
   const p = {...packet};
   const res = evaluate(p);
   renderLane(res);
@@ -284,22 +309,22 @@ $("#sim-dir").addEventListener("click", e=>{
   if(packet.dir==="in"  ) packet.oif = "";
   if(packet.dir!=="in" && !packet.oif) packet.oif = "wan0";
   if(packet.dir!=="out" && !packet.iif) packet.iif = "wan0";
-  syncForm(); runSim();
+  syncForm(); staleSim();
 });
 $("#sim-flags").addEventListener("click", e=>{
   const b = e.target.closest("[data-flag]"); if(!b) return;
   const f = b.dataset.flag;
   packet.flags = packet.flags.includes(f) ? packet.flags.filter(x=>x!==f) : [...packet.flags, f];
-  syncForm(); runSim();
+  syncForm(); staleSim();
 });
-$("#opt-ct").addEventListener("click", ()=>{ packet.tracked = !packet.tracked; syncForm(); runSim(); });
-$("#opt-nat").addEventListener("click", ()=>{ packet.nat = !packet.nat; syncForm(); runSim(); });
-$("#opt-step").addEventListener("click", ()=>{ packet.step = !packet.step; syncForm(); runSim(); });
+$("#opt-ct").addEventListener("click", ()=>{ packet.tracked = !packet.tracked; syncForm(); staleSim(); });
+$("#opt-nat").addEventListener("click", ()=>{ packet.nat = !packet.nat; syncForm(); staleSim(); });
+$("#opt-step").addEventListener("click", ()=>{ packet.step = !packet.step; syncForm(); staleSim(); });
 $$("#s-sim input[type=text], #s-sim select").forEach(n=>{
-  n.addEventListener("change", ()=>{ readForm(); syncForm(); runSim(); });
+  n.addEventListener("change", ()=>{ readForm(); syncForm(); staleSim(); });
 });
 $(".sim-form .panel-hd .tb").addEventListener("click", ()=>{
-  Object.assign(packet, {...PRESETS.ssh}); syncForm(); runSim();
+  Object.assign(packet, {...PRESETS.ssh}); syncForm(); staleSim();
 });
 
 $("#run-sim").addEventListener("click", ()=>{ readForm(); runSim(); });
@@ -307,7 +332,7 @@ $$("[data-preset]").forEach(b=>b.addEventListener("click",()=>{
   Object.assign(packet, {...PRESETS[b.dataset.preset], flags:[...PRESETS[b.dataset.preset].flags]});
   $$("[data-preset]").forEach(x=>x.style.cssText="");
   b.style.cssText = "color:var(--aqua);border-color:var(--aqua-line);background:var(--aqua-wash)";
-  syncForm(); runSim();
+  syncForm(); staleSim();
 }));
 document.addEventListener("keydown",e=>{
   const onSim = $("#s-sim").classList.contains("on");
