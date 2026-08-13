@@ -89,13 +89,26 @@ const QUERIES = [
   '"log prefix" "group" extension:nft',
 ];
 
+/* The environment first, git's credential store second. The store only
+ * answers on a machine that talks to GitHub over https; this one pushes over
+ * ssh, so `git credential fill` had nothing — and worse than nothing, because
+ * with no helper git turns to the terminal and asks, which in a script is a
+ * prompt nobody is watching. GIT_TERMINAL_PROMPT=0 makes that a fast failure
+ * instead, and the error says both ways out. */
 const token = () => {
-  const out = execFileSync("git", ["credential", "fill"], {
-    input: "protocol=https\nhost=github.com\n\n", encoding: "utf8",
-  });
-  const m = out.match(/^password=(.*)$/m);
-  if (!m) throw new Error("no github credential to search with");
-  return m[1];
+  const env = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  if (env) return env.trim();
+  try {
+    const out = execFileSync("git", ["credential", "fill"], {
+      input: "protocol=https\nhost=github.com\n\n", encoding: "utf8",
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "true" },
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+    const m = out.match(/^password=(.+)$/m);
+    if (m) return m[1];
+  } catch { /* no helper, or it had nothing for github.com */ }
+  throw new Error(
+    "no github credential to search with — export GH_TOKEN, or store an https credential for github.com");
 };
 
 const api = async (url, tok) => {
