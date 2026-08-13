@@ -13,12 +13,14 @@
  * ruleset, three other screens want it too, and it lives with its kind in
  * core/mentions.js now.
  */
-import { MODEL, UID, VNAME, ruleLine } from "../core/model.js";
+import { MODEL, R, UID, VNAME, ruleLine } from "../core/model.js";
 import { evaluate, PRESETS, packet } from "../core/simulate.js";
 import { onModelChange } from "../core/bus.js";
 import { ifaceNames } from "../core/mentions.js";
+import { prescribe } from "../core/prescribe.js";
 import { t, lang } from "../i18n.js";
 import { $, $$, esc, el, cssEsc, highlight, go } from "./shell.js";
+import { edit } from "./history.js";
 
 /* ── render + animate ── */
 const lane = $("#lane"), traceEl = $("#trace"), pkt = $("#pkt"), vb = $("#vb");
@@ -117,7 +119,7 @@ export function runSim(){
   const res = evaluate(p);
   renderLane(res);
   traceEl.innerHTML = "";
-  vb.classList.remove("show");
+  vb.classList.remove("show", "has-fix");
   pkt.style.opacity = "0";
   $$(".rule").forEach(r=>r.classList.remove("trace","faded","hit"));
 
@@ -222,6 +224,31 @@ export function runSim(){
           `Not walked: ${res.parked.map(x=>`<code>${esc(x)}</code>`).join(", ")} ${res.parked.length===1?"is":"are"} dormant, so ${res.parked.length===1?"its":"their"} chains are not registered and no packet enters them.`,
           `Sin recorrer: ${res.parked.map(x=>`<code>${esc(x)}</code>`).join(", ")} ${res.parked.length===1?"está":"están"} dormant, así que sus cadenas no están registradas y ningún paquete entra en ellas.`)}</span>
       </div>` : "";
+    /* The banner ends a thought — "dropped, because rule 12". This completes
+       it: the one rule that would change that, and where it goes. Only on a
+       negative verdict, only when there is a rule to propose; derived from this
+       same trace by core/prescribe.js, never guessed, and honest when the
+       trace it came from was unsure. The button proves it rather than claiming
+       it — inserting the rule re-runs the sim, and the banner repaints. */
+    let fix = "";
+    if(!ok){
+      const rx = prescribe(p);
+      if(rx && !rx.already){
+        const where = rx.blocker.policy
+          ? t(`at the end of ${loc}, before its <code>policy ${rx.blocker.policy}</code>`,
+              `al final de ${loc}, antes de su <code>policy ${rx.blocker.policy}</code>`)
+          : t(`in ${loc}, before rule ${rx.blocker.i+1}`,
+              `en ${loc}, antes de la regla ${rx.blocker.i+1}`);
+        fix = `<div class="vb-fix">
+          <div class="vb-fix-t">${t("To accept this packet, add","Para aceptar este paquete, añade")}
+            <code>${esc(rx.rule)}</code> ${where}.</div>
+          ${!rx.sure ? `<div class="vb-fix-note">${t(
+            "Derived from a trace that assumed part of the path — check it before you trust it.",
+            "Derivado de una traza que asumió parte del camino — compruébalo antes de fiarte.")}</div>` : ""}
+          <button class="tb accent" id="vb-fix-add">${t("Add it and re-simulate","Añadirla y re-simular")}</button>
+        </div>`;
+      }
+    }
     $("#vb-why").innerHTML = (!ch
       ? t("This ruleset has no chains, so nothing looks at the packet at all. Import one, or draw a chain on the canvas.",
           "Este ruleset no tiene ninguna cadena, así que nada mira el paquete. Importa uno, o dibuja una cadena en el lienzo.")
@@ -230,7 +257,18 @@ export function runSim(){
           `Ninguna regla de ${loc} ha coincidido — el paquete cae a la política de la cadena.`)
       : t(`Matched rule ${res.final.i+1} in ${loc}: <code>${esc(ruleLine(res.final.r))}</code>`,
           `Coincide la regla ${res.final.i+1} de ${loc}: <code>${esc(ruleLine(res.final.r))}</code>`))
-      + guessed + parked;
+      + guessed + parked + fix;
+    vb.classList.toggle("has-fix", !!fix);
+    /* Wired after the innerHTML that creates it. edit() puts the change through
+       history, so Ctrl+Z takes it back out; then a fresh run repaints. */
+    $("#vb-fix-add")?.addEventListener("click", ()=>{
+      const rx = prescribe(p);
+      if(!rx || rx.already) return;
+      edit(t("add accept rule","añadir regla accept"), ()=>{
+        rx.chain.rules.splice(rx.at, 0, R(rx.rule.replace(/\s+accept$/,""), "accept"));
+      });
+      readForm(); runSim();
+    });
     vb.classList.toggle("unsure", !res.sure);
     vb.classList.add("show");
     const n = traceEl.querySelectorAll(".tr").length-1;

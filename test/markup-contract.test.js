@@ -24,7 +24,7 @@ const ids = new Set([...html.matchAll(/\bid="([\w-]+)"/g)].map((m) => m[1]));
 
 /* Elements the code creates at runtime rather than finding in the markup. */
 const CREATED = new Set([
-  "toast", "step-bar", "step-go", "step-n", "step-all", "sim-stale",
+  "toast", "step-bar", "step-go", "step-n", "step-all", "sim-stale", "vb-fix-add",
   "props-dock", "mm-vp", "flow-layer", "runtime-error",
   "rule-on", "rule-push", "elem-add",
 ]);

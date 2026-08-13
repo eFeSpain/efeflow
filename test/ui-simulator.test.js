@@ -127,3 +127,33 @@ test("every choice in the interface picker says what it is", async () => {
   click('.rb[data-go="dash"]');
   await until(() => !$("#s-sim").classList.contains("on"));
 });
+
+/* ── the inverse simulator: propose a fix, and prove it ───────────────────
+   A negative verdict grows a prescription in the banner; taking it must make
+   the very next run accept the packet. That is the whole claim, driven end to
+   end: read the DROP, click the fix, watch the banner turn to ACCEPT. */
+test("a dropped packet is offered a rule that makes it accepted", async () => {
+  await boot();
+  await importFixture();
+  enterSim();
+  await until(() => $("#vb").classList.contains("show"), { timeout: 8000 });
+
+  /* the invalid preset is dropped by the flawed fixture. Choosing it stales
+     the trace rather than re-running (that is the other recent fix), so Run is
+     what actually simulates the new packet. */
+  click('[data-preset="invalid"]');
+  click("#run-sim");
+  await until(() => $("#vb-txt").textContent.trim() === "DROP", { timeout: 8000 });
+
+  const fix = await until(() => $("#vb-fix-add"), { timeout: 4000 });
+  assert.ok(fix, "a DROP verdict must offer the rule that would accept it");
+  assert.match($(".vb-fix-t").textContent, /accept/, "and name the rule it proposes");
+
+  click("#vb-fix-add");
+  await until(() => $("#vb-txt").textContent.trim() === "ACCEPT", { timeout: 8000 });
+  assert.equal($("#vb-txt").textContent.trim(), "ACCEPT",
+    "taking the proposed rule must make the same packet accepted");
+
+  click('.rb[data-go="dash"]');
+  await until(() => !$("#s-sim").classList.contains("on"));
+});
