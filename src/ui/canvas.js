@@ -303,16 +303,29 @@ export function drawWires(){
     const A = $(`.chain[data-chain="${cssEsc(a)}"]`), B = $(`.chain[data-chain="${cssEsc(b)}"]`);
     if(!A||!B) return;
     const hot = HOT.edges.has(a+">"+b) || HOT.edges.has(b+">"+a);
-    const left = A.offsetLeft + A.offsetWidth/2 <= B.offsetLeft + B.offsetWidth/2;
-    const x1 = left ? A.offsetLeft + A.offsetWidth : A.offsetLeft;
-    const y1 = A.offsetTop + A.offsetHeight/2;
-    const x2 = left ? B.offsetLeft : B.offsetLeft + B.offsetWidth;
-    const y2 = B.offsetTop + B.offsetHeight/2;
-    const dx = Math.max(46, Math.abs(x2-x1)*.55) * (left ? 1 : -1);
+    const cxA = A.offsetLeft + A.offsetWidth/2, cxB = B.offsetLeft + B.offsetWidth/2;
     const cls = hot ? "act" : jump ? "jump" : "";
     const marker = hot ? "wm-act" : jump ? "wm-jump" : "wm";
-    out += `<path class="${cls}" marker-end="url(#${marker})"`
-         + ` d="M${x1} ${y1} C${x1+dx} ${y1} ${x2-dx} ${y2} ${x2} ${y2}"`
+    let d;
+    /* A parent and the chain it jumps to usually share a column — the child is
+       hung directly under it. Loop out the right edge and back into the left and
+       the wire crosses everything between them; drop it straight down instead. */
+    if(Math.abs(cxA - cxB) < 40){
+      const down = B.offsetTop >= A.offsetTop;
+      const y1 = down ? A.offsetTop + A.offsetHeight : A.offsetTop;
+      const y2 = down ? B.offsetTop : B.offsetTop + B.offsetHeight;
+      const dy = Math.max(28, Math.abs(y2 - y1) * .5) * (down ? 1 : -1);
+      d = `M${cxA} ${y1} C${cxA} ${y1+dy} ${cxB} ${y2-dy} ${cxB} ${y2}`;
+    } else {
+      const left = cxA <= cxB;
+      const x1 = left ? A.offsetLeft + A.offsetWidth : A.offsetLeft;
+      const y1 = A.offsetTop + A.offsetHeight/2;
+      const x2 = left ? B.offsetLeft : B.offsetLeft + B.offsetWidth;
+      const y2 = B.offsetTop + B.offsetHeight/2;
+      const dx = Math.max(46, Math.abs(x2-x1)*.55) * (left ? 1 : -1);
+      d = `M${x1} ${y1} C${x1+dx} ${y1} ${x2-dx} ${y2} ${x2} ${y2}`;
+    }
+    out += `<path class="${cls}" marker-end="url(#${marker})" d="${d}"`
          + `${jump && !hot?' stroke-dasharray="4 5"':''}/>`;
   });
   svg.innerHTML = out;
