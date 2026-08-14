@@ -23,6 +23,8 @@ import { UI } from "./state.js";
 /* Where each chain sits, and how many lanes deep the rail had to go. Nothing
    outside this file has an opinion about either. */
 let POS = {}, LANES = {};
+/* The wire plan, cached from the last renderChains — see there for why. */
+let _wires = [];
 
 /* ══ CANVAS · chains anchored at (hook, priority) ═══════════════════════ */
 /* Left to right in the order a packet meets them. `ingress` and `egress` are
@@ -161,6 +163,10 @@ export function renderChains(){
       "No chains yet — add one, or open a ruleset to read.",
       "Aún no hay cadenas — añade una, o abre un ruleset para leerlo."))}</div>`;
   const live = reachable(MODEL.chains);
+  /* The wire plan depends on the model, not on where the cards sit — so it is
+     computed once here, where every model change lands, and reused by drawWires
+     through a drag or a resize instead of being rebuilt on every pointermove. */
+  _wires = wirePlan(MODEL.chains);
   MODEL.chains.forEach(ch=>{
     const p = POS[UID(ch)]; if(!p) return;
     /* a base chain in a dormant table is never registered with netfilter, so
@@ -293,7 +299,7 @@ export function drawWires(){
     `<marker id="${id}" markerWidth="8" markerHeight="8" refX="6.2" refY="3" orient="auto">
        <path d="M0 0 6 3 0 6z"/></marker>`).join("")}</defs>`;
   /* straight from the DOM, so a card being dragged pulls its wires with it */
-  wirePlan(MODEL.chains).forEach(([a,b,jump])=>{
+  _wires.forEach(([a,b,jump])=>{
     const A = $(`.chain[data-chain="${cssEsc(a)}"]`), B = $(`.chain[data-chain="${cssEsc(b)}"]`);
     if(!A||!B) return;
     const hot = HOT.edges.has(a+">"+b) || HOT.edges.has(b+">"+a);
@@ -311,11 +317,18 @@ export function drawWires(){
   });
   svg.innerHTML = out;
 }
+/* A drag fires pointermove many times a frame and a resize fires in bursts;
+   coalesce to one repaint per frame rather than one per event. */
+let _wireRaf = 0;
+export function drawWiresSoon(){
+  if(_wireRaf) return;
+  _wireRaf = requestAnimationFrame(()=>{ _wireRaf = 0; drawWires(); });
+}
 requestAnimationFrame(drawWires);
 /* Only the wires. The topology screen also redraws on a resize, and it says so
    itself — a canvas that reaches across to repaint another screen is a wire
    that has to be cut before either can be a file of its own. */
-window.addEventListener("resize", () => drawWires());
+window.addEventListener("resize", drawWiresSoon);
 
 /* minimap mirrors the real chain positions and the real viewport */
 function renderMinimap(){
@@ -375,7 +388,7 @@ $("#mm").addEventListener("pointerdown", e=>{
     const y = Math.max(46, e.clientY/UI.zoom - d.dy);
     d.node.style.left = x + "px";
     d.node.style.top  = y + "px";
-    drawWires();
+    drawWiresSoon();
   });
 
   const end = ()=>{
