@@ -40,6 +40,29 @@ test("the run reaches a verdict", async () => {
   assert.ok($("#vb-why").textContent.trim().length > 10, "the verdict should explain itself");
 });
 
+/* The trace, the verdict and the fix are built with t() at simulate time and
+   inserted as markup, so applyLang (which only swaps data-t) used to leave them
+   in the language they were run in. A language switch redoes the run. */
+test("the verdict block follows a language switch", async () => {
+  await boot();
+  await importFixture();
+  enterSim();
+  await until(() => $("#vb").classList.contains("show"), { timeout: 8000 });
+
+  const why = () => $("#vb-why").textContent.trim();
+  const first = why();
+  const other = $$("#lang [data-lang]").find((b) => !b.classList.contains("on"));
+  click(other);
+  await until(() => $("#vb").classList.contains("show") && why() !== first, { timeout: 8000 });
+  const switched = why();
+  assert.notEqual(switched, first, "the explanation stayed in the language it was run in");
+
+  const back = $$("#lang [data-lang]").find((b) => !b.classList.contains("on"));
+  click(back);
+  await until(() => $("#vb").classList.contains("show") && why() === first, { timeout: 8000 });
+  assert.equal(why(), first, "and it comes back when the language does");
+});
+
 test("the step counter is written, which is where the shadowed helper threw", async () => {
   await boot();
   await importFixture();

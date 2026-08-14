@@ -18,7 +18,7 @@ import { evaluate, PRESETS, packet } from "../core/simulate.js";
 import { onModelChange } from "../core/bus.js";
 import { ifaceNames } from "../core/mentions.js";
 import { prescribe } from "../core/prescribe.js";
-import { t, lang } from "../i18n.js";
+import { t, lang, onLangChange } from "../i18n.js";
 import { $, $$, esc, el, cssEsc, highlight, go } from "./shell.js";
 import { edit } from "./history.js";
 import { litPath, clearLit } from "./canvas.js";
@@ -387,3 +387,11 @@ document.addEventListener("keydown",e=>{
 });
 fillInterfaces(); syncForm();
 onModelChange(fillInterfaces);
+/* The trace, the verdict and the fix suggestion are built with t() at the
+   moment you simulate and dropped in as markup, so applyLang — which only swaps
+   the static data-t attributes — leaves them in the language you ran them in.
+   Redo the run on a language switch so the whole screen speaks one language.
+   Only while the sim screen is up; arriving at it re-runs anyway. */
+onLangChange(() => {
+  if($("#s-sim")?.classList.contains("on") && $("#lane .hop")){ readForm(); runSim(); }
+});
