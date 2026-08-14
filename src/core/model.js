@@ -57,10 +57,15 @@ export const VNAME  = {accept:"ACCEPT",drop:"DROP",reject:"REJECT",
 export const fmtN = n => n>=1e9?(n/1e9).toFixed(1)+"G":n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(1)+"k":String(n);
 export const fmtB = n => n>=1e9?(n/1e9).toFixed(1)+" GB":n>=1e6?(n/1e6).toFixed(1)+" MB":n>=1e3?(n/1e3).toFixed(1)+" kB":n+" B";
 
-/* A rule comment is held as plain text — the parser unescapes it on the way in
-   — so every writer has to escape it on the way out or a comment with a quote
-   or a backslash is nft the preflight rejects; a newline would end the rule. */
-export const cmtEsc = s => String(s ?? "").replace(/[\r\n]+/g, " ").replace(/([\\"])/g, "\\$1");
+/* A rule comment is held as plain text; this makes it into an nft comment body.
+   Measured against nft 1.1.3: a comment string cannot hold a double quote at all
+   — `\"` is a syntax error, not an escape — so a quote is dropped rather than
+   emitted as nft the preflight would reject. A backslash is fine once doubled,
+   and a newline would end the statement, so it becomes a space. */
+export const cmtEsc = s => String(s ?? "")
+  .replace(/[\r\n]+/g, " ")
+  .replace(/"/g, "")
+  .replace(/\\/g, "\\\\");
 /* the rule as nft source, comment and all — the one place that phrase lives */
 export const ruleText = r => ruleLine(r) + (r.cmt ? ` comment "${cmtEsc(r.cmt)}"` : "");
 

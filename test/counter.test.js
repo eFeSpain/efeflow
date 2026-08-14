@@ -24,18 +24,21 @@ import { ruleLine, cmtEsc } from "../src/core/model.js";
 /** parse it, write it back, and insist on getting the same rule. */
 const trip = (src) => ruleLine(parseRule(src));
 
-/* A comment is held as plain text and escaped on the way out — a quote or a
-   backslash in it must survive the round trip and come back as nft that loads. */
-test("a comment with a quote or backslash round-trips and stays loadable", () => {
+/* A comment is held as plain text and turned into a loadable comment body on the
+   way out. Measured on nft 1.1.3: a backslash is doubled and survives, but a
+   double quote cannot live in an nft comment at all (`\"` is a syntax error, not
+   an escape), so it is dropped rather than emitted as nft the preflight rejects. */
+test("a backslash comment round-trips; a quote is dropped, not escaped", () => {
   for (const src of [
-    'tcp dport 22 accept comment "he said \\"hi\\""',
     'ip saddr 1.1.1.1 drop comment "path C:\\\\tmp"',
     'accept comment "plain"',
   ]) {
     const r = parseRule(src);
     assert.equal(ruleLine(r) + (r.cmt ? ` comment "${cmtEsc(r.cmt)}"` : ""), src, src);
   }
-  /* the escaped quote is stored as a bare quote, not a backslash-quote */
+  assert.equal(cmtEsc('he said "hi"'), "he said hi", "nft cannot hold a quote in a comment");
+  assert.equal(cmtEsc("path C:\\tmp"), "path C:\\\\tmp", "a backslash is doubled");
+  /* the parser still reads what it is handed, unescaping a backslash-quote */
   assert.equal(parseRule('accept comment "a\\"b"').cmt, 'a"b');
 });
 
