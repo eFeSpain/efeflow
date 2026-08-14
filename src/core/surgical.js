@@ -37,9 +37,9 @@
  * apply that always works.
  */
 import { pairChain, chainKey } from "./sync.js";
-import { ruleLine } from "./model.js";
+import { ruleText } from "./model.js";
 
-const text = (r) => ruleLine(r) + (r.cmt ? ` comment "${r.cmt}"` : "");
+const text = ruleText;
 
 /** Why the whole-table apply is still the one to use. */
 const no = (why, detail) => ({ ok: false, why, detail });

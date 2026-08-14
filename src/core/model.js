@@ -57,6 +57,13 @@ export const VNAME  = {accept:"ACCEPT",drop:"DROP",reject:"REJECT",
 export const fmtN = n => n>=1e9?(n/1e9).toFixed(1)+"G":n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(1)+"k":String(n);
 export const fmtB = n => n>=1e9?(n/1e9).toFixed(1)+" GB":n>=1e6?(n/1e6).toFixed(1)+" MB":n>=1e3?(n/1e3).toFixed(1)+" kB":n+" B";
 
+/* A rule comment is held as plain text — the parser unescapes it on the way in
+   — so every writer has to escape it on the way out or a comment with a quote
+   or a backslash is nft the preflight rejects; a newline would end the rule. */
+export const cmtEsc = s => String(s ?? "").replace(/[\r\n]+/g, " ").replace(/([\\"])/g, "\\$1");
+/* the rule as nft source, comment and all — the one place that phrase lives */
+export const ruleText = r => ruleLine(r) + (r.cmt ? ` comment "${cmtEsc(r.cmt)}"` : "");
+
 /* verdict phrase as it appears in real nft syntax */
 export function verdictText(r){
   if(r.implicit)           return "";   /* imported rule that falls through */

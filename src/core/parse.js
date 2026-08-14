@@ -8,7 +8,7 @@
    counter each closed their table early, so every chain below them was filed
    under a table that did not exist. Whatever we cannot model, we keep as text
    and put back where it was. */
-import { ruleLine, UID } from './model.js';
+import { ruleLine, UID, cmtEsc } from './model.js';
 import { generate } from './generate.js';
 import { diffLines } from './diff.js';
 import { readPriority } from './priority.js';
@@ -671,7 +671,10 @@ export function parseRule(line){
   let ctr = false, pkts = 0, bytes = 0, cmt = null;
 
   const c = expr.match(/\bcomment\s+"((?:[^"\\]|\\.)*)"\s*$/);
-  if(c){ cmt = c[1]; expr = expr.slice(0, c.index).trim(); }
+  /* Held as plain text: `\"`→`"`, `\\`→`\`. The model kept the escaped form,
+     so a UI-typed comment (plain) and an imported one (escaped) went out under
+     two different rules; now the model is plain and every writer escapes. */
+  if(c){ cmt = c[1].replace(/\\(["\\])/g, "$1"); expr = expr.slice(0, c.index).trim(); }
 
   /* `counter` is a statement the rule either has or does not; the packet and
      byte figures are statistics it carries. Inferring the first from the
@@ -820,7 +823,7 @@ export function roundTrip(text, parsed){
   });
 
   const emitted = parsed.chains.flatMap(ch=>ch.rules.map(r=>
-    normalise(ruleLine(r) + (r.cmt ? ` comment "${r.cmt}"` : ""))));
+    normalise(ruleLine(r) + (r.cmt ? ` comment "${cmtEsc(r.cmt)}"` : ""))));
 
   return compare(srcRules, emitted);
 }

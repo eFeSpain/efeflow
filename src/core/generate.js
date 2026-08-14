@@ -10,7 +10,7 @@
  * read off a host and written back out compares line for line. That is what
  * makes verify() in parse.js able to make a claim about the whole file rather
  * than only about its rules. */
-import { MODEL, ruleLine, UID } from "./model.js";
+import { MODEL, ruleLine, UID, cmtEsc } from "./model.js";
 import { PROJECT } from "./project.js";
 
 /* The set body, in the order it was read. `type`, `flags` and `elements` are
@@ -250,7 +250,7 @@ export function generateWithMap(model = MODEL, opts = {}) {
         extra.filter((l) => !/^comment\s/.test(l)).forEach((l) => put(`\t\t${l}`));
         ch.rules.forEach((r, i) => {
           if (!r.on) return;
-          put(`\t\t${ruleLine(r)}${r.cmt ? ` comment "${r.cmt}"` : ""}`, { uid: UID(ch), i });
+          put(`\t\t${ruleLine(r)}${r.cmt ? ` comment "${cmtEsc(r.cmt)}"` : ""}`, { uid: UID(ch), i });
         });
       }
       put("\t}");

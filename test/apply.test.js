@@ -44,6 +44,14 @@ test("nothing is applied before there is a way back", async () => {
   assert.equal(r.backup, "table inet filter {\n}\n", "the ruleset it would go back to");
 });
 
+test("the result says how long the host's timer already ran before the panel drew", async () => {
+  const api = fake({ arm: ok("backup") });
+  const r = await applyWithNet({ ruleset: "x", target: TARGET, seconds: 60, api });
+  assert.equal(typeof r.elapsed, "number",
+    "the countdown subtracts it, so the window shown is what the host actually has left");
+  assert.ok(r.elapsed >= 0 && r.elapsed <= 5, `an instant mock should be ~0, got ${r.elapsed}`);
+});
+
 test("a host that cannot be armed is a host that is not touched", async () => {
   const api = fake({ arm: no("sudo: a password is required") });
   const r = await applyWithNet({ ruleset: "x", target: TARGET, seconds: 60, api });

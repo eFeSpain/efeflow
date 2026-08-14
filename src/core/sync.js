@@ -15,11 +15,11 @@
  * without one — anything typed here rather than read from a host — are lined
  * up by text within their chain, in order, which is the same alignment the
  * round-trip check uses and is right exactly as often. */
-import { ruleLine, UID } from "./model.js";
+import { ruleLine, UID, ruleText } from "./model.js";
 import { diffLines } from "./diff.js";
 
 const key = (ch) => `${ch.table}/${ch.id}`;
-const text = (r) => ruleLine(r) + (r.cmt ? ` comment "${r.cmt}"` : "");
+const text = ruleText;
 
 /**
  * Pair one chain's rules with the host's.

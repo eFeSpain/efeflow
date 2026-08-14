@@ -19,10 +19,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseRule, normalise, verify } from "../src/core/parse.js";
-import { ruleLine } from "../src/core/model.js";
+import { ruleLine, cmtEsc } from "../src/core/model.js";
 
 /** parse it, write it back, and insist on getting the same rule. */
 const trip = (src) => ruleLine(parseRule(src));
+
+/* A comment is held as plain text and escaped on the way out — a quote or a
+   backslash in it must survive the round trip and come back as nft that loads. */
+test("a comment with a quote or backslash round-trips and stays loadable", () => {
+  for (const src of [
+    'tcp dport 22 accept comment "he said \\"hi\\""',
+    'ip saddr 1.1.1.1 drop comment "path C:\\\\tmp"',
+    'accept comment "plain"',
+  ]) {
+    const r = parseRule(src);
+    assert.equal(ruleLine(r) + (r.cmt ? ` comment "${cmtEsc(r.cmt)}"` : ""), src, src);
+  }
+  /* the escaped quote is stored as a bare quote, not a backslash-quote */
+  assert.equal(parseRule('accept comment "a\\"b"').cmt, 'a"b');
+});
 
 /* ── the counter goes back where it came from ───────────────────────────── */
 

@@ -12,7 +12,7 @@
 import * as nativeApi from "./native.js";
 import { parseNft } from "./core/parse.js";
 import { applyCounters, syncReport, applyPlan, addressable } from "./core/sync.js";
-import { ruleLine } from "./core/model.js";
+import { ruleLine, ruleText } from "./core/model.js";
 
 const read = async (target, api) => {
   const r = await api.nftList(target);
@@ -89,7 +89,7 @@ export async function pushRule({ model, chain, index, op, target, api = nativeAp
     table: chain.table,
     chain: chain.id,
     handle,
-    rule: op === "replace" ? ruleLine(rule) + (rule.cmt ? ` comment "${rule.cmt}"` : "") : "",
+    rule: op === "replace" ? ruleText(rule) : "",
   }, target);
 
   return out.ok

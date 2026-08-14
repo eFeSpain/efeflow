@@ -767,7 +767,11 @@ $("#ap-go")?.addEventListener("click", async ()=>{
      quietly restores. The net is up. So the countdown runs, and it says what
      is happening rather than freezing. */
   if(!r.ok && r.stage === "lockout"){
-    applied();
+    /* Do NOT call applied() here: it sets the diff baseline to the model, which
+       says "what is here is now what is running there". In a lockout that is the
+       one thing we do not know — the reply never came. The baseline stays where
+       it was, so the drawer keeps showing the change as unconfirmed, which is
+       the truth. */
     showApplyStage(true);
     $("#ap-clock").style.color = "var(--v-reject)";
     /* Keep would have to reach the host to confirm, and the connection this
@@ -775,7 +779,7 @@ $("#ap-go")?.addEventListener("click", async ()=>{
        reason it might still work later; leave keep, but the honest path here
        is to do nothing. */
     $("#ap-keep").disabled = false;
-    APPLY.left = r.seconds;
+    APPLY.left = Math.max(0, r.seconds - (r.elapsed || 0));
     $("#ap-count-t").textContent = t(
       `The connection to ${describe()} dropped while applying — which is what a lockout looks like. If the ruleset took, ${describe()} restores itself when this reaches zero. Doing nothing is the safe move; you do not need this window.`,
       `La conexión con ${describe()} se cortó al aplicar — que es justo lo que parece un lockout. Si el ruleset entró, ${describe()} se restaura solo cuando esto llegue a cero. No hacer nada es lo seguro; no necesitas esta ventana.`);
@@ -808,7 +812,7 @@ $("#ap-go")?.addEventListener("click", async ()=>{
     : t(`Applied whole to ${describe()} — counters in those tables start again`,
         `Aplicado entero en ${describe()} — los contadores de esas tablas empiezan de nuevo`));
   if(r.armed){
-    APPLY.left = r.seconds;
+    APPLY.left = Math.max(0, r.seconds - (r.elapsed || 0));
     $("#ap-count-t").textContent = t(
       `Applied to ${describe()}. It rolls back to what it was running unless you keep it.`,
       `Aplicado en ${describe()}. Volverá a lo que tenía salvo que lo conserves.`);

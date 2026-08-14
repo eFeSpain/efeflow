@@ -5,7 +5,7 @@
  * This module is the part that has to touch the DOM. */
 
 import {
-  MODEL, R, UID, chainOf, blankRuleset, VCOLOR, VNAME, ruleLine,
+  MODEL, R, UID, chainOf, blankRuleset, VCOLOR, VNAME, ruleLine, cmtEsc,
 } from "./core/model.js";
 import { generate, generateWithMap } from "./core/generate.js";
 import { parseNft, normalise } from "./core/parse.js";
@@ -249,7 +249,7 @@ function codeLines(mode){
     MODEL.chains.forEach(ch=>{
       L.push(`flush chain ${ch.table} ${ch.id}`);
       ch.rules.filter(r=>r.on).forEach(r=>
-        L.push(`add rule ${ch.table} ${ch.id} ${ruleLine(r)}${r.cmt?` comment "${r.cmt}"`:""}`));
+        L.push(`add rule ${ch.table} ${ch.id} ${ruleLine(r)}${r.cmt?` comment "${cmtEsc(r.cmt)}"`:""}`));
       L.push("");
     });
     if(L.at(-1)==="") L.pop();

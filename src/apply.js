@@ -50,7 +50,11 @@ export async function surgicalChanges({ model, target, tables, api = nativeApi }
  */
 export async function applyWithNet({ ruleset, target, seconds = 60, api = nativeApi }) {
   const net = seconds > 0;
-  let backup = null;
+  let backup = null, armedAt = 0;
+  /* The host's timer starts the moment it is armed, not when this returns, so
+     the seconds left when the panel finally draws a countdown are fewer than
+     the window — by however long the arm and the apply took. */
+  const elapsed = () => (armedAt ? Math.round((Date.now() - armedAt) / 1000) : 0);
 
   /* Whether this host already had a restore counting down before we touched
      it. `nft_arm` deliberately keeps an existing copy and only replaces the
@@ -65,6 +69,7 @@ export async function applyWithNet({ ruleset, target, seconds = 60, api = native
     if (!armed.ok)
       return { ok: false, stage: "arm", error: text(armed) };
     backup = armed.stdout;
+    armedAt = Date.now();
   }
 
   /* nft_apply validates before it writes and refuses without confirmation;
@@ -106,9 +111,9 @@ export async function applyWithNet({ ruleset, target, seconds = 60, api = native
        if the ruleset took, the host restores itself when the timer runs out,
        and doing nothing is now the safe move. */
     return { ok: false, stage: "lockout", error: text(applied),
-             armed: true, backup, seconds, wasArmed };
+             armed: true, backup, seconds, elapsed: elapsed(), wasArmed };
   }
-  return { ok: true, armed: net, backup, seconds };
+  return { ok: true, armed: net, backup, seconds, elapsed: elapsed() };
 }
 
 /* nft_apply runs `nft -c -f -` before it writes, and on a rejection returns a
