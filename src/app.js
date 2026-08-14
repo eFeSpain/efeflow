@@ -80,6 +80,11 @@ let CODE_VARIANT, BASELINE, DW_TAB, TOPO_MODE, PAL, PALI, TOURI;
    evaluates these modules directly rather than through a build. */
 const APP_VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
 
+/* the top-left badge carries the version beside BETA, from the same injected
+   source as the About panel — so bumping the version moves both at once */
+const betaBadge = $("#tb-beta");
+if(betaBadge) betaBadge.textContent = `${APP_VERSION} ${t("beta","beta")}`;
+
 /* the screens live at document root while authoring; dock them into the shell */
 $$(".screen").forEach(s=>$("#screens").appendChild(s));
 $$(".scrim").forEach(s=>document.body.appendChild(s));

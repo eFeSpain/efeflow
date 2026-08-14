@@ -11,6 +11,15 @@ test("the interface evaluates without throwing", async () => {
   assert.deepEqual(errors, [], "no error may escape during module evaluation");
 });
 
+test("the top-left badge carries the version beside beta", async () => {
+  await boot();
+  const badge = $("#tb-beta");
+  assert.ok(badge, "the header still has a beta badge");
+  assert.match(badge.textContent, /beta/i, "it still says beta");
+  assert.notEqual(badge.textContent.trim().toLowerCase(), "beta",
+    "and now a version sits in front of it, not beta on its own");
+});
+
 test("the boot splash is dismissed rather than left covering the app", async () => {
   const { win } = await boot();
   // main.js dismisses on a timer; the guard exposes the same entry point
