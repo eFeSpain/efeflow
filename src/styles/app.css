@@ -482,6 +482,21 @@ select{appearance:none;cursor:pointer;padding-right:26px;
 .chain.parked{border-style:dashed;border-color:rgba(240,193,60,.34);opacity:.72}
 .chain.parked:hover{opacity:1}
 .chip.parked{color:var(--warn);background:rgba(240,193,60,.12);border-color:rgba(240,193,60,.3)}
+/* A regular chain nobody jumps to is loaded and never entered — dead weight,
+   and it has to read as such rather than as part of the path. */
+.chain.unreachable{border-style:dashed;border-color:rgba(250,90,90,.3);opacity:.6}
+.chain.unreachable:hover{opacity:1}
+.chip.dead{color:var(--v-drop);background:rgba(250,90,90,.12);border-color:rgba(250,90,90,.3)}
+/* The chains a simulated packet entered, lit on the map the way its rule rows
+   are lit in the trace. */
+.chain.hot{border-color:var(--aqua-line);box-shadow:0 0 0 1px var(--aqua-line),0 0 30px -6px rgba(57,213,255,.5)}
+/* A jump or goto whose target does not exist lands nowhere; no wire carries it,
+   so the rule wears the break. */
+.rule.broken{box-shadow:inset 2px 0 0 var(--v-drop);background:rgba(250,90,90,.06)}
+.empty-canvas{
+  position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);
+  color:var(--t4);font:450 13px var(--sans);text-align:center;pointer-events:none;
+}
 .chain.focus{border-color:var(--aqua-line);box-shadow:0 0 0 1px var(--aqua-line),0 0 34px -6px rgba(57,213,255,.45),0 14px 40px -12px rgba(0,0,0,.8)}
 .chain-hd{display:flex;align-items:center;gap:7px;padding:9px 10px 9px 11px;border-bottom:1px solid var(--line)}
 .chain-hd .cn{font:600 12.5px var(--mono);letter-spacing:-.2px;flex:1;color:var(--t1)}
@@ -550,11 +565,19 @@ select{appearance:none;cursor:pointer;padding-right:26px;
 /* connectors */
 #wires{position:absolute;inset:0;pointer-events:none;z-index:6;overflow:visible}
 #wires path{fill:none;stroke:rgba(255,255,255,.13);stroke-width:1.5}
+#wires path.jump{stroke:rgba(255,255,255,.11)}
 #wires path.act{stroke:var(--aqua);stroke-width:2;filter:drop-shadow(0 0 6px rgba(57,213,255,.75));
   stroke-dasharray:5 7;animation:flow 1.1s linear infinite}
 @keyframes flow{to{stroke-dashoffset:-24}}
-#wires .cap{fill:rgba(255,255,255,.22)}
-#wires .cap.act{fill:var(--aqua)}
+/* arrowheads: a wire says which way the packet goes. Three, so path, jump and
+   the lit trace read apart. */
+#wires marker path{fill:rgba(255,255,255,.3)}
+#wires marker#wm-jump path{fill:rgba(255,255,255,.2)}
+#wires marker#wm-act path{fill:var(--aqua)}
+/* the wire key beside the verdict colours: solid is the path, dashed is a call */
+#legend .row.wk{color:var(--t4)}
+#legend .row.wk svg{width:22px;height:6px;flex:none}
+#legend .row.wk line{stroke:currentColor;stroke-width:1.5}
 
 /* canvas overlays */
 /* The tools and the verdict key travel together along the bottom edge. One

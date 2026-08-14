@@ -15,7 +15,7 @@ import { MODEL, UID, VCOLOR, VNAME, ruleLine, chainOf, fmtN, fmtB, jumpTarget } 
 import { NAME_PRIO } from "../core/priority.js";
 import { isDormant } from "../core/tables.js";
 import { findings, onRender, onModelChange } from "../core/bus.js";
-import { PATHS } from "../core/simulate.js";
+import { wirePlan, reachable } from "../core/topology.js";
 import { t } from "../i18n.js";
 import { $, $$, esc, el, cssEsc, highlight, toast, go } from "./shell.js";
 import { UI } from "./state.js";
@@ -156,13 +156,20 @@ UI.zoom = 1;
 const chainsEl = $("#chains");
 export function renderChains(){
   layout();
-  chainsEl.innerHTML = "";
+  chainsEl.innerHTML = MODEL.chains.length ? "" :
+    `<div class="empty-canvas">${esc(t(
+      "No chains yet — add one, or open a ruleset to read.",
+      "Aún no hay cadenas — añade una, o abre un ruleset para leerlo."))}</div>`;
+  const live = reachable(MODEL.chains);
   MODEL.chains.forEach(ch=>{
     const p = POS[UID(ch)]; if(!p) return;
     /* a base chain in a dormant table is never registered with netfilter, so
        this card is loaded and filtering nothing — it has to look like it */
     const parked = isDormant(MODEL, ch.table);
-    const node = el("div","chain"+(parked?" parked":""));
+    /* a regular chain nobody jumps to is loaded and never entered */
+    const dead = !ch.hook && !live.has(UID(ch));
+    const node = el("div","chain"+(parked?" parked":"")+(dead?" unreachable":"")
+                             +(HOT.nodes.has(UID(ch))?" hot":""));
     node.dataset.chain = UID(ch);
     node.style.left = p.x+"px";   /* the row comes from placeChains, after measuring */
     const polPill = ch.policy
@@ -179,6 +186,9 @@ export function renderChains(){
         ${parked?`<span class="chip parked" title="${esc(t(
             `${ch.table} is dormant — this chain is loaded and sees no packets`,
             `${ch.table} está dormant — esta cadena está cargada y no ve ningún paquete`))}">dormant</span>`:""}
+        ${dead?`<span class="chip dead" title="${esc(t(
+            "No hook and nothing jumps here — this chain is loaded and never entered",
+            "Sin hook y nadie salta aquí — esta cadena está cargada y no se entra nunca"))}">${t("unreachable","inalcanzable")}</span>`:""}
       </div>
       <div class="chain-rules"></div>
       <div class="chain-ft">
@@ -187,7 +197,12 @@ export function renderChains(){
       </div>`;
     const list = $(".chain-rules",node);
     ch.rules.forEach((r,i)=>{
-      const row = el("div","rule"+(r.on?"":" off"));
+      /* a jump or goto whose target is gone (or in another table) lands nowhere;
+         no wire is drawn for it, so the rule itself has to show it is broken */
+      const broken = (r.verdict==="jump"||r.verdict==="goto") && !jumpTarget(ch, r.to);
+      const row = el("div","rule"+(r.on?"":" off")+(broken?" broken":""));
+      if(broken) row.title = t(`${r.verdict} ${r.to||"?"} — no chain by that name in ${ch.table.split(" ")[0]} ${ch.table.split(" ").slice(1).join(" ")}`,
+                               `${r.verdict} ${r.to||"?"} — no hay ninguna cadena así en ${ch.table}`);
       row.dataset.chain = UID(ch); row.dataset.i = i;
       row.draggable = true;
       row.style.color = `var(${VCOLOR[r.verdict]})`;
@@ -229,52 +244,37 @@ const VORDER = ["accept","drop","reject","jump","goto","dnat","redirect","snat",
 function renderLegend(){
   const used = new Set(MODEL.chains.flatMap(c => c.rules.filter(r => r.on).map(r => r.verdict)));
   const rows = VORDER.filter(v => used.has(v));
+  /* the verdict colours, and — since the wires carry meaning too — what a solid
+     line and a dashed one each say */
+  const wireKey = MODEL.chains.some(c=>c.hook) ? `
+    <div class="row wk"><svg viewBox="0 0 22 6"><line x1="1" y1="3" x2="21" y2="3"/></svg>${t("packet path","recorrido")}</div>
+    <div class="row wk"><svg viewBox="0 0 22 6"><line x1="1" y1="3" x2="21" y2="3" stroke-dasharray="3 3"/></svg>${t("jump / goto","salto / goto")}</div>` : "";
   $("#legend").innerHTML = rows.map(v =>
-    `<div class="row" style="color:var(${VCOLOR[v]})"><i></i>${VNAME[v]}</div>`).join("");
-  $("#legend").style.display = rows.length ? "" : "none";
+    `<div class="row" style="color:var(${VCOLOR[v]})"><i></i>${VNAME[v]}</div>`).join("") + wireKey;
+  $("#legend").style.display = (rows.length || wireKey) ? "" : "none";
 }
 renderChains();
 onRender(()=>{ renderChains(); drawWires(); });
 
-/* connectors follow the real packet path + explicit jumps, both derived */
-/* The packet path, drawn — and it is the same path core/simulate.js walks, so
-   the screen and the trace cannot come to order the hooks differently.
- *
- * Two things were wrong with the pairs this replaces. `ingress` and `egress`
- * had columns of their own but nothing joining them to anything, so a netdev
- * chain sat beside the path rather than on it. And a pair only drew a wire
- * when both its hooks had chains, so an empty hook in the middle broke the
- * line: a ruleset with input and forward and no prerouting — which is most of
- * them — showed no wire between hooks at all. Consecutive here means the next
- * hook that has a chain, not the next one on the list. */
-function hookFlow(){
-  const has = h => MODEL.chains.some(c => c.hook === h);
-  const out = new Set();
-  for(const path of Object.values(PATHS)){
-    const live = path.flat().filter(has);
-    for(let i = 1; i < live.length; i++) out.add(live[i-1] + ">" + live[i]);
-  }
-  return [...out].map(k => k.split(">"));
+/* The wires and reachability are the model as a graph, with no DOM in them, so
+   they live in core/topology.js and are checked on their own. */
+
+/* The path a simulated packet took, mirrored onto the topology — the chains it
+   entered and the wires between them — set by the simulator and cleared when
+   the trace goes stale. Kept in the module so a re-render re-applies it. */
+let HOT = { nodes: new Set(), edges: new Set() };
+export function litPath(uids){
+  const list = [...new Set(uids)];
+  HOT = { nodes: new Set(list), edges: new Set() };
+  for(let i=1;i<list.length;i++){ HOT.edges.add(list[i-1]+">"+list[i]); HOT.edges.add(list[i]+">"+list[i-1]); }
+  $$(".chain").forEach(n=>n.classList.toggle("hot", HOT.nodes.has(n.dataset.chain)));
+  drawWires();
 }
-function links(){
-  const out = [];
-  const inHook = h => MODEL.chains.filter(c=>c.hook===h).sort((a,b)=>a.prio-b.prio);
-  /* within a hook, packets traverse chains in priority order */
-  Object.keys(HOOK_X).forEach(h=>{
-    const cs = inHook(h);
-    for(let i=1;i<cs.length;i++) out.push([UID(cs[i-1]), UID(cs[i]), false]);
-  });
-  /* between hooks, the last chain of one feeds the first of the next */
-  hookFlow().forEach(([a,b])=>{
-    const A = inHook(a).at(-1), B = inHook(b)[0];
-    if(A && B) out.push([UID(A), UID(B), false]);
-  });
-  /* explicit jumps are dashed — they are calls, not the packet path */
-  MODEL.chains.forEach(ch=> ch.rules.forEach(r=>{
-    const tgt = (r.verdict==="jump"||r.verdict==="goto") && jumpTarget(ch, r.to);
-    if(tgt && POS[UID(tgt)]) out.push([UID(ch), UID(tgt), true]);
-  }));
-  return out;
+export function clearLit(){
+  if(!HOT.nodes.size && !HOT.edges.size) return;
+  HOT = { nodes: new Set(), edges: new Set() };
+  $$(".chain").forEach(n=>n.classList.remove("hot"));
+  drawWires();
 }
 export function drawWires(){
   const svg = $("#wires");
@@ -282,19 +282,28 @@ export function drawWires(){
   const w = canvasW();
   svg.setAttribute("viewBox",`0 0 ${w} ${h}`);
   svg.setAttribute("width",String(w)); svg.setAttribute("height",String(h));
-  let out = "";
+  /* an arrowhead so a wire says which way the packet goes, not just that two
+     chains are joined; three of them, so a path, a jump and the lit trace read
+     apart at a glance */
+  let out = `<defs>${["wm","wm-jump","wm-act"].map(id=>
+    `<marker id="${id}" markerWidth="8" markerHeight="8" refX="6.2" refY="3" orient="auto">
+       <path d="M0 0 6 3 0 6z"/></marker>`).join("")}</defs>`;
   /* straight from the DOM, so a card being dragged pulls its wires with it */
-  links().forEach(([a,b,jump])=>{
+  wirePlan(MODEL.chains).forEach(([a,b,jump])=>{
     const A = $(`.chain[data-chain="${cssEsc(a)}"]`), B = $(`.chain[data-chain="${cssEsc(b)}"]`);
     if(!A||!B) return;
+    const hot = HOT.edges.has(a+">"+b) || HOT.edges.has(b+">"+a);
     const left = A.offsetLeft + A.offsetWidth/2 <= B.offsetLeft + B.offsetWidth/2;
     const x1 = left ? A.offsetLeft + A.offsetWidth : A.offsetLeft;
     const y1 = A.offsetTop + A.offsetHeight/2;
     const x2 = left ? B.offsetLeft : B.offsetLeft + B.offsetWidth;
     const y2 = B.offsetTop + B.offsetHeight/2;
     const dx = Math.max(46, Math.abs(x2-x1)*.55) * (left ? 1 : -1);
-    out += `<path d="M${x1} ${y1} C${x1+dx} ${y1} ${x2-dx} ${y2} ${x2} ${y2}"${jump?' stroke-dasharray="4 5"':''}/>`;
-    out += `<circle class="cap" cx="${x2}" cy="${y2}" r="3"/>`;
+    const cls = hot ? "act" : jump ? "jump" : "";
+    const marker = hot ? "wm-act" : jump ? "wm-jump" : "wm";
+    out += `<path class="${cls}" marker-end="url(#${marker})"`
+         + ` d="M${x1} ${y1} C${x1+dx} ${y1} ${x2-dx} ${y2} ${x2} ${y2}"`
+         + `${jump && !hot?' stroke-dasharray="4 5"':''}/>`;
   });
   svg.innerHTML = out;
 }

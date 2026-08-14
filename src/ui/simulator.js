@@ -21,6 +21,7 @@ import { prescribe } from "../core/prescribe.js";
 import { t, lang } from "../i18n.js";
 import { $, $$, esc, el, cssEsc, highlight, go } from "./shell.js";
 import { edit } from "./history.js";
+import { litPath, clearLit } from "./canvas.js";
 
 /* ── render + animate ── */
 const lane = $("#lane"), traceEl = $("#trace"), pkt = $("#pkt"), vb = $("#vb");
@@ -90,6 +91,7 @@ const RULE_MS = 95, HOP_MS = 210;
    the packet the form actually describes. */
 function staleSim(){
   stopSim();
+  clearLit();          /* the lit path on the topology is the old packet's too */
   const stage = $(".sim-stage");
   if(!stage || !$("#lane .hop")) return;   /* nothing simulated yet — nothing is stale */
   let bar = $("#sim-stale");
@@ -122,6 +124,9 @@ export function runSim(){
   vb.classList.remove("show", "has-fix");
   pkt.style.opacity = "0";
   $$(".rule").forEach(r=>r.classList.remove("trace","faded","hit"));
+  /* light the chains this packet entered, and the wires between them, on the
+     topology — the trace already marks the rule rows, this marks the map */
+  litPath(res.steps.map(h=>UID(h.chain)));
 
   const flat = [];
   res.steps.forEach(h=>{

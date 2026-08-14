@@ -152,7 +152,7 @@ be reproduced, it tells you which one before you commit to anything.
 ## ⚠ Beta
 
 It does the whole job today: import, prove, analyse, simulate, edit, apply,
-export. 1,053 automated assertions stand behind it, across the parser, the
+export. 1,068 automated assertions stand behind it, across the parser, the
 analyser, the packet evaluator and the interface itself.
 
 What it does not have much of is mileage — but it no longer has none. **4,337
@@ -384,7 +384,7 @@ write `accept`, not `aceptar`.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 1,053 assertions
+npm test             # 1,068 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 
 npx tauri build --no-bundle && npm run e2e   # drive the built app, not the source
