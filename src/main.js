@@ -2,6 +2,7 @@
    ambient flow on the canvas. */
 
 import "./app.js";
+import "./a11y.js";
 import { applyLang, t } from "./i18n.js";
 import * as native from "./native.js";
 import { probe } from "./target.js";

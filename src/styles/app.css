@@ -18,8 +18,11 @@
   --line-2:rgba(255,255,255,.11);
   --line-3:rgba(255,255,255,.17);
 
-  /* text steps walk toward the mark's #8FA6B5 tagline grey */
-  --t1:#E9EFF5;  --t2:#A6B6C3;  --t3:#75899A;  --t4:#4B5865;
+  /* text steps walk toward the mark's #8FA6B5 tagline grey. --t3 and --t4 were
+     below WCAG AA on the metadata they carry — rule indices, ruler ticks,
+     timestamps, placeholders — so they are lifted to ~4.5:1 and ~3:1 on --base
+     while staying on that same walk. */
+  --t1:#E9EFF5;  --t2:#A6B6C3;  --t3:#7E92A2;  --t4:#64727F;
 
   /* the trunk — the system's own voice: selection, live trace, focus */
   --aqua:#39D5FF;

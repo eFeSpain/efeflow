@@ -182,10 +182,11 @@ document.addEventListener("keydown",e=>{
 $("#omni-open").addEventListener("click",()=>go("open"));
 
 /* toggles are decorative-but-real */
+const aria = (node, on) => node.setAttribute("aria-checked", on ? "true" : "false");
 document.addEventListener("click",e=>{
-  const t=e.target.closest(".sw-toggle"); if(t) t.classList.toggle("on");
-  const s=e.target.closest(".seg button"); if(s) $$("button",s.parentElement).forEach(b=>b.classList.toggle("on",b===s));
-  const c=e.target.closest(".choice"); if(c) $$(".choice",c.parentElement).forEach(x=>x.classList.toggle("on",x===c));
+  const t=e.target.closest(".sw-toggle"); if(t){ t.classList.toggle("on"); aria(t, t.classList.contains("on")); }
+  const s=e.target.closest(".seg button"); if(s) $$("button",s.parentElement).forEach(b=>{ b.classList.toggle("on",b===s); aria(b, b===s); });
+  const c=e.target.closest(".choice"); if(c) $$(".choice",c.parentElement).forEach(x=>{ x.classList.toggle("on",x===c); aria(x, x===c); });
   const vt=e.target.closest(".val-tab"); if(vt) $$(".val-tab").forEach(x=>x.classList.toggle("on",x===vt));
   const si=e.target.closest(".set-item"); if(si) $$(".set-item").forEach(x=>x.classList.toggle("on",x===si));
   const dt=e.target.closest(".dw-tab"); if(dt) $$(".dw-tab").forEach(x=>x.classList.toggle("on",x===dt));
