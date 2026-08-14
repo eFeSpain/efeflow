@@ -39,7 +39,11 @@ export function v6(a) {
   const expand = (part) => {
     const out = [];
     for (const tok of part ? part.split(":") : []) {
-      if (tok === "") continue;
+      /* An empty token inside a non-empty half is a stray colon — `:::`, a
+         leading/trailing single `:`. Skipping it let `:::` parse to `::`, which
+         looksLikeAddr()/inCidr() then trusted. The `::` boundary is already
+         consumed by the split above, so a genuine gap never reaches here. */
+      if (tok === "") return null;
       if (tok.includes(".")) {
         const n = v4(tok);
         if (n === null) return null;

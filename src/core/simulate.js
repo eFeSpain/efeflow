@@ -732,8 +732,15 @@ export function evaluate(input){
     try{
     const hop = {chain:ch, evs:[], depth};
     steps.push(hop);
-    /* conntrack runs at -200 on the two hooks that have anything before them */
-    p.ctReady = !((ch.hook === "prerouting" || ch.hook === "output") && ch.prio < -200);
+    /* conntrack registers at priority -200 on prerouting and output, and
+       `ingress` runs before prerouting, so it is always pre-conntrack. Only a
+       base chain decides this: a regular chain has no hook and must inherit the
+       readiness of whichever base chain jumped into it — recomputing it there
+       read `!(false && …)` as true and let `ct state` evaluate in a raw chain as
+       if conntrack had already run. */
+    if(ch.hook)
+      p.ctReady = ch.hook !== "ingress" &&
+                  !((ch.hook === "prerouting" || ch.hook === "output") && ch.prio < -200);
     for(let i=0;i<ch.rules.length;i++){
       const r = ch.rules[i];
       if(!r.on){ hop.evs.push({r,i,st:"miss",note:"disabled"}); continue; }

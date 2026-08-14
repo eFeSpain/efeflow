@@ -12,7 +12,7 @@
  */
 import { MODEL, UID, ruleLine, VCOLOR } from "../core/model.js";
 import { OBJECT_FIELDS, OBJECT_TEMPLATE, OBJECT_KINDS,
-         readObject, editObject, refsToObject } from "../core/objects.js";
+         readObject, editObject, refsToObject, escapeRe } from "../core/objects.js";
 import { reservedName } from "../core/lint.js";
 import { t } from "../i18n.js";
 import { $, $$, esc, el, toast, go, select, openCtx, killCtx, highlight } from "./shell.js";
@@ -26,11 +26,28 @@ export const showSet = (i) => { SETSEL = i; };
    References are counted by scanning live rule expressions, so a set the
    ruleset stopped using reports zero the moment you delete the last rule. */
 SETSEL = 0;
-export function refsTo(name){
+/* `@blocklist` must not match inside `@blocklist_v6`, and a name is table-scoped
+   — so the reference is a whole word (`\b` after it fails against a following
+   word char like `_`) and, when a table is given, only that table's rules count.
+   A substring scan mangled both on rename and inflated the delete guard. */
+const refWord = name => "@" + escapeRe(name) + "\\b";
+
+/* The first `prefix_N` no set or object in this table already holds. Numbering
+   by count reused a live name after a create/delete/create, and nft refuses a
+   duplicate on load. */
+function freshName(prefix, table){
+  const taken = new Set([...MODEL.sets, ...MODEL.objects]
+    .filter(x => x.table === table).map(x => x.n ?? x.name));
+  let k = 1; while(taken.has(`${prefix}_${k}`)) k++;
+  return `${prefix}_${k}`;
+}
+export function refsTo(name, table){
+  const re = new RegExp(refWord(name));
   const out = [];
-  MODEL.chains.forEach(ch=> ch.rules.forEach((r,i)=>{
-    if(r.on && r.expr.includes("@"+name)) out.push({ch, r, i});
-  }));
+  MODEL.chains.forEach(ch=>{
+    if(table && ch.table !== table) return;
+    ch.rules.forEach((r,i)=>{ if(r.on && re.test(r.expr||"")) out.push({ch, r, i}); });
+  });
   return out;
 }
 /* A map's type reads `ipv4_addr : inet_service`. Held as one string it is
@@ -177,7 +194,7 @@ export function renderSets(){
   $("#set-count").textContent = total;
 
   const setRows = MODEL.sets.map((s,i)=>{
-    const n = refsTo(s.n).length;
+    const n = refsTo(s.n, s.table).length;
     return `<div class="set-item${i===SETSEL?" on":""}${n?"":" warnish"}" data-si="${i}">
       <div class="ic"><svg class="ico sm" viewBox="0 0 24 24"><path d="${setIcon(s)}"/>${
         (s.f||"").includes("timeout")?'<circle cx="12" cy="12" r="9"/>':""}</svg></div>
@@ -215,7 +232,7 @@ export function renderSets(){
     return;
   }
 
-  const rs = refsTo(s.n);
+  const rs = refsTo(s.n, s.table);
   $("#ref-count").textContent = rs.length;
   /* A set's name, type and flags are as editable as its contents. They were
      read-only, which made a set you had just created impossible to correct. */
@@ -290,7 +307,7 @@ export function renderSets(){
   refs.innerHTML = rs.length ? rs.map(({ch,r,i})=>`
     <div class="ref" data-ref="${esc(UID(ch))}:${i}">
       <div class="loc"><span style="color:var(--${VCOLOR[r.verdict]||"--t3"})">◆</span>${esc(ch.table)} / ${esc(ch.id)} · ${t("rule","regla")} ${i+1}</div>
-      <div class="ex">${highlight(ruleLine(r)).replace(new RegExp("@"+s.n,"g"),`<mark>@${s.n}</mark>`)}</div>
+      <div class="ex">${highlight(ruleLine(r)).replace(new RegExp(refWord(s.n),"g"),`<mark>@${esc(s.n)}</mark>`)}</div>
     </div>`).join("") : `
     <div style="padding:32px 18px;text-align:center;font-size:11.5px;color:var(--t4);line-height:1.6">
       ${t("No rule uses this set. Its elements are loaded into the kernel on every reload for nothing.",
@@ -334,9 +351,9 @@ document.addEventListener("click", e=>{
   }
   if(e.target.closest("#set-del")){
     const s = curSet(); if(!s) return;
-    if(refsTo(s.n).length){
-      toast(t(`@${s.n} is still used by ${refsTo(s.n).length} rules`,
-              `@${s.n} lo usan todavía ${refsTo(s.n).length} reglas`));
+    if(refsTo(s.n, s.table).length){
+      toast(t(`@${s.n} is still used by ${refsTo(s.n, s.table).length} rules`,
+              `@${s.n} lo usan todavía ${refsTo(s.n, s.table).length} reglas`));
       return;
     }
     edit(t("delete set","eliminar set"), ()=>{ MODEL.sets.splice(SETSEL,1); });
@@ -352,10 +369,11 @@ document.addEventListener("click", e=>{
   if(nw){
     const map = nw.id === "map-new";
     const kind = map ? "map" : "set";
-    const n = `new_${kind}_${MODEL.sets.filter(x=>(x.kind||"set")===kind).length + 1}`;
+    const table = MODEL.chains[0]?.table || "inet fw";
+    const n = freshName(`new_${kind}`, table);
     edit(t(`new ${kind}`, `${kind} nuevo`), ()=>{
       MODEL.sets.push({
-        n, kind, table: MODEL.chains[0]?.table || "inet fw",
+        n, kind, table,
         t: map ? "ipv4_addr : inet_service" : "ipv4_addr",
         f: map ? "" : "interval", el: [], attr: {},
       });
@@ -389,7 +407,7 @@ document.addEventListener("click", e=>{
       const a = ev.target.closest("[data-act]"); if(!a) return;
       const kind = a.dataset.act;
       const table = MODEL.chains[0]?.table || "inet fw";
-      const n = `new_${kind.replace(/\W+/g,"_")}_${MODEL.objects.filter(o=>o.kind===kind).length+1}`;
+      const n = freshName(`new_${kind.replace(/\W+/g,"_")}`, table);
       edit(t(`new ${kind}`, `${kind} nuevo`), ()=>{
         MODEL.objects.push({ table, kind, name: n, body: [...(OBJECT_TEMPLATE[kind]||[])] });
       });
@@ -425,9 +443,10 @@ document.addEventListener("change", e=>{
     /* the same promise the set editor makes: rename it and the rules follow */
     edit(t(`rename ${o.kind}`, `renombrar ${o.kind}`), ()=>{
       o.name = next;
+      const atRe = new RegExp(refWord(was), "g");
       MODEL.chains.forEach(ch=>{ if(ch.table !== o.table) return;
         ch.rules.forEach(r=>{
-          r.expr = r.expr.split(`@${was}`).join(`@${next}`).split(`"${was}"`).join(`"${next}"`);
+          r.expr = r.expr.replace(atRe, `@${next}`).split(`"${was}"`).join(`"${next}"`);
         });
       });
     });
@@ -485,12 +504,14 @@ document.addEventListener("change", e=>{
       renderSets(); return;
     }
     /* rename the references too, or the rules would point at nothing */
-    const was = s.n, hits = refsTo(was).length;
+    const was = s.n, hits = refsTo(was, s.table).length;
+    const re = new RegExp(refWord(was), "g");
     edit(t("rename set","renombrar set"), ()=>{
       s.n = next;
-      MODEL.chains.forEach(ch=>ch.rules.forEach(r=>{
-        r.expr = r.expr.split("@"+was).join("@"+next);
-      }));
+      MODEL.chains.forEach(ch=>{
+        if(ch.table !== s.table) return;
+        ch.rules.forEach(r=>{ r.expr = r.expr.replace(re, "@"+next); });
+      });
     });
     toast(hits
       ? t(`Renamed, and ${hits} rules updated`, `Renombrado, y ${hits} reglas actualizadas`)
@@ -511,7 +532,7 @@ document.addEventListener("mouseover", e=>{
   const it = e.target.closest("[data-si]");
   if(!it) return;
   const s = MODEL.sets[+it.dataset.si]; if(!s) return;
-  const hits = new Set(refsTo(s.n).map(x=>UID(x.ch)+":"+x.i));
+  const hits = new Set(refsTo(s.n, s.table).map(x=>UID(x.ch)+":"+x.i));
   $$(".rule").forEach(r=>r.classList.toggle("faded", !hits.has(r.dataset.chain+":"+r.dataset.i)));
 });
 document.addEventListener("mouseout", e=>{

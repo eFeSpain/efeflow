@@ -102,6 +102,23 @@ test("reading an expression reports what is in it", () => {
   assert.equal(q.over, false);
 });
 
+/* Editing an unrelated field re-emits every field the panel models; the
+   protocol must not be bolted on when the rule already implies it. */
+test("setting the protocol it already has adds no redundant meta l4proto", () => {
+  for (const [e, proto] of [
+    ["icmp type echo-request", "icmp"],
+    ["ip6 saddr @x icmpv6 type nd-router-advert", "icmpv6"],
+    ["esp spi 0x1", "esp"],
+    ["tcp flags syn", "tcp"],
+  ]) {
+    assert.equal(setProto(e, proto), e, `${e} gained a redundant meta l4proto ${proto}`);
+    /* rebuild() re-reads the proto field and passes it back on any edit */
+    assert.equal(editExpr(e, { proto }), e);
+  }
+  /* a genuinely protocol-less rule still gains one when asked */
+  assert.equal(setProto("ip saddr 1.2.3.4", "tcp"), "meta l4proto tcp ip saddr 1.2.3.4");
+});
+
 test("a rule made only of things the panel cannot show is left exactly alone", () => {
   const odd = 'meta mark set 0x1 ct mark set meta mark tcp option maxseg size 1-500';
   assert.equal(editExpr(odd, {}), odd);

@@ -29,6 +29,9 @@ const trip = (src) => ruleLine(parseRule(src));
 const SAME = [
   "counter ip saddr 1.1.1.1 drop",
   "counter tcp dport 22 accept",
+  /* the word `counter` inside a log prefix is not a counter statement */
+  "log prefix \"packet counter: \" ip saddr 1.1.1.1 drop",
+  "ip saddr 1.1.1.1 log prefix \"drop counter\" drop",
   "counter ip saddr 10.0.0.0/8 tcp dport { 80, 443 } accept",
   "counter log prefix \"in: \" ip saddr 1.1.1.1 drop",
   /* the ordinary shape, and the one nft prints: nothing to remember */

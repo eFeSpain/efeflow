@@ -13,6 +13,15 @@ import { lintRule } from "../src/core/lint.js";
 const codes = (line, ctx) => lintRule(line, ctx).map((f) => f.code);
 const clean = (line, ctx) => assert.deepEqual(lintRule(line, ctx), [], line);
 
+/* nft allows a comment after the verdict; it must not read as a match after it. */
+test("a trailing comment after the verdict is not a match after it", () => {
+  clean('tcp dport 22 accept comment "ssh"');
+  clean('ip saddr 10.0.0.1 drop comment "blocked"');
+  clean('reject with icmpx type admin-prohibited comment "no"');
+  /* a genuine match after the verdict is still caught */
+  assert.ok(lintRule("accept tcp dport 22").some((f) => f.code === "verdict-not-last"));
+});
+
 test("a rule that loads reports nothing", () => {
   for (const line of [
     "ct state established,related counter accept",

@@ -155,6 +155,11 @@ export function setProto(expr, v){
   if(RE.netproto.test(e))
     return e.replace(RE.netproto, (_, fam, kw, neg) => `${fam} ${kw} ${neg || ""}${v}`);
   if(hadPorts) return e;                       /* the port prefix already says it */
+  /* The protocol is already implied by what the rule says — an `icmp type`, an
+     `esp spi`, a `tcp flags`. Bolting `meta l4proto` in front of it on an edit to
+     an unrelated field (the comment box re-emits every field) is a redundant
+     clause the user never asked for. Only add it when nothing already says it. */
+  if(readProto(e) === v) return e;
   return tidy(`meta l4proto ${v} ${e}`);
 }
 

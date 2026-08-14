@@ -96,6 +96,27 @@ test("a regular chain nobody jumps to is unreachable", () => {
   assert.equal(live.has(UID(orphan)), false);
 });
 
+test("a disabled jump draws no wire and reaches nothing", () => {
+  const base = chain({ table: "inet filter", id: "input", hook: "input",
+    rules: [{ verdict: "jump", to: "sub", expr: "", on: false }] });
+  const sub = chain({ table: "inet filter", id: "sub" });
+  const plan = wirePlan([base, sub]);
+  assert.equal(plan.filter((e) => e[2]).length, 0, "a rule that does not run is not a call");
+  assert.equal(reachable([base, sub]).has(UID(sub)), false,
+    "and a chain only a disabled rule jumps to is unreachable");
+});
+
+test("netdev chains on different devices are not wired in sequence", () => {
+  const wan = chain({ table: "netdev nd", id: "wan", hook: "ingress", prio: -500, dev: 'device "wan0"' });
+  const lan = chain({ table: "netdev nd", id: "lan", hook: "ingress", prio: -400, dev: 'device "lan0"' });
+  const plan = wirePlan([wan, lan]);
+  assert.equal(has(plan, wan, lan), false, "wan0 ingress and lan0 ingress are parallel, not a path");
+  /* two chains on the SAME device do wire, in priority order */
+  const a = chain({ table: "netdev nd", id: "a", hook: "ingress", prio: -500, dev: 'device "wan0"' });
+  const b = chain({ table: "netdev nd", id: "b", hook: "ingress", prio: -400, dev: 'device "wan0"' });
+  assert.ok(has(wirePlan([a, b]), a, b), "same device, same hook: still a sequence");
+});
+
 test("reachability is transitive, and does not loop forever on a cycle", () => {
   const base = chain({ table: "inet filter", id: "input", hook: "input", rules: [jump("a")] });
   const a = chain({ table: "inet filter", id: "a", rules: [jump("b")] });

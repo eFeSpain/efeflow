@@ -682,7 +682,13 @@ export function parseRule(line){
      the anonymous statement — swallowing the keyword left a dangling
      `name "http_hits"` in the expression and re-emitted the rule in a
      different order. The lookahead keeps this off it. */
-  const k = expr.match(/\bcounter(?!\s+name\b)(?:\s+packets\s+(\d+)\s+bytes\s+(\d+))?/);
+  /* Every other scan in this file tracks quotes; this one did not, so a
+     `log prefix "packet counter"` had the word `counter` swallowed out of its
+     own string and a phantom statement injected. Match against a copy whose
+     quoted runs are blanked to the same length, then slice the real expr at the
+     indices that copy reports. */
+  const masked = expr.replace(/"(?:[^"\\]|\\.)*"/g, m => '"' + " ".repeat(m.length - 2) + '"');
+  const k = masked.match(/\bcounter(?!\s+name\b)(?:\s+packets\s+(\d+)\s+bytes\s+(\d+))?/);
   /* How many words of the expression came before it.
    *
    * Where the counter sits is not a matter of taste. nftables evaluates a

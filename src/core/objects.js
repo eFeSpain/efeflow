@@ -117,7 +117,7 @@ const REF_RE = {
   synproxy: (n) => new RegExp(`\\bsynproxy\\s+name\\s+"${n}"`),
 };
 
-const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+export const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Every rule in `chains` that names this object. */
 export function refsToObject(o, chains = []) {

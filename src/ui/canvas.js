@@ -255,6 +255,10 @@ function renderLegend(){
 }
 renderChains();
 onRender(()=>{ renderChains(); drawWires(); });
+/* A lit packet path is only true of the ruleset it was traced through; once a
+   rule changes it is the old packet's route, so it goes — the same reason the
+   simulator dims a stale trace. */
+onModelChange(()=>clearLit());
 
 /* The wires and reachability are the model as a graph, with no DOM in them, so
    they live in core/topology.js and are checked on their own. */

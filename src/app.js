@@ -300,9 +300,12 @@ function paintDrawer(){
            ${t("No changes since the last import or export.","Sin cambios desde la última importación o exportación.")}</div>`;
   }
   if(DW_TAB==="problems"){
-    $("#dw-problems").innerHTML = FIND.length ? FIND.map(f=>`
+    /* the same set the tab's count is drawn from (line above), and data-goto is
+       an index into findings.list, which is what findings.js reads it back as */
+    const probs = findings.list.filter(f=>f.sev!=="hint");
+    $("#dw-problems").innerHTML = probs.length ? probs.map(f=>`
       <div class="ln" style="grid-template-columns:22px 1fr;cursor:pointer;padding:3px 0"
-           ${f.chain?`data-goto="${FIND.indexOf(f)}"`:""}>
+           ${f.chain?`data-goto="${findings.list.indexOf(f)}"`:""}>
         <span class="no" style="color:var(--${f.sev==="error"?"v-drop":f.sev==="warn"?"warn":"t4"})">●</span>
         <span class="tx" style="white-space:normal;padding-right:20px">
           <span style="color:var(--t1)">${esc(tt(f.title))}</span>

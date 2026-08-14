@@ -55,17 +55,22 @@ export const serialise = () =>
 export function deserialise(text) {
   const o = JSON.parse(text);
   if (!o || !Array.isArray(o.chains)) throw new Error("not an eFeFlow project");
+  /* Only `chains` was validated, so a project whose `sets`/`objects`/`tables`
+     was a truthy non-array (a corrupt or hand-edited file) sailed past `|| []`
+     and threw on the next render, when nothing could catch it. Coerce each: a
+     bad field degrades to empty rather than taking the screen down. */
+  const arr = (v) => (Array.isArray(v) ? v : []);
   return {
     name: o.name || "imported",
     chains: o.chains,
-    sets: o.sets || [],
-    objects: o.objects || [],
-    tables: o.tables || [],
-    prelude: o.prelude || [],
+    sets: arr(o.sets),
+    objects: arr(o.objects),
+    tables: arr(o.tables),
+    prelude: arr(o.prelude),
     /* Parallel to `prelude`: how many tables each of its lines sat below. Every
        project saved before this existed has none, and none means zero — the top
        of the file, which is where they all used to go. */
-    preludeAt: o.preludeAt || [],
+    preludeAt: arr(o.preludeAt),
     scratch: { ifaces: [], networks: [], ...(o.scratch || {}) },
   };
 }

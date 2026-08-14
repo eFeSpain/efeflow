@@ -256,7 +256,11 @@ export function analyse(){
     rs.forEach(a=>{
       if(seen.has(a.i) || !a.c.dport || listOf(a.c.dport).length>1) return;
       const key = k => CRIT.map(([n])=> n==="dport" ? "*" : (k[n]||"")).join("|");
-      const sibs = rs.filter(b=> b.r.verdict===a.r.verdict && b.c.dport
+      /* ...and the same target. dnat/snat/redirect siblings with different
+         destinations collapse into one rule wearing the first one's target —
+         a silent mis-NAT the moment Apply-all runs. A shared verdict is not a
+         shared `to`. */
+      const sibs = rs.filter(b=> b.r.verdict===a.r.verdict && (b.r.to||"")===(a.r.to||"") && b.c.dport
                              && listOf(b.c.dport).length===1 && key(b.c)===key(a.c));
       if(sibs.length < 3) return;
       sibs.forEach(s=>seen.add(s.i));

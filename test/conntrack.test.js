@@ -19,7 +19,7 @@
  * honest, but a trivial shape to support and one nft prints. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MODEL } from "../src/core/model.js";
+import { MODEL, R } from "../src/core/model.js";
 import { matches, unmodelled, evaluate, setPacket, packet } from "../src/core/simulate.js";
 
 const PKT = {
@@ -35,6 +35,22 @@ const hit = (expr, p = PKT) => { blank(); return matches({ expr }, p); };
 const unread = (expr) => { blank(); return unmodelled(expr); };
 
 /* ── ct state, in both spellings ─────────────────────────────────────────── */
+
+/* A raw prerouting chain runs before conntrack, so `ct state` there sees only
+   invalid — and jumping out of it into a regular chain must not reset that. */
+test("conntrack readiness is not reset by a jump out of a raw chain", () => {
+  Object.assign(MODEL, { sets: [], objects: [], tables: [], prelude: [], chains: [
+    { table: "ip raw", id: "pre", hook: "prerouting", prio: -300, type: "filter", policy: "accept",
+      rules: [ R("", "jump", { to: "sub" }) ] },
+    { table: "ip raw", id: "sub", type: "filter", policy: "accept",
+      rules: [ R("ct state established", "drop") ] },
+  ]});
+  setPacket({ ...PKT, state: "established", tracked: true });
+  /* pre-conntrack, an established packet is not yet established — the drop must
+     not fire, and the packet falls through to the accept policy */
+  assert.equal(evaluate(packet).final.v, "accept",
+    "ct state established matched in a chain conntrack has not reached yet");
+});
 
 test("the comma form and the braced form are the same constraint", () => {
   for (const e of ["ct state new,established", "ct state { new, established }"]) {

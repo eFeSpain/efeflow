@@ -28,6 +28,7 @@ export function setLang(next) {
 
 const pick = (v) => {
   const i = v.indexOf("|");
+  if (i < 0) return v;    /* no separator: `slice(0,-1)` would eat the English label's last character */
   return LANG === "es" ? v.slice(i + 1) : v.slice(0, i);
 };
 

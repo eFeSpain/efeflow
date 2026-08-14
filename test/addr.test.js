@@ -9,6 +9,17 @@ test("a colon is what tells the two families apart", () => {
   assert.equal(family("::1"), 6);
 });
 
+test("a stray colon is not the all-zeros address", () => {
+  /* `:::` used to parse to `::` because empty groups were skipped, and then
+     looksLikeAddr()/inCidr() trusted it */
+  for (const bad of [":::", "1:::2", "2001::db8::1", ":1:2:3:4:5:6:7", "1:2:3:4:5:6:7:"])
+    assert.equal(v6(bad), null, bad);
+  /* the legitimate shorthands still parse */
+  assert.equal(v6("::"), 0n);
+  assert.equal(v6("::1"), 1n);
+  assert.notEqual(v6("2001:db8::1"), null);
+});
+
 test("IPv4 parses, and refuses what is not one", () => {
   assert.equal(v4("0.0.0.0"), 0n);
   assert.equal(v4("255.255.255.255"), 0xffffffffn);

@@ -7,7 +7,11 @@
  * a line between them is a lie the canvas told until this was pulled out of it.
  */
 import { UID } from "./model.js";
-import { PATHS } from "./simulate.js";
+import { PATHS, chainDevices } from "./simulate.js";
+
+/* netdev hooks attach to a device; two chains on different devices are not one
+   packet's path, so within these hooks the wiring is grouped per device. */
+const NETDEV_HOOKS = new Set(["ingress", "egress"]);
 
 /* A jump resolves within the same table, against the set of chains being drawn
    — not a global, so this can be reasoned about on its own. `model.jumpTarget`
@@ -24,13 +28,16 @@ const FAM_CLASS = { ip:["v4"], ip6:["v6"], inet:["v4","v6"], netdev:["v4","v6"],
 export const famOf = ch => String(ch.table||"").split(" ")[0];
 export const classesOf = ch => FAM_CLASS[famOf(ch)] || [famOf(ch) || "other"];
 
-/* Chains of one traffic class at one hook, grouped by priority, ascending. */
-function prioGroups(chains, cls, hook){
-  const here = chains.filter(c => c.hook===hook && classesOf(c).includes(cls));
+/* A list of chains grouped by priority, ascending — each group is one priority,
+   so a tie is one group and never gets a wire drawn through it. */
+function groupByPrio(list, cls){
+  const here = list.filter(c => classesOf(c).includes(cls));
   const by = new Map();
   for(const c of here){ if(!by.has(c.prio)) by.set(c.prio, []); by.get(c.prio).push(c); }
   return [...by.keys()].sort((a,b)=>a-b).map(k=>by.get(k));
 }
+const prioGroups = (chains, cls, hook) =>
+  groupByPrio(chains.filter(c => c.hook === hook), cls);
 
 /* The wires. Each entry is [fromUid, toUid, isJump].
  *
@@ -48,10 +55,18 @@ export function wirePlan(chains){
   const classes = new Set(hooked.flatMap(classesOf));
   const hooksUsed = [...new Set(hooked.map(c=>c.hook))];
 
+  const wireGroups = g => {
+    for(let i=1;i<g.length;i++) for(const a of g[i-1]) for(const b of g[i]) solid(a,b);
+  };
   for(const cls of classes)
     for(const h of hooksUsed){
-      const g = prioGroups(chains, cls, h);
-      for(let i=1;i<g.length;i++) for(const a of g[i-1]) for(const b of g[i]) solid(a,b);
+      const here = chains.filter(c => c.hook === h);
+      /* netdev: one lane per device — a wan0 ingress chain and a lan0 ingress
+         chain are parallel, not sequential. Everything else is one lane. */
+      const lanes = NETDEV_HOOKS.has(h)
+        ? [...new Set(here.flatMap(chainDevices))].map(d => here.filter(c => chainDevices(c).includes(d)))
+        : [here];
+      for(const lane of lanes) wireGroups(groupByPrio(lane, cls));
     }
   for(const cls of ["v4","v6"]){
     if(!classes.has(cls)) continue;
@@ -62,7 +77,8 @@ export function wirePlan(chains){
     }
   }
   chains.forEach(ch=>ch.rules.forEach(r=>{
-    const tgt = (r.verdict==="jump"||r.verdict==="goto") && targetIn(chains, ch, r.to);
+    /* a disabled rule does not run, so its call is not a path and draws no wire */
+    const tgt = r.on !== false && (r.verdict==="jump"||r.verdict==="goto") && targetIn(chains, ch, r.to);
     if(tgt) edges.set(UID(ch)+"⇢"+UID(tgt), [UID(ch), UID(tgt), true]);
   }));
   return [...edges.values()];
@@ -80,7 +96,7 @@ export function reachable(chains){
     if(seen.has(uid) || !byUid.has(uid)) continue;
     seen.add(uid);
     for(const r of byUid.get(uid).rules)
-      if(r.verdict==="jump" || r.verdict==="goto"){
+      if(r.on !== false && (r.verdict==="jump" || r.verdict==="goto")){
         const tgt = targetIn(chains, byUid.get(uid), r.to);
         if(tgt) stack.push(UID(tgt));
       }

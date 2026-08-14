@@ -105,7 +105,11 @@ export function lintRule(line, ctx = {}){
   const o = outer(src);
   const last = [...o.matchAll(VERDICTS)].at(-1);
   if(last){
-    const rest = o.slice(last.index + last[0].length).trim();
+    /* nft allows a trailing `comment "…"` after the verdict — bare() left it as
+       `comment ""`, and without allowing it, `... accept comment "x"` (a rule
+       nft loads fine) was marked red. */
+    const rest = o.slice(last.index + last[0].length).trim()
+      .replace(/\bcomment\s+""\s*$/, "").trim();
     const tail = VERDICT_TAIL[last[1]];
     if(tail ? !tail.test(rest) : rest !== "")
       out.push(F("verdict-not-last",
