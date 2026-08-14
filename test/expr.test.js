@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { readExpr, editExpr, setProto, setLog, setLimit } from "../src/core/expr.js";
+import { readExpr, editExpr, setProto, setLog, setLimit, readLog, editLogParts } from "../src/core/expr.js";
 
 /* The exact rule that used to be destroyed by typing in the comment box. */
 const RICH =
@@ -106,4 +106,80 @@ test("a rule made only of things the panel cannot show is left exactly alone", (
   const odd = 'meta mark set 0x1 ct mark set meta mark tcp option maxseg size 1-500';
   assert.equal(editExpr(odd, {}), odd);
   assert.equal(editExpr(odd, { saddr: "" }), odd);
+});
+
+/* ── the three matches the panel learned to show ─────────────────────── */
+
+test("icmp type, tcp flags and the firewall mark are read out of a rule", () => {
+  const q = readExpr('icmp type echo-request tcp flags syn / syn,ack meta mark 0x1 accept');
+  assert.equal(q.icmptype, "echo-request");
+  assert.equal(q.tcpflags, "syn / syn,ack");
+  assert.equal(q.metamark, "0x1");
+});
+
+test("each of the three edits only its own fragment", () => {
+  const base = 'ip saddr 10.0.0.1 icmp type echo-request tcp dport 22';
+  assert.equal(editExpr(base, { icmptype: "echo-reply" }),
+    'ip saddr 10.0.0.1 icmp type echo-reply tcp dport 22');
+  assert.equal(editExpr('tcp flags syn accept', { tcpflags: "syn / fin,syn,rst,ack" }),
+    'tcp flags syn / fin,syn,rst,ack accept');
+  assert.equal(editExpr('meta mark 0x1 drop', { metamark: "0x2" }), 'meta mark 0x2 drop');
+});
+
+test("the icmp family follows the rule's protocol when one is added", () => {
+  assert.match(editExpr('meta l4proto icmpv6', { icmptype: "nd-router-advert" }),
+    /icmpv6 type nd-router-advert/);
+  assert.match(editExpr('tcp dport 22', { icmptype: "echo-request" }), /\bicmp type echo-request/);
+  /* a rule that already named the family keeps it */
+  assert.match(editExpr('icmpv6 type echo-request', { icmptype: "echo-reply" }), /icmpv6 type echo-reply/);
+});
+
+test("clearing one of the three removes only that fragment", () => {
+  assert.equal(editExpr('icmp type echo-request tcp dport 22', { icmptype: "" }), "tcp dport 22");
+  assert.equal(editExpr('meta mark 0x1 tcp dport 22', { metamark: "" }), "tcp dport 22");
+  assert.equal(editExpr('tcp flags syn tcp dport 22', { tcpflags: "" }), "tcp dport 22");
+});
+
+/* `meta mark` read as a match must never catch it where it is not one: the
+   `meta mark set` statement, the value on the right of a `set`, or a map. */
+test("meta-mark reading does not collide with meta mark used elsewhere", () => {
+  assert.equal(readExpr("meta mark set 0x1 accept").metamark, "", "the set statement is not a match");
+  assert.equal(readExpr("ct mark set meta mark accept").metamark, "", "the value after set is not a match");
+  assert.equal(readExpr("meta mark map { 0x1 : accept }").metamark, "", "a map is not a plain match");
+  /* and editing another field carries each of them through untouched */
+  assert.equal(editExpr("meta mark set 0x1 accept", { dport: "22" }),
+    "meta mark set 0x1 accept tcp dport 22");
+  assert.equal(editExpr("ct mark set meta mark accept", { saddr: "1.2.3.4" }),
+    "ct mark set meta mark accept ip saddr 1.2.3.4");
+});
+
+/* ── log prefix and level ────────────────────────────────────────────── */
+
+test("the log prefix and level are read and set without disturbing the rest", () => {
+  const q = readLog('log prefix "drop " snaplen 64 level warn');
+  assert.deepEqual(q, { on: true, prefix: "drop ", level: "warn", group: "" });
+  /* set the prefix on a bare log */
+  assert.equal(editLogParts("ip saddr 1.2.3.4 log", { prefix: "ssh " }),
+    'ip saddr 1.2.3.4 log prefix "ssh "');
+  /* set the level, keeping the prefix and the snaplen the author wrote */
+  assert.equal(editLogParts('log prefix "x " snaplen 64', { level: "info" }),
+    'log prefix "x " snaplen 64 level info');
+  /* clear the prefix, keep the level */
+  assert.equal(editLogParts('log prefix "x " level info', { prefix: "" }), "log level info");
+});
+
+/* nftables refuses a log that is both syslog (level) and nflog (group). */
+test("a level is not forced onto an nflog group", () => {
+  assert.equal(readLog('log prefix "x " group 2').group, "2");
+  assert.equal(editLogParts('log prefix "x " group 2', { level: "info" }),
+    'log prefix "x " group 2', "the invalid combination is refused, the rule left as it was");
+  /* the prefix still edits freely alongside a group */
+  assert.equal(editLogParts('log group 2', { prefix: "drop " }), 'log group 2 prefix "drop "');
+});
+
+test("setting a log prefix on a rule with no log adds the log too", () => {
+  assert.equal(editLogParts("tcp dport 22 drop", { prefix: "denied " }),
+    'tcp dport 22 drop log prefix "denied "');
+  /* but not when the field is only being cleared */
+  assert.equal(editLogParts("tcp dport 22 drop", { prefix: "" }), "tcp dport 22 drop");
 });

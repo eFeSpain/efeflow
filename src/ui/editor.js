@@ -16,7 +16,7 @@
  */
 import { MODEL, R, UID, chainOf, VNAME, fmtN, fmtB, ruleLine } from "../core/model.js";
 import { parseRule } from "../core/parse.js";
-import { readExpr, editExpr } from "../core/expr.js";
+import { readExpr, editExpr, readLog, editLogParts, LOG_LEVELS } from "../core/expr.js";
 import { lintRule } from "../core/lint.js";
 import { catalogue, protoOf, OWNABLE, BUILT_IN, emptyVocabulary, TEMPLATES } from "../core/vocabulary.js";
 import { tableNames, readTable } from "../core/tables.js";
@@ -260,6 +260,7 @@ export function select(chainId, i, fromCode){
     if(row){ go("editor"); row.scrollIntoView({block:"center",inline:"center",behavior:"smooth"}); }
   }
   const p = parse(r.expr);
+  const lg = readLog(r.expr);
   $("#props-body").innerHTML = `
     <div class="rule-hero">
       <div class="top">
@@ -322,6 +323,14 @@ export function select(chainId, i, fromCode){
               `<button class="chip" data-ct="${s}" style="${p.state.split(",").includes(s)?"color:var(--aqua);border-color:var(--aqua-line);background:var(--aqua-wash)":""}">${s}</button>`).join("")}
           </div>
         </div>
+        <div class="row2">
+          <div class="fld"><span class="lbl">${t("ICMP type","Tipo ICMP")}</span>
+            <input type="text" id="f-icmptype" value="${esc(p.icmptype)}" placeholder="${t("any","cualquiera")} · echo-request" spellcheck="false"></div>
+          <div class="fld"><span class="lbl">${t("TCP flags","Flags TCP")}</span>
+            <input type="text" id="f-tcpflags" value="${esc(p.tcpflags)}" placeholder="${t("any","cualquiera")} · syn / syn,ack" spellcheck="false"></div>
+        </div>
+        <div class="fld"><span class="lbl">${t("Firewall mark","Marca firewall")}</span>
+          <input type="text" id="f-metamark" value="${esc(p.metamark)}" placeholder="${t("any","cualquiera")} · 0x1" spellcheck="false"></div>
       </div>
     </details>
 
@@ -337,6 +346,16 @@ export function select(chainId, i, fromCode){
           <span class="sw-toggle${r.ctr?" on":""}" id="f-ctr"></span></div>
         <div class="inline"><span class="lbl">${t("Log matches","Registrar coincidencias")}</span>
           <span class="sw-toggle${p.log?" on":""}" id="f-log"></span></div>
+        ${lg.on?(lg.group
+          ? `<div class="fld"><span class="lbl">${t("Log prefix","Prefijo de log")}</span>
+              <input type="text" id="f-logprefix" value="${esc(lg.prefix)}" placeholder="${t("none","ninguno")} · drop-ssh " spellcheck="false">
+              <span class="hint" style="font-size:11px;color:var(--t4)">${t(`logs to nflog group ${lg.group} — no syslog level`,`registra al grupo nflog ${lg.group} — sin nivel de syslog`)}</span></div>`
+          : `<div class="row2">
+              <div class="fld"><span class="lbl">${t("Log prefix","Prefijo de log")}</span>
+                <input type="text" id="f-logprefix" value="${esc(lg.prefix)}" placeholder="${t("none","ninguno")} · drop-ssh " spellcheck="false"></div>
+              <div class="fld"><span class="lbl">${t("Log level","Nivel de log")}</span>
+                <select id="f-loglevel">${opt(lg.level,["",...LOG_LEVELS])}</select></div>
+            </div>`):""}
       </div>
     </details>
 
@@ -370,7 +389,7 @@ export function select(chainId, i, fromCode){
      statement it has never heard of is left where it is. */
   const rebuild = (extra = {})=>{
     const patch = {...extra};
-    for(const k of ["proto","saddr","daddr","sport","dport","iif","oif"]){
+    for(const k of ["proto","saddr","daddr","sport","dport","iif","oif","icmptype","tcpflags","metamark"]){
       const f = $("#f-"+k);
       if(f) patch[k] = f.value.trim();
     }
@@ -392,7 +411,7 @@ export function select(chainId, i, fromCode){
   /* Typing gives a live preview with no history entry; the change lands in
      history once, on blur — so undo steps are edits, not keystrokes. */
   ["f-saddr","f-daddr","f-sport","f-dport","f-cmt","f-proto","f-iif","f-oif","f-verdict","f-to",
-   "f-limit","f-burst"]
+   "f-limit","f-burst","f-icmptype","f-tcpflags","f-metamark"]
     .forEach(id=>{
       const n = $("#"+id); if(!n) return;
       n.addEventListener("focus", ()=>{ hist.pending = snapshot(); });
@@ -421,17 +440,31 @@ export function select(chainId, i, fromCode){
       chains: MODEL.chains.filter(c=>c.table===ch.table).map(c=>c.id),
       sets:   MODEL.sets.filter(s=>!s.table || s.table===ch.table).map(s=>s.n),
     });
+    const svg = `<svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>`;
     const showLint = text => {
       const found = lintRule(text, ctx());
-      $("#f-raw-lint").innerHTML = found.map(f=>
-        `<div class="raw-lint"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span>${esc(tt(f.title))}</span></div>`).join("");
-      raw.classList.toggle("bad", found.length > 0);
+      /* A line nft cannot read is its own finding, and the loudest one: the box
+         used to swallow it without a word. */
+      const unreadable = !!text && !parseRule(text);
+      const rows = unreadable
+        ? [t("nftables cannot read this line — the rule is left as it was until it can.",
+             "nftables no puede leer esta línea — la regla se queda como estaba hasta que pueda.")]
+        : [];
+      rows.push(...found.map(f=>tt(f.title)));
+      $("#f-raw-lint").innerHTML = rows.map(m=>
+        `<div class="raw-lint">${svg}<span>${esc(m)}</span></div>`).join("");
+      raw.classList.toggle("bad", unreadable || found.length > 0);
     };
     showLint(ruleLine(r));
 
     raw.addEventListener("focus", ()=>{
       hist.pending = snapshot();
-      raw.textContent = ruleLine(r);        /* plain text under the caret */
+      /* Normally show the rule as plain text under the caret. But when the box
+         is holding an edit nft could not read, keep it — the flag was so it
+         could be fixed, not retyped. */
+      const held = raw.textContent.trim();
+      if(!(raw.classList.contains("bad") && held && held !== ruleLine(r)))
+        raw.textContent = ruleLine(r);
     });
     raw.addEventListener("input", ()=> showLint(raw.textContent.trim()));
     raw.addEventListener("keydown", e=>{
@@ -440,12 +473,22 @@ export function select(chainId, i, fromCode){
     });
     raw.addEventListener("blur", ()=>{
       const text = raw.textContent.trim();
-      const next = text && parseRule(text);
-      if(!next || text === ruleLine(r)){
+      if(!text || text === ruleLine(r)){
         /* unchanged, or emptied to nothing — a rule is not deleted by
            clearing the box, which would be a very expensive way to miss */
         raw.innerHTML = highlight(ruleLine(r));
         showLint(ruleLine(r));
+        hist.pending = null;
+        return;
+      }
+      const next = parseRule(text);
+      if(!next){
+        /* Changed, not empty, and nft cannot read it. This used to snap the box
+           back to the old rule and drop the typed line without a word — a novel
+           construct one character off simply vanished. Keep what was typed and
+           flag it; focus keeps it too, and Esc still restores the original. */
+        raw.textContent = text;
+        showLint(text);
         hist.pending = null;
         return;
       }
@@ -497,6 +540,24 @@ export function select(chainId, i, fromCode){
     edit(t("invert rate limit","invertir límite de tasa"),
          ()=>{ r.expr = editExpr(r.expr, {limit: q.limit || "5/second", over: !q.over}); }, true);
   });
+
+  /* The log prefix and level ride on the log statement the toggle turned on;
+     each leaves the other, and everything else in the statement, alone. Prefix
+     is a text field — live preview, one history step on blur, like the rest;
+     level is a discrete pick, so it lands in one go. */
+  const lp = $("#f-logprefix");
+  if(lp){
+    lp.addEventListener("focus", ()=>{ hist.pending = snapshot(); });
+    const apply = ()=>{ r.expr = editLogParts(r.expr, { prefix: lp.value }); rebuild(); };
+    lp.addEventListener("input", apply);
+    lp.addEventListener("change", ()=>{
+      apply();
+      if(hist.pending!==null){ pushHist(hist.pending, t("log prefix","prefijo de log")); hist.pending = null; }
+    });
+  }
+  $("#f-loglevel")?.addEventListener("change", e=>
+    edit(t("log level","nivel de log"),
+         ()=>{ r.expr = editLogParts(r.expr, { level: e.target.value }); }, true));
 
   /* Changing one rule where it runs, rather than replacing the table it is in
      to change one line. host.js re-reads the chain first and refuses if the

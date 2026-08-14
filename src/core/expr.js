@@ -49,6 +49,14 @@ const RE = {
   /* `log` owns everything that follows it, and taking the keyword out while
      leaving `prefix "…"` behind produces a rule nft will not parse */
   log:     /\blog\b(?:\s+(?:prefix\s+"(?:[^"\\]|\\.)*"|level\s+\S+|group\s+\d+|snaplen\s+\d+|queue-threshold\s+\d+|flags\s+\S+))*/,
+  /* Each of these matches one recognised shape and nothing else: an unfamiliar
+     variant simply is not matched, so it is carried through rather than
+     rewritten into something narrower. `icmp[v6] type X`, `tcp flags X[/Y]`,
+     and `meta mark` used as a match — never `meta mark set`, never `meta mark`
+     read as a value on the right of a `set`, never `meta mark map …`. */
+  icmptype: /\b(icmp|icmpv6|icmpx)\s+type\s+(!=\s*)?(\{[^}]*\}|[\w-]+)/,
+  tcpflags: /\btcp flags\s+(!=\s*)?(\{[^}]*\}|[a-z,]+(?:\s*\/\s*[a-z,]+)?)/i,
+  metamark: /(?<!\bset )\bmeta mark\s+(?!set\b|map\b|vmap\b|and\b|or\b|xor\b)(!=\s*)?(\{[^}]*\}|0x[0-9a-fA-F]+(?:-0x[0-9a-fA-F]+)?|\d+(?:-\d+)?)/,
 };
 
 const unquote = s => String(s ?? "").replace(/^"([^"]*)"$/, "$1");
@@ -79,6 +87,9 @@ export function readExpr(expr){
     state : g(RE.state, 2),
     iif   : g(RE.iif, 3),
     oif   : g(RE.oif, 3),
+    icmptype: g(RE.icmptype, 3),
+    tcpflags: g(RE.tcpflags, 2),
+    metamark: g(RE.metamark, 2),
     limit : g(RE.limit, 2),
     burst : g(RE.limit, 3),
     over  : /\blimit rate\s+over\b/.test(e),
@@ -154,6 +165,31 @@ export function setState(expr, v){
   return splice(expr, RE.state, `ct state ${m?.[1] || ""}${v}`);
 }
 
+/* An ICMP type match belongs to a family; a rule that already named one keeps
+   it, and one that did not takes the family of its protocol — `icmpv6 type` on
+   an ip6 rule, `icmp type` otherwise. */
+export function setIcmpType(expr, v){
+  if(v === null) return expr;
+  if(!v) return splice(expr, RE.icmptype, "");
+  const m = expr.match(RE.icmptype);
+  const fam = m?.[1] || (readProto(expr) === "icmpv6" ? "icmpv6" : "icmp");
+  return splice(expr, RE.icmptype, `${fam} type ${m?.[2] || ""}${v}`);
+}
+
+export function setTcpFlags(expr, v){
+  if(v === null) return expr;
+  if(!v) return splice(expr, RE.tcpflags, "");
+  const m = expr.match(RE.tcpflags);
+  return splice(expr, RE.tcpflags, `tcp flags ${m?.[1] || ""}${v}`);
+}
+
+export function setMetaMark(expr, v){
+  if(v === null) return expr;
+  if(!v) return splice(expr, RE.metamark, "");
+  const m = expr.match(RE.metamark);
+  return splice(expr, RE.metamark, `meta mark ${m?.[1] || ""}${v}`);
+}
+
 export function setLimit(expr, { rate, burst, over } = {}){
   const m = expr.match(RE.limit);
   const cur = { rate: m?.[2] || "", burst: m?.[3] || "", unit: m?.[4] || "packets", over: !!m?.[1] };
@@ -176,6 +212,59 @@ export function setLog(expr, on){
   return RE.log.test(expr) ? expr : tidy(expr ? expr + " log" : "log");
 }
 
+/* The log levels nftables knows, most severe first; "" is none set. */
+export const LOG_LEVELS = ["emerg", "alert", "crit", "err", "warn", "notice", "info", "debug"];
+
+/* What the log statement says, if the rule has one. `group` marks the nflog
+   form, whose level nftables will not let you set — the panel reads it so it
+   can stop offering one. */
+export function readLog(expr){
+  const m = String(expr || "").match(RE.log);
+  if(!m) return { on: false, prefix: "", level: "", group: "" };
+  const run = m[0];
+  const p = run.match(/\bprefix\s+"((?:[^"\\]|\\.)*)"/);
+  const l = run.match(/\blevel\s+(\S+)/);
+  const grp = run.match(/\bgroup\s+(\d+)/);
+  return { on: true, prefix: p ? p[1].replace(/\\"/g, '"') : "",
+           level: l ? l[1] : "", group: grp ? grp[1] : "" };
+}
+
+/* Set the prefix or level of a rule's log statement and touch nothing else in
+   it — the group, snaplen and flags another author chose are kept. A rule with
+   no log gains a bare `log` if something is being set, and stays as it was if
+   the field is being cleared. `prefix`/`level` absent (undefined) means the
+   panel is not offering that one. */
+export function editLogParts(expr, { prefix, level } = {}){
+  let e = String(expr || "");
+  const adding = (prefix !== undefined && prefix) || (level !== undefined && level);
+  if(!RE.log.test(e)){
+    if(!adding) return e;
+    e = tidy(e ? e + " log" : "log");
+  }
+  return e.replace(RE.log, run => {
+    let s = run;
+    if(prefix !== undefined)
+      s = setLogOpt(s, "prefix", prefix ? `"${String(prefix).replace(/"/g, '\\"')}"` : "");
+    if(level !== undefined){
+      /* level (syslog) and group (nflog) are mutually exclusive in nftables; a
+         rule already logging to a group is left as it is, not made invalid.
+         Clearing the level is always fine. */
+      if(!(level && /\bgroup\s+\d+/.test(s))) s = setLogOpt(s, "level", level || "");
+    }
+    return s;
+  });
+}
+
+/* Replace `key value` inside a log run, remove it when the value is "", or add
+   it at the end of the run when it was not there. Adding at the end keeps the
+   prefix ahead of the level, which is the order nft prints. */
+function setLogOpt(run, key, value){
+  const re = new RegExp(String.raw`\s*\b${key}\s+(?:"(?:[^"\\]|\\.)*"|\S+)`);
+  if(!value) return tidy(run.replace(re, ""));
+  const piece = `${key} ${value}`;
+  return re.test(run) ? tidy(run.replace(re, " " + piece)) : tidy(run + " " + piece);
+}
+
 /* Apply whatever the panel changed and nothing else. A key that is absent, or
    whose value is null, is a field the panel is not offering — leave it. */
 export function editExpr(expr, patch = {}){
@@ -185,6 +274,9 @@ export function editExpr(expr, patch = {}){
   e = setState(e, v("state"));
   e = setIface(e, "iif", v("iif"));
   e = setIface(e, "oif", v("oif"));
+  e = setIcmpType(e, v("icmptype"));
+  e = setTcpFlags(e, v("tcpflags"));
+  e = setMetaMark(e, v("metamark"));
   e = setAddr(e, "saddr", v("saddr"));
   e = setAddr(e, "daddr", v("daddr"));
   const proto = patch.proto || readProto(e);
