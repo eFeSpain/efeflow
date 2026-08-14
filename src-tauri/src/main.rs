@@ -19,6 +19,19 @@ fn platform() -> serde_json::Value {
 
 fn main() {
     tauri::Builder::default()
+        // First, so a second launch never gets as far as a second window: it
+        // hands its arguments to the instance already running and exits. This
+        // one just brings that window forward. It matters more here than in most
+        // apps — two eFeFlows could each arm a rollback on the same host, and
+        // the second arm would photograph the first's half-applied ruleset as
+        // the one to go back to.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.unminimize();
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
