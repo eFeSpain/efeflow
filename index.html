@@ -641,8 +641,14 @@
           <li><b data-t="Merge|Fusión">Merge</b> <span data-t="rules differing only by port, which one set lookup replaces|reglas que solo difieren en el puerto, que una consulta a set sustituye">rules differing only by port</span></li>
           <li><b data-t="Unused|Sin usar">Unused</b> <span data-t="a set loaded into the kernel that no rule consumes|un set cargado en el kernel que ninguna regla consume">a set no rule consumes</span></li>
           <li><b data-t="Hardening|Fortificación">Hardening</b> <span data-t="a stateful chain that never drops invalid|una cadena con estado que nunca descarta invalid">a chain that never drops invalid</span></li>
+          <li><b data-t="Resilience|Resiliencia">Resilience</b> <span data-t="a log rule with no rate limit|una regla de log sin límite de tasa">a log rule with no rate limit</span></li>
+          <li><b data-t="Dormant|Dormida">Dormant</b> <span data-t="a whole table loaded and not running|una tabla entera cargada y sin correr">a whole table loaded and not running</span></li>
+          <li><b data-t="Unbounded set|Set sin límite">Unbounded set</b> <span data-t="a set filled by traffic with no size or timeout|un set que llena el tráfico sin size ni timeout">a set filled by traffic with no size or timeout</span></li>
+          <li><b data-t="Full set|Set lleno">Full set</b> <span data-t="a set at 90% of its size, past which the kernel silently refuses new elements|un set al 90% de su size, pasado el cual el kernel rechaza elementos en silencio">a set near its size limit</span></li>
+          <li><b data-t="Element timeout|Timeout de elemento">Element timeout</b> <span data-t="an element carrying timeout in a set that never declared flags timeout|un elemento con timeout en un set que no declaró flags timeout">a timeout the set never declared</span></li>
+          <li><b data-t="Cold|Fría">Cold</b> <span data-t="rules the kernel says have matched nothing since it loaded|reglas que el kernel dice que no han casado nada desde que cargó">rules that have matched nothing</span></li>
         </ul>
-        <p class="gnote" data-t="Rate-limited rules are never treated as shadowing anything: they are non-deterministic, and flagging there would tell you to delete a rule that works.|Las reglas con límite de tasa nunca se consideran eclipsantes: no son deterministas, y señalarlas te haría borrar una regla que funciona.">Rate-limited rules are excluded.</p>
+        <p class="gnote" data-t="Rate-limited rules are never treated as shadowing anything: they are non-deterministic, and flagging there would tell you to delete a rule that works. Separately, a rule nft -f would refuse to load at all — a port with no protocol, a jump to a chain that is not there — is caught before it ever reaches a kernel.|Las reglas con límite de tasa nunca se consideran eclipsantes: no son deterministas, y señalarlas te haría borrar una regla que funciona. Aparte, una regla que nft -f rechazaría al cargar — un puerto sin protocolo, un jump a una cadena que no está — se caza antes de que llegue a un kernel.">Rate-limited rules are excluded; unloadable rules are caught too.</p>
       </article>
 
       <article class="gcard">
@@ -653,6 +659,8 @@
           <li data-t="Direction chooses the path: ingress walks prerouting then input, forward adds postrouting, egress starts at output.|La dirección elige la ruta: entrada recorre prerouting e input, reenvío añade postrouting, salida empieza en output.">Direction chooses the path.</li>
           <li data-t="Turning connection tracking off marks the packet untracked, so ct state rules can no longer match it.|Desactivar el seguimiento de conexiones marca el paquete untracked, así que las reglas ct state ya no pueden casar.">Untracked packets lose the fast path.</li>
           <li data-t="accept ends the chain, not the packet — it carries on to the next hook. Only drop and reject end it outright.|accept termina la cadena, no el paquete: sigue al hook siguiente. Solo drop y reject lo terminan.">accept ends the chain, not the packet.</li>
+          <li data-t="Drop a packet you meant to accept and it reasons backwards: the exact rule that would let it through and where to put it, proven by re-simulating — and it names the other sources that rule would also let in, or confirms it found none.|Cae un paquete que querías aceptar y razona hacia atrás: la regla exacta que lo dejaría pasar y dónde ponerla, demostrada re-simulando — y nombra los otros orígenes que esa regla admitiría también, o confirma que no encontró ninguno.">It works out which rule to add, and where.</li>
+          <li data-t="Where it cannot model a match, it takes the rule as matching but marks it assumed and names it under the verdict, rather than guessing quietly.|Donde no puede modelar un match, toma la regla como coincidente pero lo marca como asumido y lo nombra bajo el veredicto, en vez de adivinar en silencio.">Assumptions are marked, never hidden.</li>
         </ul>
         <p class="gnote" data-t="Try the DNAT :8443 preset and then turn off Include NAT hooks: the verdict flips from ACCEPT to DROP, because without the translation nothing accepts port 8443.|Prueba el preset DNAT :8443 y luego apaga Incluir hooks NAT: el veredicto pasa de ACCEPT a DROP, porque sin la traducción nadie acepta el puerto 8443.">Try the DNAT preset with NAT off.</p>
       </article>
@@ -667,6 +675,17 @@
         </ul>
       </article>
     </div>
+
+    <article class="gcard">
+      <div class="gh"><span class="gi" style="color:var(--v-accept)"><svg class="ico" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></span>
+        <h2 data-t="Apply, with a rollback that arms first|Aplicar, con un rollback que se arma antes">Apply, with a rollback that arms first</h2></div>
+      <p data-t="With a target set, applying validates with nft -c, loads the ruleset, and arms a timed rollback on the firewall itself. Confirm within the window to keep the change; if the new rules cut you off and you cannot, the host reverts to what was there on its own.|Con un destino configurado, aplicar valida con nft -c, carga el ruleset y arma un rollback temporizado en el propio firewall. Confirma dentro de la ventana para conservar el cambio; si las reglas nuevas te dejan fuera y no puedes, la máquina revierte sola a lo que había.">The rollback arms on the firewall itself.</p>
+      <ul class="glist">
+        <li data-t="Nothing reaches a host without a target you set, and it always validates first — a ruleset that fails nft -c never loads.|Nada llega a una máquina sin un destino que tú pongas, y siempre valida antes — un ruleset que no pasa nft -c no se carga.">Validates before it loads.</li>
+        <li data-t="The timer lives on the host, not in eFeFlow — so the very rule that drops your own connection cannot stop the revert from firing.|El temporizador vive en la máquina, no en eFeFlow — así que la misma regla que tira tu conexión no puede impedir que el rollback salte.">The timer is on the host, not here.</li>
+        <li data-t="That is what makes locking yourself out survivable: stay silent and the firewall restores itself, so a wrong rule costs a minute, not an afternoon.|Eso es lo que hace sobrevivible dejarte fuera: quédate callado y el firewall se restaura solo, así que una regla equivocada cuesta un minuto, no una tarde.">Locking yourself out is survivable.</li>
+      </ul>
+    </article>
 
     <article class="gcard">
       <div class="gh"><span class="gi" style="color:var(--t3)"><svg class="ico" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg></span>
