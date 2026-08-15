@@ -25,8 +25,8 @@ const CRIT = [
   ["ctst",  /ct status (\w+)/],
   ["iif",   /(?:iif|iifname) "?([\w.-]+)"?/],
   ["oif",   /(?:oif|oifname) "?([\w.-]+)"?/],
-  ["saddr", /ip6? saddr (?!!=)(\S+)/],
-  ["daddr", /ip6? daddr (?!!=)(\S+)/],
+  ["saddr", /ip6? saddr (?!!=)(\{[^}]*\}|\S+)/],
+  ["daddr", /ip6? daddr (?!!=)(\{[^}]*\}|\S+)/],
   ["sport", /sport (\{[^}]*\}|\S+)/],
   ["dport", /dport (\{[^}]*\}|\S+)/],
 ];

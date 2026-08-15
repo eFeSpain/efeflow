@@ -38,6 +38,21 @@ test("neither family covers the other, in either direction", () => {
   assert.ok(!overlaps(c("ip saddr 10.0.0.0/8"), c("ip6 saddr 2001:db8::/32")));
 });
 
+/* An address set in braces is a criterion like any other. The saddr/daddr
+   pattern read only the first token — the `{` — so a rule matching a braced set
+   was opaque, comparable to nothing, and every such rule stood outside the
+   analysis. sport/dport already read the brace; addresses do now too. */
+test("a braced address set is read, not swallowed as an opaque `{`", () => {
+  assert.equal(c("ip6 saddr { 2001:db8::1, 2001:db8::2 } tcp dport 53").saddr,
+    "{ 2001:db8::1, 2001:db8::2 }");
+  assert.equal(c("ip saddr { 10.0.0.1, 10.0.0.2 } tcp dport 22")._opaque, false,
+    "reading the set means nothing is left unread");
+  /* and it covers correctly: the set covers each of its members, not the reverse */
+  assert.ok(subsumes(c("ip saddr { 10.0.0.1, 10.0.0.2 }"), c("ip saddr 10.0.0.1")));
+  assert.ok(!subsumes(c("ip saddr 10.0.0.1"), c("ip saddr { 10.0.0.1, 10.0.0.2 }")),
+    "one address does not cover a set that includes another");
+});
+
 /* A prefix written unnormalised still says how many bits it fixes. */
 test("coverage follows the prefix length, not just the network address", () => {
   assert.ok(!subsumes(c("ip saddr 10.1.0.0/16"), c("ip saddr 10.1.0.0/8")),
