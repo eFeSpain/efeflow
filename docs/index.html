@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>eFeFlow — Visual nftables editor, analyser &amp; packet simulator for Linux</title>
-<meta name="description" content="eFeFlow is a free, open-source visual editor for nftables firewalls. Import your ruleset, find dead and shadowed rules, watch a packet walk your chains to its verdict, and apply with commit-confirm rollback so you never lock yourself out. Linux, Windows and macOS.">
-<meta name="keywords" content="nftables GUI, nftables editor, visual nftables editor, nftables ruleset editor, nftables firewall editor, nftables packet simulator, netfilter GUI, Linux firewall GUI, nftables rollback, nft editor">
+<meta name="description" content="eFeFlow is a free, open-source visual editor for nftables firewalls. Build a ruleset from scratch or import what you already run, find dead and shadowed rules, watch a packet walk your chains to its verdict, and apply with commit-confirm rollback so you never lock yourself out. Linux, Windows and macOS.">
+<meta name="keywords" content="nftables GUI, nftables editor, visual nftables editor, nftables ruleset editor, nftables firewall editor, nftables rule builder, nftables rule generator, build nftables rules, create nftables firewall from scratch, nftables packet simulator, netfilter GUI, Linux firewall GUI, nftables rollback, nft editor">
 <meta name="author" content="eFeSpain">
 <link rel="canonical" href="https://efespain.github.io/efeflow/">
 <link rel="icon" href="eFeFlow.svg" type="image/svg+xml">
@@ -31,7 +31,7 @@
   "applicationCategory": "DeveloperApplication",
   "applicationSubCategory": "Firewall configuration",
   "operatingSystem": "Linux, Windows, macOS",
-  "description": "A visual editor, analyser and packet simulator for nftables firewalls. Import a ruleset, find shadowed and dead rules, simulate a packet's path to its verdict, and apply with commit-confirm rollback.",
+  "description": "A visual editor, analyser and packet simulator for nftables firewalls. Build a ruleset from scratch or import one, find shadowed and dead rules, simulate a packet's path to its verdict, and apply with commit-confirm rollback.",
   "url": "https://efespain.github.io/efeflow/",
   "downloadUrl": "https://github.com/eFeSpain/efeflow/releases/latest",
   "softwareVersion": "0.9.23",
@@ -123,9 +123,10 @@
     <p class="tag">The IDE for nftables</p>
     <h1>See what your firewall actually does</h1>
     <p class="lede">eFeFlow is a free, open-source <strong>visual editor, analyser and packet
-      simulator for nftables</strong>. Import what you already run, find the rules that can never
-      fire, watch a packet walk your chains to its verdict, and apply with a rollback that arms
-      on the firewall itself — so the rule that cuts you off cannot stop you undoing it.</p>
+      simulator for nftables</strong>. <strong>Build a firewall from scratch</strong> or import what
+      you already run, find the rules that can never fire, watch a packet walk your chains to its
+      verdict, and apply with a rollback that arms on the firewall itself — so the rule that cuts
+      you off cannot stop you undoing it.</p>
     <div class="cta">
       <a class="btn primary" href="https://github.com/eFeSpain/efeflow/releases/latest">Download</a>
       <a class="btn ghost" href="https://github.com/eFeSpain/efeflow">View on GitHub</a>
@@ -165,6 +166,7 @@
     <h2>What eFeFlow does</h2>
     <p class="sub">Everything is derived from your rules, never authored — and undoable.</p>
     <div class="grid">
+      <div class="feat"><h3>Build from scratch</h3><p>Start from an empty table and compose tables, chains and rules visually — pick hooks, priorities, matches and verdicts from menus, and eFeFlow writes correct nft as you go. No blank file to stare at, no syntax to memorise.</p></div>
       <div class="feat"><h3>Simulate a packet</h3><p>Describe one, watch it walk your chains rule by rule through every hook, and see exactly which rule decides it — the same verdict your exported ruleset produces.</p></div>
       <div class="feat"><h3>Find rules that can never match</h3><p>Shadowed rules, conflicting DNAT targets, chains that trust conntrack but never drop <code>invalid</code> — derived from your rules, never guessed.</p></div>
       <div class="feat"><h3>Import what you already run</h3><p>Paste <code>nft list ruleset</code> and it proves the round-trip line by line before it imports a thing.</p></div>
@@ -172,6 +174,15 @@
       <div class="feat"><h3>Export real nft source</h3><p>Not a config format of its own. What comes out is exactly what you would have written by hand.</p></div>
       <div class="feat"><h3>Both IP families, modelled properly</h3><p><code>accept</code> ends the chain, not the packet. <code>ip6 saddr</code> constrains IPv6 and nothing else. A <code>dormant</code> table is not walked at all.</p></div>
     </div>
+  </section>
+
+  <section id="build">
+    <h2>Start from an empty table, not a blank file</h2>
+    <p class="sub">eFeFlow is a full editor: build a whole firewall from nothing, visually, and read out real nft source at the end.</p>
+    <figure>
+      <img src="editor.png" width="820" alt="The eFeFlow visual editor: building nftables tables, chains and rules from scratch, with hooks, priorities, matches and verdicts chosen from menus">
+      <figcaption>Add tables, attach chains to hooks with a priority, and compose each rule from matches and a verdict — no syntax to memorise. What it emits is exactly the nft you would have written by hand, and every finding and simulation applies to what you build, not just to what you import.</figcaption>
+    </figure>
   </section>
 
   <section id="simulate">
