@@ -164,3 +164,52 @@ test("every finding says what is wrong in both languages", () => {
     assert.notEqual(f.title[0], f.title[1], `${f.code}: the title was never translated`);
   }
 });
+
+/* ── what three thousand real rulesets said about this file ─────────────────
+ *
+ * `npm run corpus analyse` ran these checks over every ruleset nft itself
+ * accepts. Four hundred of the five hundred and fifty-six complaints were
+ * about valid syntax — which for a panel that exists to be believed is not
+ * noise, it is the end of being read. Each shape below is reduced from a real
+ * file.
+ */
+
+/* `@th,16,16` is a raw payload expression — sixteen bits at offset sixteen of
+   the transport header — not a reference to a set called th. The bases are a
+   closed list: ll, nh, th, ih. 109 rules across the corpus. */
+test("a raw payload expression is not a set reference", () => {
+  const ctx = { sets: ["blocked"], chains: [], flowtables: [] };
+  assert.deepEqual(codes('meta l4proto {tcp, udp} @th,16,16 1714-1764 accept', ctx), []);
+  assert.deepEqual(codes("@nh,8,8 64 accept", ctx), []);
+  /* but a set genuinely called th, used as a set, is still resolved */
+  assert.deepEqual(codes("ip saddr @th drop", ctx), ["unknown-set"]);
+  assert.deepEqual(codes("ip saddr @th drop", { ...ctx, sets: ["th"] }), []);
+});
+
+/* A name runs to the end of the name. `\w` stops at a hyphen, so
+   `vmap @filter-proto-services` was checked against `filter` and reported
+   missing — the map was right there in the same table. ~290 rules. */
+test("a hyphenated set name is checked whole", () => {
+  const ctx = { sets: ["filter-proto-services"], chains: [], flowtables: [] };
+  assert.deepEqual(codes("ip protocol . ip daddr . th dport vmap @filter-proto-services", ctx), []);
+  assert.deepEqual(codes("ip saddr @filter-proto drop", ctx), ["unknown-set"],
+    "a prefix of a real name is still not a name");
+});
+
+/* An anonymous chain nests braces — a set inside a jump block — and one
+   collapse pass only reached the innermost pair. The verdict check then read
+   the accept *inside* the block as the rule's own, and reported the `; }`
+   after it. 109 rules, every one loadable. */
+test("a verdict inside a nested anonymous chain is not the rule's verdict", () => {
+  assert.deepEqual(
+    codes("meta l4proto { tcp, udp } th dport 53 jump { ip saddr { 127.0.0.0/8 } counter accept; }",
+          { chains: [], sets: [], flowtables: [] }),
+    []);
+});
+
+/* And the check now reads the first verdict, not the last: two rules run
+   together — `accept` and then more matches — is the mistake it exists for,
+   and looking at the last verdict meant the second rule hid the first. */
+test("two rules run together are reported, whichever way round", () => {
+  assert.deepEqual(codes("tcp dport 22 accept tcp dport 80 drop"), ["verdict-not-last"]);
+});

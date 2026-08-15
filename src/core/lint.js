@@ -54,7 +54,26 @@ const bare = s => s.replace(/"(?:[^"\\]|\\.)*"/g, '""');
 /* Strings and braced groups both blanked. A verdict map spells its verdicts
    inside the braces — `tcp dport vmap { 22 : accept, 80 : drop }` — and those
    are values, not the end of the rule. */
-const outer = s => bare(s).replace(/\{[^{}]*\}/g, "{}");
+/* The rule with every braced group reduced to `{}`, however deep they nest.
+ *
+ * One pass only reaches the innermost, so an anonymous chain holding a set —
+ *
+ *     th dport 53 jump { ip saddr { 127.0.0.0/8 } counter accept; }
+ *
+ * came out as `jump { ip saddr {} counter accept; }`, still braced. The
+ * verdict check then read the `accept` *inside* the anonymous chain as the
+ * rule's own and reported the `; }` after it as a match nft has no room for.
+ * A hundred and nine rules across the corpus, every one of them a rule nft
+ * loads without complaint. */
+const outer = s => {
+  /* Through a marker with no braces in it. Collapsing straight to `{}` never
+     terminates on a nested group: the outer pair still holds braces, so the
+     pattern that matches an innermost group never reaches it, and replacing
+     `{}` with `{}` is a fixed point the loop cannot get past. */
+  let t = bare(s), prev;
+  do { prev = t; t = t.replace(/\{[^{}]*\}/g, "\u0000"); } while (t !== prev);
+  return t.replace(/\u0000/g, "{}");
+};
 
 const F = (code, en, es) => ({ code, level: "error", title: [en, es] });
 
@@ -102,15 +121,26 @@ export function lintRule(line, ctx = {}){
 
   /* a verdict is terminal: anything after it, beyond what that verdict itself
      takes, is text nft has no room for */
+  /* The *first* verdict, not the last one.
+   *
+   * Looking at the last meant the check could only ever see trailing rubbish,
+   * and the mistake it exists for is a verdict in the middle:
+   *
+   *     tcp dport 22 accept tcp dport 80 drop
+   *
+   * which nft refuses and which came back clean, because the last verdict on
+   * the line is `drop` and there is nothing after it. Two rules run together
+   * is exactly what somebody writing by hand produces, and the second half of
+   * it silently does nothing. */
   const o = outer(src);
-  const last = [...o.matchAll(VERDICTS)].at(-1);
-  if(last){
+  const first = [...o.matchAll(VERDICTS)][0];
+  if(first){
     /* nft allows a trailing `comment "…"` after the verdict — bare() left it as
        `comment ""`, and without allowing it, `... accept comment "x"` (a rule
        nft loads fine) was marked red. */
-    const rest = o.slice(last.index + last[0].length).trim()
+    const rest = o.slice(first.index + first[0].length).trim()
       .replace(/\bcomment\s+""\s*$/, "").trim();
-    const tail = VERDICT_TAIL[last[1]];
+    const tail = VERDICT_TAIL[first[1]];
     if(tail ? !tail.test(rest) : rest !== "")
       out.push(F("verdict-not-last",
         "A verdict ends the rule — this one has a match after it",
@@ -136,14 +166,36 @@ export function lintRule(line, ctx = {}){
   }
   /* A flowtable is reached with `flow add @ft`, so `@` does not only mean a
      set — reported against the sets alone, every offload rule in every router
-     ruleset came back as naming a set that does not exist. */
+     ruleset came back as naming a set that does not exist.
+   *
+   * Nor does every `@` introduce a name at all. `@th,16,16` is a raw payload
+   * expression — sixteen bits at offset sixteen of the transport header — and
+   * the bases are a closed list: `ll`, `nh`, `th`, `ih`. Read as a set
+   * reference, every ruleset that reaches into a header by offset was told it
+   * names a set that does not exist.
+   *
+   * And a name runs to the end of the name. `\w` stops at a hyphen, so a rule
+   * saying `vmap @filter-proto-services` was checked against `filter` and
+   * reported missing — the map was right there in the same table. nftables
+   * names take hyphens and people use them: across three thousand real
+   * rulesets these two between them accounted for four hundred complaints,
+   * every one of them about valid syntax.
+   *
+   * The cost of being wrong here is the whole screen's credibility. This panel
+   * exists to be believed about a firewall somebody is responsible for, and
+   * four hundred confident accusations that are not true is not a lint with
+   * some noise in it — it is a lint nobody reads. */
   if(Array.isArray(ctx.sets)){
     const named = [...ctx.sets, ...(ctx.flowtables || [])];
-    for(const m of e.matchAll(/@([A-Za-z_]\w*)/g))
-      if(!named.includes(m[1]))
-        out.push(F("unknown-set",
-          `Nothing called @${m[1]} in this table`,
-          `No hay nada llamado @${m[1]} en esta tabla`));
+    const PAYLOAD = /^(ll|nh|th|ih)$/;
+    for(const m of e.matchAll(/@([A-Za-z_][\w.-]*)/g)){
+      /* `@th,16,16` — a base, and then the offset that proves it is one */
+      if(PAYLOAD.test(m[1]) && e[m.index + m[0].length] === ",") continue;
+      if(named.includes(m[1])) continue;
+      out.push(F("unknown-set",
+        `Nothing called @${m[1]} in this table`,
+        `No hay nada llamado @${m[1]} en esta tabla`));
+    }
   }
 
   /* The objects that are named in a statement rather than with an @. The set

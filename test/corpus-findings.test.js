@@ -598,3 +598,32 @@ test("a family flush empties only that family, as the kernel does", () => {
   const families = [...new Set(p.chains.map((c) => c.table.split(" ")[0]))].sort();
   assert.deepEqual(families, ["bridge", "ip"], "the ip table declared before the bridge flush must survive it");
 });
+
+/* ── found by the analyse pass, not the round-trip ──────────────────────────
+ *
+ * A chain header and a rule sharing one physical line:
+ *
+ *     type filter hook input priority 0; policy drop; counter comment "…"
+ *
+ * nft reads three statements. Unsplit, the whole line missed the header branch
+ * and parsed as one rule — hook null, policy null, a base chain silently
+ * demoted — while the round-trip stayed at 100%, because the re-emitted text
+ * means exactly the same thing to nft. The kernel cannot see this one: the
+ * *file* is fine both ways, and it is the model that was wrong — the canvas,
+ * the analyser and the simulator all reasoning about an INPUT chain attached
+ * to nothing. It surfaced as a lint complaint about a "rule" that was a
+ * header, in the corpus analyse pass. */
+test("a header and a rule sharing a line are a header and a rule", () => {
+  const m = parseNft(`table inet filter {
+	chain INPUT {
+		type filter hook input priority 0; policy drop; counter comment "count dropped packets"
+		ct state { established, related } accept
+	}
+}`);
+  const ch = m.chains[0];
+  assert.equal(ch.hook, "input", "the chain is a base chain");
+  assert.equal(ch.policy, "drop", "and its policy survived");
+  assert.equal(ch.rules.length, 2, "the counter is a rule of its own");
+  assert.equal(ch.rules[0].ctr, true);
+  assert.equal(ch.rules[0].cmt, "count dropped packets");
+});

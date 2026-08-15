@@ -154,7 +154,7 @@ puede reproducir, te dice cuál antes de que te comprometas a nada.
 ## ⚠ Beta
 
 Hace el trabajo completo hoy: importar, demostrar, analizar, simular, editar,
-aplicar y exportar. Lo respaldan 1.090 comprobaciones automáticas, sobre el
+aplicar y exportar. Lo respaldan 1.097 comprobaciones automáticas, sobre el
 parser, el analizador, el evaluador de paquetes y la propia interfaz.
 
 Lo que todavía tiene poco es kilometraje — pero ya no tiene ninguno. **Se
@@ -184,6 +184,20 @@ Los peores eran ficheros que escribíamos y que nft no leía: una cadena anónim
 doblada en una sola línea sin los puntos y coma que nft exige, una tabla con un
 guion en el nombre, un `include` movido por encima de la tabla a la que su
 fichero añade reglas. Quien los encontró es `npm run corpus`, y es repetible.
+
+**Y el mismo corpus prueba los hallazgos, no solo el round-trip.** `npm run
+corpus analyse` pasa el analizador y el simulador de paquetes por los 3.038
+rulesets —ninguno provocó una excepción— y luego somete cada «esta regla nunca
+puede casar» a una segunda opinión. Esta aplicación ya contiene dos
+implementaciones independientes de qué casa una regla: el analizador lo razona y
+el simulador lo evalúa. Así que por cada regla que el analizador da por muerta,
+se construye un paquete a partir de las condiciones de esa misma regla y se pasa
+por el simulador; si el simulador dice que el paquete casa con la regla «muerta»
+pero no con la que supuestamente la eclipsa, los dos discrepan y uno se equivoca.
+**Discreparon cero.** Llegar ahí exigió arreglar uno real: `ip protocol ospf` y
+`ip6 nexthdr ospf` nombran el mismo protocolo en familias distintas, y el
+analizador estaba a punto de dar por muerta la regla IPv6 —un borrado de un clic
+que habría dejado a un router sin OSPFv3.
 
 Por eso te dice cuándo no está seguro en vez de suponer, por eso el round-trip
 informa de un número y no de un visto bueno, y por eso el rollback se arma en
@@ -388,13 +402,14 @@ escribes `accept`, no `aceptar`.
 npm install
 npm run app          # la aplicación de escritorio
 npm run dev          # o solo el frontend, en un navegador
-npm test             # 1.090 aserciones
+npm test             # 1.097 aserciones
 npm run app:build    # instaladores en src-tauri/target/release/bundle/
 
 npx tauri build --no-bundle && npm run e2e   # conduce la app compilada, no el código
 npm run corpus fetch                          # real rulesets off GitHub
 npm run corpus run --nft                     # can we read them and write them back
 npm run corpus kernel                        # does the kernel see the same ruleset
+npm run corpus analyse                       # do the findings survive the simulator
 
 node bin/efeflow.mjs lint fw.nft    # el linter, directo desde el clon
 ```

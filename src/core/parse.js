@@ -228,7 +228,27 @@ export function logicalLines(text){
   const inChain = () => inside.at(-1) === "chain";
 
   const emit = (pieces, ln, raw, handle) => {
-    const lines = pieces.length > 1 ? expand(pieces) : pieces;
+    /* Inside a chain, always through expand() — even for a line that opened no
+       block. Expanding only multi-piece lines meant a braceless line was never
+       split at its semicolons, and one corpus ruleset writes
+     *
+     *     type filter hook input priority 0; policy drop; counter comment "…"
+     *
+     * — a chain header and a rule sharing a physical line, which nft reads as
+     * three statements. Unsplit, the whole line missed the header branch and
+     * parsed as one rule: hook null, policy null, a base chain silently
+     * demoted to a regular one. The round-trip could never catch it, because
+     * the re-emitted text means the same thing to nft — the file survives byte
+     * for byte while the canvas, the analyser and the simulator all reason
+     * about an INPUT chain that is not attached to anything. It was the lint
+     * that finally said so, complaining about a "rule" that was a header.
+     *
+     * Only inside a chain. A set writes `type ipv4_addr ; flags interval` and
+     * the set reader takes the pair from one line — splitting there changed
+     * how the line goes back out, and fidelity.test.js holds it to the line it
+     * came from. For the common chain line — no top-level semicolon — expand()
+     * returns it unchanged. */
+    const lines = pieces.length > 1 || inChain() ? expand(pieces) : pieces;
     for(const text of lines){ out.push({ text, ln, raw, handle }); track(text); }
   };
   text.split("\n").forEach((raw, ln) => {

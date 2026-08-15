@@ -29,3 +29,6 @@ Thumbs.db
 
 # Other people's rulesets, fetched for testing. Not ours to commit.
 .corpus/
+
+# Local Claude Code settings — machine-specific, never shared
+.claude/settings.local.json

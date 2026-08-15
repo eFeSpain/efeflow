@@ -78,3 +78,38 @@ test("two IPv6 rules that do not overlap are left alone", (t) => {
 
   assert.deepEqual(analyse().filter((f) => f.kind === "shadowed"), []);
 });
+
+/* The families part company even when no address is written.
+ *
+ * `ip protocol ospf` and `ip6 nexthdr ospf` name the same transport, so they
+ * read as the same l4 criterion — and in an inet chain that is true about the
+ * protocol and false about the packet: the first matches only IPv4, the second
+ * only IPv6, and no packet is both. Three corpus rulesets carried this pair
+ * and the analyser called the v6 rule shadowed by the v4 one, with a Delete
+ * offered above it — a button that would have taken OSPFv3 off a live router.
+ *
+ * The corpus analyse pass found it: the packet built from the dead rule's own
+ * criteria matched the rule but not the one said to cover it. `meta l4proto`
+ * stays family-neutral, which is the whole point of writing it that way. */
+test("one family's protocol match does not cover the other's", () => {
+  assert.ok(!subsumes(c("ip protocol ospf"), c("ip6 nexthdr ospf")),
+    "an IPv4-only rule cannot cover the IPv6 packets that never reach it");
+  assert.ok(!subsumes(c("ip6 nexthdr ospf"), c("ip protocol ospf")));
+  assert.ok(!overlaps(c("ip protocol ospf"), c("ip6 nexthdr ospf")),
+    "no packet is both IPv4 and IPv6");
+  /* the neutral spelling still covers, because it really does match both */
+  assert.ok(subsumes(c("meta l4proto ospf"), c("ip6 nexthdr ospf")));
+});
+
+test("a v6-pinned rule is not shadowed by a v4-pinned one, end to end", (t) => {
+  Object.assign(MODEL, {
+    chains: [{ table: "inet f", id: "input", hook: "input", type: "filter",
+      prio: 0, policy: "drop", rules: [
+        { expr: "ip protocol ospf", verdict: "accept", on: true },
+        { expr: "ip6 nexthdr ospf", verdict: "accept", on: true },
+      ] }],
+    sets: [], objects: [], tables: [{ name: "inet f", extra: [] }], prelude: [], preludeAt: [],
+  });
+  const dead = analyse().filter((f) => f.kind === "shadowed");
+  assert.equal(dead.length, 0, JSON.stringify(dead.map((f) => f.title?.[0])));
+});

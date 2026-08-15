@@ -61,6 +61,16 @@ export function criteria(expr){
   c._limit  = /limit rate/.test(e);         /* rate-limited ⇒ non-deterministic */
   c._log    = /\blog\b/.test(e);
   c._negate = /!=/.test(e);
+  /* Which IP family the rule is pinned to, if any. `ip protocol ospf` and
+     `ip6 nexthdr ospf` read as the same l4 criterion — which is right about
+     the transport and wrong about the packet: in an inet chain the first
+     matches only IPv4 and the second only IPv6, so no packet matches both.
+     Without this, the analyser reported the v6 rule as shadowed by the v4 one
+     — in three real rulesets off the corpus — and offered a Delete that would
+     have broken OSPFv3 on somebody's router. `meta l4proto` stays neutral,
+     which is the point of that spelling. Addresses never needed this: a v6
+     address inside a v4 prefix already fails the value comparison. */
+  c._fam = /\bip6\s/.test(e) ? "ip6" : /\bip\s/.test(e) ? "ip" : undefined;
 
   /* What is left once everything read has been taken out. A rule carrying one
      of those matches far fewer packets than its criteria suggest, and the
@@ -158,6 +168,9 @@ function covers(a,b){
 export function subsumes(a,b){
   if(a._limit || a._negate || b._negate) return false;   /* can't reason safely */
   if(a._opaque) return false;
+  /* a rule pinned to one IP family cannot cover a rule that is not pinned to
+     the same one — the other family's packets reach b and never reach a */
+  if(a._fam && a._fam !== b._fam) return false;
   /* One integer instead of up to ten string comparisons, and exactly the same
      question the loop below used to ask first: if A constrains anything B
      leaves open, B is the broader rule and A cannot cover it. Most pairs in a
@@ -175,6 +188,8 @@ export function subsumes(a,b){
 export function overlaps(a,b){
   if(a._negate || b._negate) return false;
   if(a._opaque || b._opaque) return false;
+  /* opposite families share no packet at all */
+  if(a._fam && b._fam && a._fam !== b._fam) return false;
   return CRIT.every(([k])=>{
     if(a[k]===undefined || b[k]===undefined) return true;
     if(listOf(a[k]).some(x => listOf(b[k]).some(y => spanOverlaps(x, y)))) return true;

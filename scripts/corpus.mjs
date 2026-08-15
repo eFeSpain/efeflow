@@ -441,6 +441,175 @@ async function kernel() {
   console.log(`\n  the lists are in .corpus/_kernel.json\n`);
 }
 
+/* ── asking the other half of the application the same question ───────────
+ *
+ * `run` and `kernel` test the parser: can we read a real ruleset and write it
+ * back. Neither says anything about the half of this application that gives an
+ * opinion — the findings. Those are tested against cases written beside the
+ * code, which is a corpus with the same bias the parser's used to have: it
+ * holds the shapes somebody thought of, and those are the shapes that work.
+ *
+ * The consequence of being wrong is worse here than anywhere else in the
+ * product. A parser that misreads a line reports a round-trip below 100% and
+ * you go and look. A finding that is wrong says "rule 11 can never match" and
+ * offers you a button that deletes it, about a rule that fires.
+ *
+ * Two questions, over every ruleset the corpus holds:
+ *
+ *   1. Does it survive at all — does analyse() or evaluate() throw?
+ *
+ *   2. Is a "shadowed" finding *true*? That one is falsifiable without any
+ *      oracle, because this application already contains a second, independent
+ *      implementation of what a rule matches: the simulator. The analyser's
+ *      claim is that every packet matching the dead rule already matched the
+ *      one above it. So build a packet from the dead rule's own criteria and
+ *      ask simulate.js. If the simulator says the witness matches the rule the
+ *      analyser called dead and does *not* match the rule said to cover it,
+ *      the two halves disagree — and one of them is wrong in a way that ends
+ *      with somebody deleting a live rule.
+ *
+ * A witness that does not even match the rule it was built from proves nothing
+ * about the analyser; it is this file failing to describe a packet. Those are
+ * counted apart and never reported as a finding.
+ */
+async function analyseCorpus(withNft) {
+  const { parseNft } = await import("../src/core/parse.js");
+  const { MODEL } = await import("../src/core/model.js");
+  const { analyse, criteria } = await import("../src/core/analyse.js");
+  const { evaluate, matches, PRESETS, setPacket } = await import("../src/core/simulate.js");
+
+  if (!existsSync(CACHE)) { console.log("  nothing fetched yet — run `fetch` first\n"); return; }
+  const files = readdirSync(CACHE)
+    .filter((f) => !f.startsWith("_") && statSync(join(CACHE, f)).isFile());
+  const acceptable = withNft ? nftAcceptable() : null;
+
+  /* A packet built from what a rule asks for. Anything the rule does not
+     constrain keeps the preset's value, because a packet has to have one —
+     the point is only that every constraint the rule *does* name is satisfied.
+     Ports become numbers because that is what the simulator compares. */
+  const witness = (c, expr) => {
+    const p = { ...PRESETS.ssh, flags: [...PRESETS.ssh.flags] };
+    /* `@set` names a set: the witness is any member of it, and the first will
+       do. A name that resolves to nothing stays as it is and the witness
+       fails honestly. */
+    const deref = (v) => {
+      const m = v.match(/^@([\w.-]+)$/);
+      if (!m) return v;
+      const s = MODEL.sets.find((x) => x.n === m[1]);
+      return s?.el?.[0] ? String(s.el[0]).split(":")[0].trim() : v;
+    };
+    const first = (v) => deref((v.startsWith("{") ? v.slice(1, -1).split(",")[0] : v).trim());
+    /* a named service is a port too — the simulator resolves it, so pass it
+       through rather than dropping the constraint */
+    const port = (v) => { const t = first(v).split("-")[0]; const n = parseInt(t, 10); return Number.isFinite(n) ? n : t; };
+    if (c.proto) p.proto = c.proto;
+    if (c.l4) { const v = first(c.l4); p.proto = v === "ipv6-icmp" ? "icmpv6" : v; }
+    if (c.state) p.state = first(c.state.split(",")[0]);
+    if (c.iif) { p.iif = c.iif; }
+    if (c.oif) { p.oif = c.oif; p.dir = "fwd"; }
+    /* an address with a prefix is a range; its network address is in it */
+    if (c.saddr) p.saddr = first(c.saddr).split("/")[0];
+    if (c.daddr) p.daddr = first(c.daddr).split("/")[0];
+    if (c.sport) p.sport = port(c.sport);
+    if (c.dport) p.dport = port(c.dport);
+    /* an IPv6 address anywhere in the rule means an IPv6 packet — and so does
+       `ip6` anything, even with no address written */
+    if (/:/.test(String(p.saddr)) || /:/.test(String(p.daddr)) || /\bip6\s/.test(expr || "")) {
+      if (!/:/.test(String(p.saddr))) p.saddr = "2001:db8:1::47";
+      if (!/:/.test(String(p.daddr))) p.daddr = "2001:db8::10";
+    }
+    return p;
+  };
+
+  let checked = 0, invalid = 0, threw = 0, simThrew = 0;
+  let shadowed = 0, sound = 0;
+  const kinds = new Map();
+  const contradictions = [];
+  const crashes = [];
+  /* kept with their rules, because "this script could not describe a packet"
+     is only acceptable while somebody can look at which rules it gave up on */
+  const unwitnessed = [];
+
+  for (const f of files) {
+    if (acceptable && !acceptable.has(f)) { invalid++; continue; }
+    let parsed;
+    try { parsed = parseNft(readFileSync(join(CACHE, f), "utf8")); }
+    catch { continue; }
+    checked++;
+
+    Object.assign(MODEL, {
+      chains: parsed.chains, sets: parsed.sets, objects: parsed.objects,
+      tables: parsed.tables, prelude: parsed.prelude, preludeAt: parsed.preludeAt,
+    });
+
+    let found;
+    try { found = analyse(); }
+    catch (e) { threw++; crashes.push({ file: f, where: "analyse", err: String(e.message).split("\n")[0] }); continue; }
+
+    for (const x of found) kinds.set(x.kind, (kinds.get(x.kind) || 0) + 1);
+
+    /* the simulator, on every preset, over the same ruleset */
+    for (const [name, preset] of Object.entries(PRESETS)) {
+      try { setPacket(preset); evaluate(preset); }
+      catch (e) {
+        simThrew++;
+        crashes.push({ file: f, where: `evaluate/${name}`, err: String(e.message).split("\n")[0] });
+        break;
+      }
+    }
+
+    /* and every shadowed claim, held to the simulator's own matcher */
+    for (const x of found.filter((y) => y.kind === "shadowed")) {
+      const ch = MODEL.chains.find((c) => c.table === x.chain.table && c.id === x.chain.id);
+      const dead = ch?.rules[x.i], cover = ch?.rules[x.ref];
+      if (!dead || !cover) continue;
+      shadowed++;
+      const p = witness(criteria(dead.expr), dead.expr);
+      let hitsDead, hitsCover;
+      try { hitsDead = matches(dead, p); hitsCover = matches(cover, p); }
+      catch (e) { crashes.push({ file: f, where: "matches", err: String(e.message).split("\n")[0] }); continue; }
+
+      if (!hitsDead) {                              /* this script's failure, not the app's */
+        unwitnessed.push({ file: f, dead: dead.expr || "(bare)", cover: cover.expr || "(bare)" });
+        continue;
+      }
+      if (hitsCover) { sound++; continue; }
+      contradictions.push({
+        file: f, chain: `${ch.table} / ${ch.id}`,
+        dead: `${x.i + 1}: ${dead.expr} ${dead.verdict}`,
+        cover: `${x.ref + 1}: ${cover.expr} ${cover.verdict}`,
+        packet: `${p.proto} ${p.saddr}:${p.sport} → ${p.daddr}:${p.dport} iif ${p.iif} state ${p.state}`,
+      });
+    }
+  }
+
+  console.log(`\n── ${checked} rulesets, put through the analyser and the simulator ──\n`);
+  console.log(`  ${threw} made analyse() throw · ${simThrew} made evaluate() throw\n`);
+  console.log(`  ${shadowed} rules called dead`);
+  console.log(`    ${sound} the simulator agrees are covered by the rule named`);
+  console.log(`    ${contradictions.length} the simulator says are NOT covered — one of the two is wrong`);
+  console.log(`    ${unwitnessed.length} this script could not build a packet for, so they are unproven\n`);
+
+  const worst = [...kinds].sort((a, b) => b[1] - a[1]);
+  console.log(`  findings by kind:\n`);
+  for (const [k, n] of worst) console.log(`  ${String(n).padStart(6)} × ${k}`);
+  console.log();
+
+  for (const c of contradictions.slice(0, 12)) {
+    console.log(`  ── ${c.file}\n     ${c.chain}`);
+    console.log(`     called dead : ${c.dead}`);
+    console.log(`     said to cover it: ${c.cover}`);
+    console.log(`     but this packet matches the first and not the second:\n       ${c.packet}\n`);
+  }
+  if (contradictions.length > 12) console.log(`     … and ${contradictions.length - 12} more\n`);
+  for (const c of crashes.slice(0, 10)) console.log(`  THREW  ${c.where}  ${c.file}\n         ${c.err}`);
+
+  writeFileSync(join(CACHE, "_analyse.json"),
+    JSON.stringify({ checked, threw, simThrew, shadowed, sound, unwitnessed,
+                     kinds: Object.fromEntries(worst), contradictions, crashes }, null, 1));
+  console.log(`\n  the whole list is in .corpus/_analyse.json\n`);
+}
+
 const cmd = process.argv[2];
 if (cmd === "fetch") {
   /* GitHub caps a query at a thousand results, so ten pages is the ceiling
@@ -450,9 +619,12 @@ if (cmd === "fetch") {
 }
 else if (cmd === "kernel") await kernel();
 else if (cmd === "run") await run(process.argv.includes("--nft"));
+else if (cmd === "analyse") await analyseCorpus(process.argv.includes("--nft"));
 else console.log(`
   node scripts/corpus.mjs fetch        search GitHub, cache to .corpus/
   node scripts/corpus.mjs run          parse and verify what is cached
   node scripts/corpus.mjs run --nft    and only count files nft itself accepts
   node scripts/corpus.mjs kernel       ask the kernel whether meaning survived
+  node scripts/corpus.mjs analyse      run the findings and the simulator over it,
+                                       and hold every "dead rule" to the simulator
 `);

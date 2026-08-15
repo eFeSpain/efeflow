@@ -152,7 +152,7 @@ be reproduced, it tells you which one before you commit to anything.
 ## ⚠ Beta
 
 It does the whole job today: import, prove, analyse, simulate, edit, apply,
-export. 1,090 automated assertions stand behind it, across the parser, the
+export. 1,097 automated assertions stand behind it, across the parser, the
 analyser, the packet evaluator and the interface itself.
 
 What it does not have much of is mileage — but it no longer has none. **4,337
@@ -183,6 +183,19 @@ worst were files we wrote that nft would not read at all: an anonymous chain
 folded onto one line without the semicolons nft insists on, a table whose name
 has a hyphen in it, an `include` moved above the table whose rules it adds to.
 The run that found them is `npm run corpus`, and it is repeatable.
+
+**And the same corpus tests the findings, not just the round-trip.** `npm run
+corpus analyse` runs the analyser and the packet simulator over all 3,038
+rulesets — nothing threw on any of them — and then holds every "this rule can
+never match" to a second opinion. This application already contains two
+independent implementations of what a rule matches: the analyser reasons about
+it, and the simulator evaluates it. So for each rule the analyser calls dead, a
+packet is built from that rule's own conditions and run through the simulator;
+if the simulator says the packet matches the "dead" rule but not the one said to
+shadow it, the two disagree and one is wrong. **Zero disagreed.** Getting there
+took fixing a real one: `ip protocol ospf` and `ip6 nexthdr ospf` name the same
+protocol in different families, and the analyser had been about to call the IPv6
+rule dead — a one-click delete that would have taken OSPFv3 off a router.
 
 That is why it tells you when it is not sure instead of guessing, why the
 round-trip check reports a number rather than a thumbs-up, and why the rollback
@@ -384,13 +397,14 @@ write `accept`, not `aceptar`.
 npm install
 npm run app          # the desktop app
 npm run dev          # or the frontend alone, in a browser
-npm test             # 1,090 assertions
+npm test             # 1,097 assertions
 npm run app:build    # installers in src-tauri/target/release/bundle/
 
 npx tauri build --no-bundle && npm run e2e   # drive the built app, not the source
 npm run corpus fetch                          # real rulesets off GitHub
 npm run corpus run --nft                     # can we read them and write them back
 npm run corpus kernel                        # does the kernel see the same ruleset
+npm run corpus analyse                       # do the findings survive the simulator
 
 node bin/efeflow.mjs lint fw.nft    # the linter, straight from the clone
 ```
