@@ -1,6 +1,6 @@
 [package]
 name = "efeflow"
-version = "0.9.23"
+version = "0.9.24"
 description = "Visual nftables firewall rule designer"
 authors = ["eFeSpain"]
 license = "MIT"
