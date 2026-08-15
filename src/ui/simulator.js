@@ -244,12 +244,23 @@ export function runSim(){
               `al final de ${loc}, antes de su <code>policy ${rx.blocker.policy}</code>`)
           : t(`in ${loc}, before rule ${rx.blocker.i+1}`,
               `en ${loc}, antes de la regla ${rx.blocker.i+1}`);
+        const se = rx.sideEffects;
+        const sample = se ? se.admits.slice(0,3).map(a=>`<code>${esc(a.addr)}</code>`).join(", ") : "";
+        const seLine = !se ? ""
+          : se.admits.length
+          ? `<div class="vb-fix-warn">${t(
+              `Heads up: this also lets in ${se.admits.length} source${se.admits.length>1?"s":""} that ${se.admits.length>1?"were":"was"} blocked — e.g. ${sample}. Narrow the rule if that is not what you want.`,
+              `Ojo: esto también deja entrar ${se.admits.length} origen${se.admits.length>1?"es":""} que estaba${se.admits.length>1?"n":""} bloqueado${se.admits.length>1?"s":""} — p.ej. ${sample}. Acota la regla si no es lo que quieres.`)}</div>`
+          : `<div class="vb-fix-ok">${t(
+              `No other source is newly let in (checked ${se.probed}).`,
+              `Ningún otro origen queda admitido de nuevo (comprobados ${se.probed}).`)}</div>`;
         fix = `<div class="vb-fix">
           <div class="vb-fix-t">${t("To accept this packet, add","Para aceptar este paquete, añade")}
             <code>${esc(rx.rule)}</code> ${where}.</div>
           ${!rx.sure ? `<div class="vb-fix-note">${t(
             "Derived from a trace that assumed part of the path — check it before you trust it.",
             "Derivado de una traza que asumió parte del camino — compruébalo antes de fiarte.")}</div>` : ""}
+          ${seLine}
           <button class="tb accent" id="vb-fix-add">${t("Add it and re-simulate","Añadirla y re-simular")}</button>
         </div>`;
       }
@@ -267,7 +278,7 @@ export function runSim(){
     /* Wired after the innerHTML that creates it. edit() puts the change through
        history, so Ctrl+Z takes it back out; then a fresh run repaints. */
     $("#vb-fix-add")?.addEventListener("click", ()=>{
-      const rx = prescribe(p);
+      const rx = prescribe(p, {probe:false});
       if(!rx || rx.already) return;
       edit(t("add accept rule","añadir regla accept"), ()=>{
         rx.chain.rules.splice(rx.at, 0, R(rx.rule.replace(/\s+accept$/,""), "accept"));
