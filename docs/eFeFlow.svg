@@ -1,0 +1,102 @@
+<svg width="720" height="260" viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg">
+
+  <defs>
+
+    <linearGradient id="blue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#39D5FF"></stop>
+      <stop offset="100%" stop-color="#0078FF"></stop>
+    </linearGradient>
+
+    <linearGradient id="green" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3AD5FF"></stop>
+      <stop offset="100%" stop-color="#46FF75"></stop>
+    </linearGradient>
+
+    <linearGradient id="red" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#4BBEFF"></stop>
+      <stop offset="100%" stop-color="#FF5050"></stop>
+    </linearGradient>
+
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="b"></feGaussianBlur>
+      <feMerge>
+        <feMergeNode in="b"></feMergeNode>
+        <feMergeNode in="SourceGraphic"></feMergeNode>
+      </feMerge>
+    </filter>
+
+  </defs>
+
+  <!-- ICON -->
+
+  <g transform="translate(40,30)" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+
+    <!-- Input -->
+
+    <circle cx="18" cy="100" r="4" fill="#3AD5FF"></circle>
+    <circle cx="34" cy="100" r="4" fill="#3AD5FF"></circle>
+    <circle cx="50" cy="100" r="4" fill="#3AD5FF"></circle>
+
+    <!-- Vertical spine -->
+
+    <path d="
+      M90 20
+      L90 180
+      " stroke="url(#blue)" stroke-width="14"></path>
+
+    <!-- Top -->
+
+    <path d="
+      M90 20
+      H220
+      " stroke="url(#green)" stroke-width="14"></path>
+
+    <!-- Middle -->
+
+    <path d="
+      M54 100
+      H220
+      " stroke="url(#blue)" stroke-width="14"></path>
+
+    <!-- Bottom -->
+
+    <path d="
+      M90 180
+      H220
+      " stroke="url(#red)" stroke-width="14"></path>
+
+    <!-- Nodes -->
+
+    <circle cx="90" cy="100" r="12" stroke="#3AD5FF" stroke-width="6"></circle>
+
+    <circle cx="170" cy="20" r="10" stroke="#46FF75" stroke-width="5"></circle>
+
+    <circle cx="170" cy="100" r="10" stroke="#39D5FF" stroke-width="5"></circle>
+
+    <circle cx="170" cy="180" r="10" stroke="#FF5050" stroke-width="5"></circle>
+
+    <!-- Arrows -->
+
+    <polygon points="220,20 245,20 232,8 245,20 232,32" fill="#46FF75"></polygon>
+
+    <polygon points="220,100 245,100 232,88 245,100 232,112" fill="#39D5FF"></polygon>
+
+    <polygon points="220,180 245,180 232,168 245,180 232,192" fill="#FF5050"></polygon>
+
+  </g>
+
+  <!-- WORDMARK -->
+
+  <text x="330" y="125" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="74" font-weight="300" fill="#F2F2F2">
+      efe
+  </text>
+
+  <text x="455" y="125" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="74" font-weight="600" fill="#39D5FF">
+      Flow
+  </text>
+
+  <text x="332" y="162" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" letter-spacing="4" fill="#8FA6B5">
+      VISUAL FIREWALL DESIGNER
+  </text>
+
+</svg>
