@@ -114,7 +114,9 @@ export function placeChains(){
       const here = MODEL.chains.filter(c => c.hook === hook && c.prio === prio);
       let cy = y;
       for(const ch of here){
-        POS[UID(ch)].y = cy;
+        const q = POS[UID(ch)];
+        if(!q) continue;                 /* chains set without a re-seed have no slot yet */
+        q.y = cy;
         cy += H(UID(ch)) + GUT;
       }
       tallest = Math.max(tallest, cy - y);
@@ -125,6 +127,7 @@ export function placeChains(){
   /* regular chains sit below the chain that jumps to them */
   for(const ch of MODEL.chains.filter(c => !c.hook)){
     const p = POS[UID(ch)];
+    if(!p) continue;
     const src = p.after;
     p.y = src && POS[src]?.y !== undefined ? POS[src].y + H(src) + 46 : y;
     while(Object.entries(POS).some(([uid, q]) =>
