@@ -23,7 +23,7 @@
     "tauri": "tauri",
     "app": "tauri dev",
     "app:build": "tauri build",
-    "icons": "tauri icon assets/app.png",
+    "icons": "tauri icon assets/app-icon.png",
     "shots": "node scripts/shots.mjs",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml",
     "rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
