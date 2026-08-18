@@ -436,6 +436,18 @@ fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>, Option<String>) 
                 args.push("-o".into());
                 args.push("BatchMode=yes".into());
             } else {
+                /* A password was given, so use it — and only it. Left to try
+                keys first, ssh negotiates the agent and any on-disk key under
+                sshpass's pseudo-terminal; a key with a passphrase, or an agent
+                that wants to ask, prompts there with nothing to answer it and
+                the connection hangs forever (sshpass is holding the tty for the
+                password prompt that never comes). Forcing password auth skips
+                all of that, and is what the user asked for by typing one.
+                NumberOfPasswordPrompts=1 so a wrong password fails at once. */
+                args.push("-o".into());
+                args.push("PreferredAuthentications=password".into());
+                args.push("-o".into());
+                args.push("PubkeyAuthentication=no".into());
                 args.push("-o".into());
                 args.push("NumberOfPasswordPrompts=1".into());
             }

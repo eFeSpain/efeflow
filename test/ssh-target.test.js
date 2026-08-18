@@ -164,6 +164,11 @@ test("a password goes through sshpass and its environment, not the argv", () => 
   const argv = body("argv");
   assert.match(argv, /"sshpass"/, "the password path no longer runs under sshpass");
   assert.match(argv, /"-e"\.into\(\)/, "sshpass -e is what reads the password from the environment");
+  /* and it forces password auth: left to try keys first, ssh negotiates the
+     agent under sshpass's pty and a key with a passphrase hangs there forever */
+  assert.match(argv, /"PreferredAuthentications=password"/,
+    "the password path still lets ssh try keys, which hangs under sshpass");
+  assert.match(argv, /"PubkeyAuthentication=no"/, "pubkey is not turned off for the password path");
   assert.match(body("spawn_collect"), /\.env\("SSHPASS"/,
     "spawn_collect hands the password to sshpass some other way than the environment");
   assert.match(body("nft_watch"), /\.env\("SSHPASS"/,
