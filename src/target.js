@@ -23,6 +23,24 @@ export const target = { kind: "local", host: "", user: "", port: "", sudo: true 
    `.efeflow.json` is a file people attach to a bug report. */
 export let hosts = [];
 
+/* Passwords live here and nowhere else: in memory, for this session only, never
+   in localStorage and never in the hosts file that gets shared or attached to a
+   bug report. Keyed by how you reach the box, so moving between saved hosts
+   mid-session does not lose them. A saved host records that it *uses* a
+   password (so the form can ask for it), never the password itself. */
+const passwords = new Map();
+const passKey = (tg) =>
+  `${(tg.user || "").toLowerCase()}@${(tg.host || "").toLowerCase()}:${tg.port || "22"}`;
+
+export function setPassword(pass, tg = target) {
+  if (tg.kind !== "ssh" || !tg.host) return;
+  if (pass) passwords.set(passKey(tg), pass);
+  else passwords.delete(passKey(tg));
+}
+export const passwordFor = (tg = target) =>
+  (tg.kind === "ssh" && passwords.get(passKey(tg))) || "";
+export const hasPassword = (tg = target) => !!passwordFor(tg);
+
 export function loadTarget() {
   try {
     Object.assign(target, JSON.parse(localStorage.getItem(KEY) || "{}"));
@@ -84,6 +102,12 @@ export const currentHost = () => matching(hosts, target);
 
 export function saveTarget(patch) {
   Object.assign(target, patch);
+  /* A password is session-only and lives in `passwords`, never on disk. The
+     draft that comes in here carries one, so strip it before anything is
+     written — belt and braces, so no future caller can leak it through this
+     door either. */
+  delete target.pass;
+  delete target.password;
   localStorage.setItem(KEY, JSON.stringify(target));
   /* pointing somewhere new is how a host gets into the list — and pointing
      at a known one teaches the list what changed. The entry used to keep the
@@ -106,6 +130,7 @@ export const asTauriTarget = (tg = target) =>
         user: tg.user || undefined,
         port: tg.port ? Number(tg.port) : undefined,
         sudo: !!tg.sudo,
+        pass: passwordFor(tg) || undefined,
       })
     : native.LOCAL;
 

@@ -1050,6 +1050,12 @@
             <div class="inline" style="height:29px"><span class="lbl" style="text-transform:none;letter-spacing:0;font-size:11.5px">sudo</span>
               <span class="sw-toggle on" id="tg-sudo"></span></div></div>
         </div>
+        <div class="fld">
+          <span class="lbl" data-t="Password|Contraseña">Password</span>
+          <input type="password" id="tg-pass" autocomplete="off" spellcheck="false"
+            data-tp="optional — leave blank to use your SSH key or agent|opcional — déjalo en blanco para usar tu clave o agente SSH">
+          <span style="font-size:10.5px;color:var(--t4);margin-top:3px;display:block" data-t="Held for this session only, never saved to disk. Needs the sshpass helper installed.|Se guarda solo en esta sesión, nunca en disco. Necesita el helper sshpass instalado."></span>
+        </div>
         <div class="mono" style="font-size:11px;color:var(--t4)">
           ssh <span id="tg-preview">host</span> nft -a list ruleset
         </div>

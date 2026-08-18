@@ -24,7 +24,7 @@ import { surgicalPlan } from "../core/surgical.js";
 import { asTarget, matching, label as hostLabel } from "../core/hosts.js";
 import { t } from "../i18n.js";
 import { target, loadTarget, saveTarget, asTauriTarget, describe, probe,
-         hosts, forgetHost } from "../target.js";
+         hosts, forgetHost, setPassword, passwordFor } from "../target.js";
 import { applyWithNet, surgicalChanges, keep, rollBackNow, pendingRollback } from "../apply.js";
 import { refreshCounters, checkDrift } from "../host.js";
 import * as native from "../native.js";
@@ -180,6 +180,11 @@ function syncTargetForm(){
   $("#tg-user").value = tgDraft.user || "";
   $("#tg-port").value = tgDraft.port || "";
   $("#tg-sudo").classList.toggle("on", !!tgDraft.sudo);
+  /* the password is not part of the saved target, so a freshly-picked draft
+     has none of its own — fall back to what the session already holds for this
+     host, so returning to it does not ask again */
+  if(tgDraft.pass === undefined) tgDraft.pass = passwordFor(tgDraft);
+  $("#tg-pass").value = tgDraft.pass || "";
   $("#tg-preview").textContent = describe(tgDraft);
   $("#tg-local-note").textContent = !native.isDesktop()
     ? t("Unavailable in a browser.","No disponible en navegador.")
@@ -251,6 +256,8 @@ $$("#tg-host, #tg-user, #tg-port").forEach(n=>n.addEventListener("input", ()=>{
   tgDraft.port = $("#tg-port").value.trim();
   $("#tg-preview").textContent = describe(tgDraft);
 }));
+/* Not trimmed — a password is bytes, not a name, and its spaces are its own. */
+$("#tg-pass").addEventListener("input", ()=>{ tgDraft.pass = $("#tg-pass").value; });
 
 $("#tg-test").addEventListener("click", async ()=>{
   const box = $("#tg-result");
@@ -260,6 +267,7 @@ $("#tg-test").addEventListener("click", async ()=>{
      against a host that is away reads as the button having done nothing */
   box.textContent = t(`Contacting ${describe(tgDraft)}…`,
                       `Contactando con ${describe(tgDraft)}…`);
+  setPassword(tgDraft.pass, tgDraft);   /* into the session store probe() reads */
   const r = await whilePressed($("#tg-test"), null, ()=> probe(tgDraft));
   box.className = "tg-result " + (r.ok ? "ok" : "bad");
   box.textContent = r.ok
@@ -268,6 +276,7 @@ $("#tg-test").addEventListener("click", async ()=>{
 });
 
 $("#tg-save").addEventListener("click", async ()=>{
+  setPassword(tgDraft.pass, tgDraft);   /* session-only; saveTarget never persists it */
   saveTarget(tgDraft);
   $("#scrim-target").classList.remove("on");
   await refreshTarget();

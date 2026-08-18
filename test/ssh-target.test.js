@@ -151,3 +151,60 @@ test("every spawn goes through it, not just the one that was noticed", () => {
   assert.equal(guarded, spawns,
     `${spawns} places spawn a process and ${guarded} suppress the console`);
 });
+
+/* ── password auth, made optional without weakening the key path ────────────
+ *
+ * The transport ran ssh with BatchMode=yes, which never prompts — so a host
+ * that only offered a password could not be reached, and a first connection to
+ * any host failed on its unknown key with no way to accept it. A password is
+ * optional now: given one, ssh runs under sshpass, which reads it from the
+ * SSHPASS environment variable — never the argv, where `ps` could read it. */
+
+test("a password goes through sshpass and its environment, not the argv", () => {
+  const argv = body("argv");
+  assert.match(argv, /"sshpass"/, "the password path no longer runs under sshpass");
+  assert.match(argv, /"-e"\.into\(\)/, "sshpass -e is what reads the password from the environment");
+  assert.match(body("spawn_collect"), /\.env\("SSHPASS"/,
+    "spawn_collect hands the password to sshpass some other way than the environment");
+  assert.match(body("nft_watch"), /\.env\("SSHPASS"/,
+    "the monitor stream hands the password to sshpass some other way than the environment");
+});
+
+test("BatchMode is for the key path only, never the password one", () => {
+  /* BatchMode=yes suppresses the very prompt sshpass answers, so it must be
+     guarded by the absence of a password — reintroducing it unconditionally
+     would silently break password auth. */
+  const argv = body("argv");
+  const guard = argv.indexOf("pw.is_none()");
+  const batch = argv.indexOf('"BatchMode=yes"');
+  assert.ok(guard > 0, "argv() no longer decides BatchMode on whether there is a password");
+  assert.ok(batch > guard, "BatchMode=yes is not inside the no-password branch");
+});
+
+test("an unknown host is trusted on first use, a changed one still refused", () => {
+  assert.match(body("argv"), /"StrictHostKeyChecking=accept-new"/,
+    "the first-connection wall (Host key verification failed) is back with no way past it");
+});
+
+test("a Target's Debug never prints the password", () => {
+  /* A derived Debug would print it; a firewall tool holding a root password
+     should not leak it the moment someone adds a `{:?}`. */
+  const der = SRC.slice(SRC.lastIndexOf("#[derive", SRC.indexOf("pub enum Target")),
+                        SRC.indexOf("pub enum Target"));
+  assert.doesNotMatch(der, /Debug/, "Target still derives Debug, which would print the password");
+  assert.match(SRC, /impl std::fmt::Debug for Target/, "Target has no hand-written Debug to redact through");
+  assert.match(SRC, /"<redacted>"/, "the password is not redacted in the Debug that replaces it");
+});
+
+/* ── the password stays in the session, never on disk ──────────────────────
+ * It authenticates a firewall; it is not a hostname to be remembered in a file
+ * a colleague opens. It lives in memory and is stripped before the target is
+ * written, so no future caller leaks it through saveTarget either. */
+const TS = readFileSync(new URL("../src/target.js", import.meta.url), "utf8");
+
+test("a session password is never written to disk", () => {
+  assert.match(TS, /const passwords = new Map\(\)/, "there is no session-only store to keep it out of localStorage");
+  assert.match(TS, /delete target\.pass/, "saveTarget does not strip the password before writing the target");
+  assert.match(TS, /delete target\.password/, "the serialized field name is not stripped either");
+  assert.match(TS, /pass: passwordFor/, "asTauriTarget does not attach the session password when it makes the call");
+});

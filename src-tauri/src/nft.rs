@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
 /// Where a ruleset comes from, or where a check should run.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Target {
     /// The machine eFeFlow is running on.
@@ -29,7 +29,38 @@ pub enum Target {
         /// Prefix commands with sudo — reading the ruleset usually needs root.
         #[serde(default)]
         sudo: bool,
+        /// A password to authenticate with, handed to `sshpass` so the system
+        /// `ssh` never has to prompt for it. Absent means key/agent auth, as
+        /// before. It is never written to disk: the frontend holds it for the
+        /// session and sends it with each call.
+        #[serde(default)]
+        password: Option<String>,
     },
+}
+
+/// Debug is written by hand, not derived: a Target can carry an SSH password,
+/// and a derived Debug would print it. Nothing prints a Target today, but a
+/// secret that stays secret only while nobody adds a `{:?}` is not one.
+impl std::fmt::Debug for Target {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Target::Local => write!(f, "Local"),
+            Target::Ssh {
+                host,
+                user,
+                port,
+                sudo,
+                password,
+            } => f
+                .debug_struct("Ssh")
+                .field("host", host)
+                .field("user", user)
+                .field("port", port)
+                .field("sudo", sudo)
+                .field("password", &password.as_ref().map(|_| "<redacted>"))
+                .finish(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -348,21 +379,28 @@ fn local_path() -> String {
 }
 
 /// Build the argv for a command against a target, without a shell in the way.
-fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
+///
+/// The third element is the value for the child's `SSHPASS` environment
+/// variable — `Some` only when a password was given, so the caller can hand it
+/// to `sshpass` through the environment rather than the argv where `ps` could
+/// read it. It is `None` for every key/agent connection and every local call.
+fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>, Option<String>) {
     match target {
         Target::Local => (
             cmd[0].to_string(),
             cmd[1..].iter().map(|s| s.to_string()).collect(),
+            None,
         ),
         Target::Ssh {
             host,
             user,
             port,
             sudo,
+            password,
         } => {
+            let pw = password.as_deref().filter(|p| !p.is_empty());
+
             let mut args: Vec<String> = vec![
-                "-o".into(),
-                "BatchMode=yes".into(),
                 "-o".into(),
                 "ConnectTimeout=8".into(),
                 /* ConnectTimeout only bounds getting connected. Once a session
@@ -378,7 +416,29 @@ fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
                 "ServerAliveInterval=5".into(),
                 "-o".into(),
                 "ServerAliveCountMax=3".into(),
+                /* Trust a host the first time we meet it and record its key;
+                still refuse one whose key has CHANGED, which is the case worth
+                refusing. The bare default failed outright on a first
+                connection with "Host key verification failed" — the error a
+                user could not get past without dropping to a terminal, because
+                the connection runs non-interactively and cannot show a
+                fingerprint prompt. accept-new is the trust-on-first-use every
+                graphical SSH client already does. */
+                "-o".into(),
+                "StrictHostKeyChecking=accept-new".into(),
             ];
+            /* A key/agent connection stays strictly non-interactive: never
+            prompt, fail fast. The password connection is the opposite — ssh
+            must be allowed to ask, so `sshpass` can answer — so BatchMode goes
+            on only when there is no password, and a single prompt is allowed
+            when there is, so a wrong one fails at once instead of asking twice. */
+            if pw.is_none() {
+                args.push("-o".into());
+                args.push("BatchMode=yes".into());
+            } else {
+                args.push("-o".into());
+                args.push("NumberOfPasswordPrompts=1".into());
+            }
             if let Some(p) = port {
                 args.push("-p".into());
                 args.push(p.to_string());
@@ -400,7 +460,18 @@ fn argv(target: &Target, cmd: &[&str]) -> (String, Vec<String>) {
             args.push("env".into());
             args.push(format!("PATH={SBIN_PATH}"));
             args.extend(cmd.iter().map(|s| s.to_string()));
-            ("ssh".to_string(), args)
+
+            match pw {
+                /* `sshpass -e ssh …` reads the password from the SSHPASS
+                environment variable we set on the child, so it never touches
+                the argv (`ps` shows `sshpass -e ssh …`, not the secret). */
+                Some(p) => {
+                    let mut a: Vec<String> = vec!["-e".into(), "ssh".into()];
+                    a.extend(args);
+                    ("sshpass".to_string(), a, Some(p.to_string()))
+                }
+                None => ("ssh".to_string(), args, None),
+            }
         }
     }
 }
@@ -419,8 +490,8 @@ fn run(target: &Target, cmd: &[&str], stdin: Option<&str>) -> Outcome {
     if let Err(e) = target.check() {
         return Outcome::failed(e);
     }
-    let (program, args) = argv(target, cmd);
-    spawn_collect(&program, &args, stdin)
+    let (program, args, sshpass) = argv(target, cmd);
+    spawn_collect(&program, &args, stdin, sshpass.as_deref())
 }
 
 /// One of the three read-only operations, wherever it is being run.
@@ -432,13 +503,18 @@ fn run_verb(target: &Target, v: Verb, stdin: Option<&str>) -> Outcome {
     match target {
         Target::Local => {
             let (program, args) = local_argv(v);
-            local_hint(spawn_collect(&program, &args, stdin), v, elevating())
+            local_hint(spawn_collect(&program, &args, stdin, None), v, elevating())
         }
         Target::Ssh { .. } => run(target, v.nft(), stdin),
     }
 }
 
-fn spawn_collect(program: &str, args: &[String], stdin: Option<&str>) -> Outcome {
+fn spawn_collect(
+    program: &str,
+    args: &[String],
+    stdin: Option<&str>,
+    sshpass: Option<&str>,
+) -> Outcome {
     let mut cmdline = Command::new(program);
     cmdline
         .args(args)
@@ -454,14 +530,24 @@ fn spawn_collect(program: &str, args: &[String], stdin: Option<&str>) -> Outcome
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    /* The password for `sshpass -e`, through the environment so it is never in
+    the argv. Set on the child alone; this process's own environment is left
+    untouched. */
+    if let Some(p) = sshpass {
+        cmdline.env("SSHPASS", p);
+    }
     no_console(&mut cmdline);
     let mut child = match cmdline.spawn() {
         Ok(c) => c,
         Err(e) => {
-            return Outcome::failed(format!(
-                "could not run `{program}`: {e}. \
-                 On Windows and macOS there is no local nft — use an SSH target."
-            ))
+            let extra = if program == "sshpass" {
+                "Password authentication needs the `sshpass` helper. Install it \
+                 (Debian/Ubuntu: sudo apt install sshpass; Fedora: sudo dnf install \
+                 sshpass), or connect with an SSH key instead."
+            } else {
+                "On Windows and macOS there is no local nft — use an SSH target."
+            };
+            return Outcome::failed(format!("could not run `{program}`: {e}. {extra}"));
         }
     };
 
@@ -788,8 +874,11 @@ pub fn nft_watch(app: AppHandle, target: Target) -> Outcome {
     }
     nft_unwatch();
 
-    let (program, args) = match &target {
-        Target::Local => local_argv(Verb::Monitor),
+    let (program, args, sshpass) = match &target {
+        Target::Local => {
+            let (p, a) = local_argv(Verb::Monitor);
+            (p, a, None)
+        }
         Target::Ssh { .. } => argv(&target, Verb::Monitor.nft()),
     };
     let mut cmdline = Command::new(&program);
@@ -805,6 +894,9 @@ pub fn nft_watch(app: AppHandle, target: Target) -> Outcome {
         bug being fixed, it is a hazard not being kept for no reason. The lines
         that matter arrive on stdout. */
         .stderr(Stdio::null());
+    if let Some(p) = &sshpass {
+        cmdline.env("SSHPASS", p);
+    }
     no_console(&mut cmdline);
     let child = cmdline.spawn();
 

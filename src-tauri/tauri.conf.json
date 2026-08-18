@@ -46,7 +46,7 @@
     "longDescription": "Design Linux nftables rulesets visually: import a live ruleset, edit it on a canvas laid out by netfilter hook and chain priority, catch shadowed rules and NAT conflicts, simulate a packet through the chains, and export clean nft source.",
     "linux": {
       "deb": {
-        "recommends": ["nftables", "pkexec | policykit-1"],
+        "recommends": ["nftables", "pkexec | policykit-1", "sshpass"],
         "files": {
           "/usr/libexec/efeflow/efeflow-nft-helper": "../packaging/linux/efeflow-nft-helper",
           "/usr/share/polkit-1/actions/com.alegoriasoft.efeflow.policy": "../packaging/linux/com.alegoriasoft.efeflow.policy"
@@ -55,7 +55,7 @@
         "desktopTemplate": "./efeflow.desktop"
       },
       "rpm": {
-        "recommends": ["nftables", "polkit"],
+        "recommends": ["nftables", "polkit", "sshpass"],
         "files": {
           "/usr/libexec/efeflow/efeflow-nft-helper": "../packaging/linux/efeflow-nft-helper",
           "/usr/share/polkit-1/actions/com.alegoriasoft.efeflow.policy": "../packaging/linux/com.alegoriasoft.efeflow.policy"

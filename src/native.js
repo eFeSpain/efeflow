@@ -65,12 +65,16 @@ const unavailable = (what) => ({
 });
 
 export const LOCAL = { kind: "local" };
-export const ssh = (host, { user, port, sudo = true } = {}) => ({
+/* `pass`, when given, is added as `password` and travels to the Rust side to
+   feed sshpass. It is attached only when present, so a key/agent connection
+   sends no such field at all — and it is never part of what gets persisted. */
+export const ssh = (host, { user, port, sudo = true, pass } = {}) => ({
   kind: "ssh",
   host,
   user: user || null,
   port: port || null,
   sudo,
+  ...(pass ? { password: pass } : {}),
 });
 
 /* nft's version and the kernel it is talking to, in one round trip — the two
