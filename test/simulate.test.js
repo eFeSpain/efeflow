@@ -54,6 +54,28 @@ test("tcp flag matching distinguishes presence from exclusivity", () => {
   assert.ok(!matches(exclusive, pkt(["syn", "ack"])), "masked test rejects syn|ack");
 });
 
+/* nft prints a protocol as a name and takes its number, and a script-written
+   ruleset usually carries the number — so the two have to compare equal. `pim`
+   (103) was missing from that table: a multicast headend logging PIM had
+   `meta l4proto 103` read as the string "103", which never matched a packet
+   the form called "pim". The fix is data, so the test is that the data is right. */
+test("a protocol matches by name or by number, pim (103) included", () => {
+  const v4 = (proto) => ({ saddr: "10.0.0.1", daddr: "10.0.0.2", proto, tracked: true });
+
+  assert.ok(matches({ expr: "meta l4proto pim" }, v4("103")),
+    "meta l4proto pim did not match a packet whose protocol is 103");
+  assert.ok(matches({ expr: "meta l4proto 103" }, v4("pim")),
+    "meta l4proto 103 did not match a pim packet");
+  assert.ok(matches({ expr: "ip protocol 103" }, v4("pim")),
+    "ip protocol 103 did not match a pim packet");
+  assert.ok(!matches({ expr: "meta l4proto pim" }, v4("udp")), "pim must not match udp");
+
+  /* the others added in the same pass, each an unambiguous name */
+  assert.ok(matches({ expr: "meta l4proto rsvp" }, v4("46")));
+  assert.ok(matches({ expr: "meta l4proto l2tp" }, v4("115")));
+  assert.ok(matches({ expr: "meta l4proto eigrp" }, v4("88")));
+});
+
 test("unquoted iif/oif interface names are honoured", () => {
   const loOut = { expr: "oif lo", verdict: "accept", on: true };
   assert.ok(matches(loOut, { oif: "lo", tracked: true }));

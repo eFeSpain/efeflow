@@ -157,9 +157,15 @@ const states = tok => tok.replace(/^\{|\}$/g, "").split(",").map(x => x.trim()).
    carries the number. `ipv6-icmp` is the same protocol as `icmpv6` under the
    name the v6 header uses for it — comparing either against the other was a
    certain miss on every ICMPv6 rule. */
+/* Number → the name nft prints for it, so a ruleset carrying the number and one
+   carrying the name compare equal. The name here has to be exactly the token nft
+   uses: a wrong one would turn a real match into a miss, the opposite of the
+   point. These are the unambiguous /etc/protocols names. `pim` (103) was the one
+   that started this — a multicast-routing headend logging PIM had `meta l4proto
+   103` read as the string "103", which never equalled a packet's "pim". */
 const PROTO_NUM = { 1:"icmp", 2:"igmp", 6:"tcp", 17:"udp", 33:"dccp", 41:"ipv6",
-  47:"gre", 50:"esp", 51:"ah", 58:"icmpv6", 89:"ospf", 112:"vrrp", 132:"sctp",
-  136:"udplite" };
+  46:"rsvp", 47:"gre", 50:"esp", 51:"ah", 58:"icmpv6", 88:"eigrp", 89:"ospf",
+  103:"pim", 112:"vrrp", 115:"l2tp", 132:"sctp", 136:"udplite" };
 const PROTO_ALIAS = { "ipv6-icmp":"icmpv6", "icmp6":"icmpv6", "ipv6-nonxt":"nonxt" };
 const protoName = t => {
   const s = String(t ?? "").trim();
