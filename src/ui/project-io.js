@@ -15,6 +15,7 @@
 import { MODEL, ruleLine } from "../core/model.js";
 import { generate } from "../core/generate.js";
 import { verify } from "../core/parse.js";
+import { foreignFormat, translateCommand } from "../core/foreign.js";
 import { worstCase } from "../core/analyse.js";
 import { SAMPLES, sampleById } from "../core/samples.js";
 import { PROJECT, serialise, deserialise, setProject } from "../core/project.js";
@@ -57,6 +58,35 @@ export function reviewImport(){
     return;
   }
 
+  /* Not nftables at all. Say so and name the translator, before a 100% ring
+     over zero rules says something untrue — an iptables-save went straight
+     through here: every line to the prelude, no error, "nothing was lost",
+     "0 rules", and a disabled button that explained none of it. */
+  const foreign = foreignFormat(text);
+  if(foreign){
+    IMPORTED = null; btn.disabled = true;
+    $("#imp-go-t").textContent = t("Import 0 rules","Importar 0 reglas");
+    const cmd = translateCommand(foreign);
+    const ipt = foreign.kind === "iptables-save";
+    side.innerHTML = `<div class="imp-sec" style="border:none;padding:26px 20px">
+      <div style="font:600 12.5px var(--sans);color:var(--t2);margin-bottom:6px">${ipt
+        ? t("This is iptables-save, not nftables","Esto es iptables-save, no nftables")
+        : t("This is the JSON form of nft, not its text","Esto es la forma JSON de nft, no su texto")}</div>
+      <div style="font-size:11.5px;color:var(--t4);line-height:1.6;margin-bottom:10px">${ipt
+        ? t("eFeFlow reads nftables syntax — what nft list ruleset prints. Translate this file first and paste the result. The translator ships with the nft-based iptables:",
+            "eFeFlow lee sintaxis nftables — lo que imprime nft list ruleset. Traduce antes este fichero y pega el resultado. El traductor viene con el iptables basado en nft:")
+        : t("This dialog reads the text form. Paste the output of this instead:",
+            "Este diálogo lee la forma de texto. Pega en su lugar la salida de esto:")}</div>
+      <pre class="code" style="padding:9px 10px;font-size:11.5px;user-select:all">${esc(cmd)}</pre>
+      <button class="tb imp-foreign-copy" style="margin-top:8px">${t("Copy command","Copiar comando")}</button>
+    </div>`;
+    side.querySelector(".imp-foreign-copy").addEventListener("click", ()=>{
+      navigator.clipboard?.writeText(cmd);
+      toast(t("Command copied","Comando copiado"));
+    });
+    return;
+  }
+
   /* verify() checks the whole file, not only its rules. The rule-level count
      could report a clean 100% on a ruleset whose netdev chain had lost its
      device or whose flowtable had been dropped, because neither is a rule. */
@@ -69,7 +99,9 @@ export function reviewImport(){
 
   const pct = rt.total ? Math.round(rt.ok/rt.total*100) : 0;
   const good = rt.diffs.length===0;
-  const col = good ? ["71,224,130","--v-accept"] : pct>=90 ? ["240,193,60","--warn"] : ["250,90,90","--v-drop"];
+  /* a file with lines and no rules is not a good import however well its
+     lines came back — a define and an include alone are 100% and nothing */
+  const col = !rules ? ["240,193,60","--warn"] : good ? ["71,224,130","--v-accept"] : pct>=90 ? ["240,193,60","--warn"] : ["250,90,90","--v-drop"];
 
   side.innerHTML = `
     <div class="imp-sec">
@@ -77,7 +109,9 @@ export function reviewImport(){
       <div class="rt-badge">
         <div class="ring" style="background:rgba(${col[0]},.12);border:1px solid rgba(${col[0]},.3);color:var(${col[1]})">${pct}%</div>
         <div class="tx"><b>${rt.ok} / ${rt.total} ${t("lines","líneas")}</b>${
-          good ? t("re-emit identically — rules, chain headers, sets and every object. Nothing was lost in translation.",
+          !rules ? t(" were kept as text — but none of them is a chain or a rule, so there is nothing to import. Check that this is what nft list ruleset prints.",
+                     " se conservan como texto — pero ninguna es una cadena ni una regla, así que no hay nada que importar. Comprueba que es lo que imprime nft list ruleset.")
+          : good ? t("re-emit identically — rules, chain headers, sets and every object. Nothing was lost in translation.",
                    "se reemiten idénticas — reglas, cabeceras de cadena, sets y cada objeto. No se ha perdido nada en la traducción.")
                : t("re-emit identically. The rest are shown below.",
                    "se reemiten idénticas. El resto se muestra abajo.")}</div>

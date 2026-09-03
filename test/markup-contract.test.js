@@ -78,6 +78,22 @@ test("the markup claims no version of anything it has not asked", () => {
   assert.deepEqual(claims, [], `hard-coded versions in index.html: ${claims.join(", ")}`);
 });
 
+/* The dashboard said "+6 since last export" under a sparkline drawn from a
+   fixed path, the code drawer's pill said "in sync", the status bar said
+   "Syntax valid" in green and the packet-path card listed three tables — all
+   literal text, over every ruleset ever opened, whatever had happened. Each is
+   written by the code now, from the diff, the linter and the model. */
+test("the dashboard, the drawer and the status bar show nothing that is not computed", () => {
+  const prose = html.replace(/<!--[\s\S]*?-->/g, "");
+  assert.doesNotMatch(prose, /since last export\|/, "a hard-coded delta since an export that never happened");
+  assert.doesNotMatch(prose, /class="spark"/, "a sparkline drawn from a fixed path");
+  assert.doesNotMatch(prose, /data-t="in sync\|/, "a pill that always says in sync");
+  assert.doesNotMatch(prose, /data-t="Syntax valid\|/, "a status button that always says the syntax is valid");
+  assert.doesNotMatch(prose, /<span class="chip">inet fw<\/span>/, "a table list nobody computed");
+  for (const id of ["kpi-delta", "dash-tables", "dw-state", "st-syntax"])
+    assert.ok(js.includes(`#${id}`), `#${id} is in the markup but nothing writes it`);
+});
+
 test("nothing in the markup claims a version control that does not exist", () => {
   assert.ok(!/>main\s*<span class="dimmer">/.test(html),
     "a hard-coded branch name and commit count");

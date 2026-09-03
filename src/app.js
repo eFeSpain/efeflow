@@ -285,6 +285,20 @@ function paintDrawer(){
   tabs[1].querySelector(".n").textContent = adds||dels ? `+${adds} −${dels}` : "—";
   tabs[2].querySelector(".n").textContent = findings.list.filter(f=>f.sev!=="hint").length;
   tabs.forEach(b=>b.classList.toggle("on", b.dataset.dw===DW_TAB));
+  /* the pill beside the tabs read "in sync" as literal text, whatever had
+     changed — it says what the diff tab counts */
+  const st = $("#dw-state");
+  if(st){
+    const changed = adds + dels;
+    st.style.display = BASELINE ? "" : "none";
+    st.classList.toggle("v-accept", !changed);
+    st.classList.toggle("v-warnp", !!changed);
+    st.title = t("Against whatever was last imported, opened, exported or applied",
+                 "Frente a lo último importado, abierto, exportado o aplicado");
+    $("#dw-state-t").textContent = changed
+      ? t(`${changed} line${changed===1?"":"s"} changed`, `${changed} línea${changed===1?"":"s"} cambiada${changed===1?"":"s"}`)
+      : t("unchanged","sin cambios");
+  }
 
   $("#codeout").style.display    = DW_TAB==="code" ? "" : "none";
   $("#dw-diff").style.display    = DW_TAB==="diff" ? "" : "none";
@@ -748,6 +762,28 @@ $("#topo-mode").addEventListener("click", e=>{
 
 /* ══ DASHBOARD ═════════════════════════════════════════════════════════ */
 function renderDash(){
+  /* The rules card said "+6 since last export" under a fixed sparkline, over
+     every ruleset ever opened. What is true is the diff against the baseline
+     the drawer keeps — last import, open, export or apply. */
+  const kd = $("#kpi-delta");
+  if(kd){
+    const diff = BASELINE ? diffLines(BASELINE.split("\n"), generate()) : [];
+    const adds = diff.filter(d=>d[0]==="+").length, dels = diff.filter(d=>d[0]==="-").length;
+    kd.innerHTML = !BASELINE ? t("nothing to compare against yet","aún nada con lo que comparar")
+      : adds||dels
+        ? `<span style="color:var(--v-accept)">+${adds}</span>&nbsp;<span style="color:var(--v-drop)">−${dels}</span>&nbsp;${
+            t("lines since the last import, export or apply","líneas desde la última importación, exportación o aplicación")}`
+        : t("unchanged since the last import, export or apply","sin cambios desde la última importación, exportación o aplicación");
+  }
+  /* and the packet-path card named three tables that were never this project's */
+  const dt = $("#dash-tables");
+  if(dt){
+    const names = tableNames(MODEL);
+    dt.innerHTML = names.length
+      ? names.map(n=>`<span class="chip">${esc(n)}</span>`).join("")
+      : `<span class="chip" style="color:var(--t4)">${t("no tables yet","aún sin tablas")}</span>`;
+  }
+
   /* hook map — one column per hook, chains stacked by priority, each chain
      carrying a bar whose segments are its verdict mix */
   $("#hook-map").innerHTML = ["prerouting","input","forward","output","postrouting"].map(h=>{

@@ -191,7 +191,9 @@
 
   <!-- ══ STATUS BAR ══ -->
   <div id="status">
-    <button class="st"><span class="sw" style="background:var(--v-accept)"></span><span data-t="Syntax valid|Sintaxis válida">Syntax valid</span></button>
+    <!-- Read "Syntax valid" in green as literal text, whatever the linter had
+         found. findings.js writes it now, from the syntax findings it counts. -->
+    <button class="st" id="st-syntax" data-go="validate"><span class="sw"></span><span id="st-syntax-t">—</span></button>
     <button class="st" data-go="validate"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span id="st-problems">—</span></button>
     <!-- This said `main ↑2`: a branch and two unpushed commits, both literal
          text, over a project with no version control of any kind. What is
@@ -287,7 +289,9 @@
         <button class="dw-tab" data-dw="diff"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg><span data-t="Diff|Diferencias">Diff</span><span class="n">—</span></button>
         <button class="dw-tab" data-dw="problems"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg><span data-t="Problems|Problemas">Problems</span><span class="n">0</span></button>
         <div style="flex:1"></div>
-        <div class="pill v-accept" style="margin-right:6px"><span class="sw"></span><span data-t="in sync|sincronizado">in sync</span></div>
+        <!-- Said "in sync" whatever had changed; paintDrawer writes it from the
+             same diff the tab beside it counts. -->
+        <div class="pill v-accept" id="dw-state" style="margin-right:6px;display:none"><span class="sw"></span><span id="dw-state-t">—</span></div>
         <button class="tb icon" data-tt="Copy|Copiar"><svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></button>
         <button class="tb icon" data-tt="Collapse|Contraer" id="dw-toggle"><svg class="ico" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
       </div>
@@ -325,12 +329,11 @@
       <div class="card kpi">
         <div class="lbl" data-t="Rules|Reglas">Rules</div>
         <div class="v" id="kpi-rules">—</div>
-        <div class="d"><span style="color:var(--v-accept)">+6</span>&nbsp;<span data-t="since last export|desde la última exportación">since last export</span></div>
-        <svg class="spark" viewBox="0 0 200 38" preserveAspectRatio="none">
-          <path d="M0 30 20 28 40 29 60 24 80 25 100 19 120 20 140 14 160 15 180 8 200 6" fill="none" stroke="var(--aqua)" stroke-width="1.5"/>
-          <path d="M0 30 20 28 40 29 60 24 80 25 100 19 120 20 140 14 160 15 180 8 200 6 200 38 0 38Z" fill="url(#sg)" opacity=".3"/>
-          <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--aqua)"/><stop offset="1" stop-color="transparent"/></linearGradient></defs>
-        </svg>
+        <!-- This said "+6 since last export" under a sparkline drawn from a
+             fixed path, over every ruleset ever opened. renderDash writes the
+             real delta against the drawer's baseline; the chart is gone
+             because there is no series to draw. -->
+        <div class="d" id="kpi-delta">—</div>
       </div>
       <div class="card kpi">
         <div class="lbl" data-t="Worst-case evaluations|Evaluaciones en el peor caso">Worst-case evaluations</div>
@@ -348,8 +351,8 @@
     <div class="card hookmap" style="margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:9px">
         <h3 style="font:600 13px var(--sans);flex:1" data-t="Packet path|Ruta del paquete">Packet path</h3>
-        <span class="chip">inet fw</span><span class="chip">ip nat</span><span class="chip">netdev ingress</span>
-        <span class="chip" style="color:var(--t4)">+1</span>
+        <!-- three table names and a "+1", as literal text -->
+        <span id="dash-tables" style="display:contents"></span>
       </div>
       <div class="hm-track" id="hook-map"></div>
     </div>

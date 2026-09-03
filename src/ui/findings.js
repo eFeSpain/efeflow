@@ -142,6 +142,16 @@ export function renderFindings(){
     ? t(`${errs} error${errs===1?"":"s"} · ${warns} warning${warns===1?"":"s"}`,
         `${errs} error${errs===1?"":"es"} · ${warns} aviso${warns===1?"":"s"}`)
     : t("No problems","Sin problemas");
+  /* the button beside it read "Syntax valid" in green as literal text,
+     whatever the linter had found — it reports the syntax findings now */
+  const syn = FIND.filter(f=>f.kind==="syntax").length;
+  const ss = $("#st-syntax");
+  if(ss){
+    ss.querySelector(".sw").style.background = syn ? "var(--v-drop)" : "var(--v-accept)";
+    $("#st-syntax-t").textContent = syn
+      ? t(`${syn} syntax error${syn===1?"":"s"}`, `${syn} error${syn===1?"":"es"} de sintaxis`)
+      : t("Syntax valid","Sintaxis válida");
+  }
   $("#st-worst").textContent = worstCase();
   const kg = $("#kpi-grade");
   if(kg){ kg.textContent = grade; kg.style.color = `var(${gcol})`; }

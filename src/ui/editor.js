@@ -217,7 +217,7 @@ export const EMPTY = () => `
     <p>${t("Pick a rule on the canvas — or a line in the generated code — to edit its matches, verdict and counters here.",
            "Elige una regla en el lienzo — o una línea del código generado — para editar aquí sus coincidencias, veredicto y contadores.")}</p>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">
-      <span class="chip">${t("click a rule","clic en una regla")}</span><span class="chip">${t("⇧ click to multi-select","⇧ clic para multi-selección")}</span>
+      <span class="chip">${t("click a rule","clic en una regla")}</span>
     </div>
   </div>`;
 
